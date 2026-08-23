@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meetinghq-api"
+version = "0.1.0"
+description = "MeetingHQ HTTP API"
+requires-python = ">=3.13"
+dependencies = [
+  "alembic>=1.16,<2",
+  "argon2-cffi>=25.1,<26",
+  "asyncpg>=0.30,<1",
+  "cryptography>=45,<46",
+  "email-validator>=2.2,<3",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "nh3>=0.3,<1",
+  "pydantic-settings>=2.10,<3",
+  "psutil>=6,<8",
+  "pyjwt>=2.10,<3",
+  "python-multipart>=0.0.20,<1",
+  "qrcode>=8.2,<9",
+  "redis>=6.2,<7",
+  "sqlalchemy[asyncio]>=2.0.41,<3",
+  "structlog>=25.4,<26",
+  "tzdata>=2026.1",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=25.1,<26",
+  "mypy>=1.17,<2",
+  "pre-commit>=4.2,<5",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "pytest-cov>=6.2,<7",
+  "aiosqlite>=0.21,<1",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meetinghq_api"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config --cov=meetinghq_api --cov-report=term-missing"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "T20"]
+ignore = ["S101", "S105"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["meetinghq_api"]

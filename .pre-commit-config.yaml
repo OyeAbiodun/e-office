@@ -1,0 +1,27 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.7
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+  - repo: local
+    hooks:
+      - id: web-lint
+        name: web lint
+        entry: npm --prefix apps/web run lint
+        language: system
+        pass_filenames: false
+      - id: web-format
+        name: web format check
+        entry: npm --prefix apps/web run format:check
+        language: system
+        pass_filenames: false
+

@@ -1,0 +1,39 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+dist/
+*.egg-info/
+*.db
+*.sqlite
+*.sqlite3
+storage/
+*.log
+apps/api/alembic-upgrade.*
+
+# Node
+node_modules/
+apps/web/dist/
+apps/web/playwright-report/
+apps/web/test-results/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+.qoder/

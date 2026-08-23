@@ -1,0 +1,23 @@
+"""Pluggable external calendar provider contracts; no synchronization yet."""
+
+from typing import Protocol
+
+
+class CalendarProvider(Protocol):
+    name: str
+
+    async def authorize_url(self, state: str) -> str: ...
+    async def export_calendar(self, calendar_id: str) -> bytes: ...
+    async def import_calendar(self, payload: bytes) -> list[dict[str, object]]: ...
+
+
+class GoogleCalendarProvider(CalendarProvider): ...
+
+
+class OutlookCalendarProvider(CalendarProvider): ...
+
+
+class AppleCalendarProvider(CalendarProvider): ...
+
+
+class IcsCalendarProvider(CalendarProvider): ...
