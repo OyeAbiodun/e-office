@@ -83,7 +83,7 @@ class AuthService:
         self.session = session
         self.settings = settings
         self.access_tokens = AccessTokenService(settings)
-        self.email_sender = IdentityEmailSender()
+        self.email_sender = IdentityEmailSender(session, settings)
 
     async def _load_user(self, user_id: uuid.UUID) -> User | None:
         result = await self.session.execute(
@@ -311,7 +311,7 @@ class AuthService:
                 "password_reset",
                 timedelta(minutes=self.settings.password_reset_ttl_minutes),
             )
-            await self.email_sender.send_password_reset(user.email, raw_token)
+            await self.email_sender.send_password_reset(user.email, raw_token, user.organization_id)
 
     async def reset_password(self, raw_token: str, new_password: str) -> None:
         """Consume a reset token, update the password, and revoke sessions."""
@@ -343,7 +343,7 @@ class AuthService:
             raw_token = await self._issue_one_time_token(
                 user.id, "verify_email", timedelta(hours=self.settings.email_verification_ttl_hours)
             )
-            await self.email_sender.send_verification(user.email, raw_token)
+            await self.email_sender.send_verification(user.email, raw_token, user.organization_id)
 
     async def sessions(self, user: User, current_refresh: str | None) -> list[SessionResponse]:
         """List active device sessions for the current user."""

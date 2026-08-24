@@ -56,7 +56,7 @@ class UserService:
         self.session = session
         self.settings = settings
         self.activity = DatabaseActivityPublisher(session)
-        self.email = IdentityEmailSender()
+        self.email = IdentityEmailSender(session, settings)
 
     async def get(self, organization_id: uuid.UUID, user_id: uuid.UUID) -> User:
         user = await self.session.scalar(
@@ -149,7 +149,7 @@ class UserService:
             )
         )
         if body.send_welcome_email:
-            await self.email.send_temporary_password(email, temporary_password)
+            await self.email.send_temporary_password(email, temporary_password, organization_id)
         return user, temporary_password
 
     async def update(
@@ -200,7 +200,7 @@ class UserService:
         user.force_password_change = True
         user.failed_login_attempts = 0
         user.locked_until = None
-        await self.email.send_temporary_password(user.email, temporary_password)
+        await self.email.send_temporary_password(user.email, temporary_password, organization_id)
         await self.activity.publish(
             Activity(
                 organization_id=organization_id,

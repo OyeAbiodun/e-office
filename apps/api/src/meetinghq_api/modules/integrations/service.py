@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
+from meetinghq_api.core.network import validate_public_http_endpoint
 from meetinghq_api.core.secrets import SecretVault
 from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.configuration.models import ConfigurationEntry, FeatureFlag
@@ -182,7 +183,7 @@ class IntegrationService:
             message = await self._probe(provider, values)
             result_status: Literal["healthy", "attention"] = "healthy"
         except Exception as error:
-            message = f"Connection failed: {str(error)[:240]}"
+            message = f"Connection failed ({type(error).__name__}). Verify the provider settings."
             result_status = "attention"
         response = IntegrationTestResponse(
             key=key,
@@ -286,12 +287,15 @@ class IntegrationService:
             await asyncio.to_thread(self._probe_imap, values)
             return "IMAP authentication completed successfully."
         endpoint = self._endpoint(provider, values)
+        await validate_public_http_endpoint(endpoint)
         headers: dict[str, str] = {}
         token = values.get("token") or values.get("api_key")
         if isinstance(token, str) and token:
             headers["Authorization"] = f"Bearer {token}"
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
             response = await client.get(endpoint, headers=headers)
+            if response.is_redirect:
+                raise ValueError("Provider endpoint redirects are not allowed during validation")
             response.raise_for_status()
         return f"{provider.name} endpoint responded with HTTP {response.status_code}."
 

@@ -134,6 +134,31 @@ class ApiEnvelopeMiddleware(BaseHTTPMiddleware):
         return wrapped_response
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Apply a conservative browser security baseline to every API response."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data: https:; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "connect-src 'self'",
+        )
+        if request.app.state.environment in {"staging", "production"}:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+
 def install_error_handlers(application: FastAPI) -> None:
     """Translate expected failures and hide unexpected exception details."""
 

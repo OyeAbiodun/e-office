@@ -10,12 +10,7 @@ export interface FeatureFlag {
   maintenance_mode: boolean
   release_stage: 'internal' | 'beta' | 'public'
   availability_status:
-    | 'available'
-    | 'beta'
-    | 'preview'
-    | 'coming_soon'
-    | 'deprecated'
-    | 'disabled'
+    'available' | 'beta' | 'preview' | 'coming_soon' | 'deprecated' | 'disabled'
   implementation_status: string
   planned_version: string | null
   estimated_availability: string | null

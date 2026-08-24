@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from meetinghq_api.api.v1.router import router as v1_router
 from meetinghq_api.bootstrap import (
@@ -18,12 +19,14 @@ from meetinghq_api.core.logging import configure_logging
 from meetinghq_api.core.middleware import (
     ApiEnvelopeMiddleware,
     MutationAuditMiddleware,
+    SecurityHeadersMiddleware,
     install_error_handlers,
 )
 from meetinghq_api.infrastructure.database import engine, session_factory
 from meetinghq_api.infrastructure.redis import redis_client
 from meetinghq_api.infrastructure.runtime_health import runtime_health
 from meetinghq_api.modules.integrations.service import IntegrationService
+from meetinghq_api.modules.mail.service import MailService
 from meetinghq_api.modules.notifications.service import NotificationService
 
 logger = structlog.get_logger(__name__)
@@ -36,7 +39,10 @@ async def reminder_worker(stop: asyncio.Event) -> None:
     while not stop.is_set():
         try:
             async with session_factory() as session:
-                delivered = await NotificationService(session, settings).process_due_reminders()
+                service = NotificationService(session, settings)
+                delivered = await service.process_due_invitations()
+                delivered += await service.process_due_reminders()
+                delivered += await MailService(session, settings).process_due_deliveries()
                 await session.commit()
             if delivered:
                 await logger.ainfo("meeting_reminders_delivered", count=delivered)
@@ -95,6 +101,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     application.state.audit_session_factory = session_factory
+    application.state.environment = settings.environment
+    application.add_middleware(SecurityHeadersMiddleware)
+    application.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.trusted_hosts,
+    )
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.api_cors_origins,

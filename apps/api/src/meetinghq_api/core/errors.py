@@ -45,3 +45,10 @@ class RateLimitError(ApplicationError):
 
     status_code = 429
     code = "rate_limited"
+
+
+class InfrastructureUnavailableError(ApplicationError):
+    """A required security or infrastructure dependency is unavailable."""
+
+    status_code = 503
+    code = "infrastructure_unavailable"

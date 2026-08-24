@@ -12,6 +12,8 @@ production credentials.
 | `MEETINGHQ_API_PORT` | No | `8000` | API bind port |
 | `MEETINGHQ_RUN_MIGRATIONS` | Deployment-specific | `true` locally | Container entrypoint migration switch. Set `false` on API/worker workloads after a dedicated migration Job succeeds. |
 | `MEETINGHQ_API_CORS_ORIGINS` | Yes | JSON array | Explicit trusted browser origins |
+| `MEETINGHQ_TRUSTED_HOSTS` | Yes | JSON array | Accepted HTTP Host values; wildcards are rejected for staging/production |
+| `MEETINGHQ_WEB_APP_URL` | Yes | absolute origin | Browser origin used for password, invitation, and verification links |
 | `MEETINGHQ_DATABASE_URL` | Yes | PostgreSQL async URL | SQLAlchemy `postgresql+asyncpg` connection URL |
 | `MEETINGHQ_REDIS_URL` | Yes | Redis URL | Cache and coordination connection |
 | `MEETINGHQ_JWT_SECRET` | Yes | local-only value | HMAC signing secret, minimum 32 characters |
@@ -29,6 +31,9 @@ production credentials.
 | `MEETINGHQ_LOGIN_LOCK_MINUTES` | No | `15` | Temporary account lock duration |
 | `MEETINGHQ_AUTH_RATE_LIMIT_REQUESTS` | No | `10` | Authentication requests per fixed window |
 | `MEETINGHQ_AUTH_RATE_LIMIT_WINDOW_SECONDS` | No | `60` | Rate-limit window |
+| `MEETINGHQ_AUTH_RATE_LIMIT_FAIL_CLOSED` | Yes | `false` locally | Must be `true` in staging/production so Redis loss cannot bypass authentication throttling |
+| `MEETINGHQ_DELIVERY_MAX_ATTEMPTS` | No | `5` | Durable outbound delivery attempt limit |
+| `MEETINGHQ_DELIVERY_RETRY_BASE_SECONDS` | No | `60` | Base delay for exponential durable delivery retries |
 | `INITIAL_SUPER_ADMIN_EMAIL` | Empty installation | none | Initial verified Super Admin email |
 | `INITIAL_SUPER_ADMIN_PASSWORD` | Empty installation | none | Initial administrator password; rotate after login |
 | `INITIAL_SUPER_ADMIN_FIRST_NAME` | Empty installation | none | Initial administrator first name |
@@ -39,6 +44,10 @@ production credentials.
 | `POSTGRES_DB` | Compose only | `meetinghq` | Development database name |
 | `POSTGRES_USER` | Compose only | `meetinghq` | Development database user |
 | `POSTGRES_PASSWORD` | Compose only | local-only value | Development database password |
+| `MEETINGHQ_POSTGRES_PUBLISHED_PORT` | Compose only | `5432` | Host port; select an isolated value when another stack is running |
+| `MEETINGHQ_REDIS_PUBLISHED_PORT` | Compose only | `6379` | Host port; select an isolated value when another stack is running |
+| `MEETINGHQ_API_PUBLISHED_PORT` | Compose only | `8000` | API host port |
+| `MEETINGHQ_WEB_PUBLISHED_PORT` | Compose only | `5173` | Web host port |
 | `MEETINGHQ_STORAGE_PROVIDER` | Yes | `local` | Storage adapter selection |
 | `MEETINGHQ_LOCAL_STORAGE_PATH` | Local storage only | `./storage` | Root for opaque local objects |
 | `MEETINGHQ_PUBLIC_STORAGE_URL` | Local storage only | `/api/v1/storage` | Stable object URL prefix |

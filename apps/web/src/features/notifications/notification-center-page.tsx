@@ -121,10 +121,26 @@ export function NotificationCenterPage() {
           label="Unread"
           value={notifications.data?.unread ?? 0}
         />
-        <Metric icon={Bell} label="In inbox" value={notifications.data?.total ?? 0} />
-        <Metric icon={BellRing} label="Mentions" value={notifications.data?.mentions ?? 0} />
-        <Metric icon={Clock3} label="Meetings" value={notifications.data?.meetings ?? 0} />
-        <Metric icon={Mail} label="Approvals" value={notifications.data?.approvals ?? 0} />
+        <Metric
+          icon={Bell}
+          label="In inbox"
+          value={notifications.data?.total ?? 0}
+        />
+        <Metric
+          icon={BellRing}
+          label="Mentions"
+          value={notifications.data?.mentions ?? 0}
+        />
+        <Metric
+          icon={Clock3}
+          label="Meetings"
+          value={notifications.data?.meetings ?? 0}
+        />
+        <Metric
+          icon={Mail}
+          label="Approvals"
+          value={notifications.data?.approvals ?? 0}
+        />
       </section>
       {settingsOpen && preferences.data && (
         <Preferences
@@ -180,10 +196,18 @@ export function NotificationCenterPage() {
               <span className="mr-auto text-sm font-semibold">
                 {selected.size} selected
               </span>
-              <button className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold" onClick={() => bulk.mutate('read')} type="button">
+              <button
+                className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold"
+                onClick={() => bulk.mutate('read')}
+                type="button"
+              >
                 Mark selected read
               </button>
-              <button className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold" onClick={() => bulk.mutate('archive')} type="button">
+              <button
+                className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold"
+                onClick={() => bulk.mutate('archive')}
+                type="button"
+              >
                 Archive selected
               </button>
             </div>
@@ -288,11 +312,26 @@ export function NotificationCenterPage() {
           {(notifications.data?.total_pages ?? 1) > 1 && (
             <footer className="flex items-center justify-between gap-3 border-t p-4 text-sm">
               <span className="text-muted-foreground">
-                Page {notifications.data?.page} of {notifications.data?.total_pages}
+                Page {notifications.data?.page} of{' '}
+                {notifications.data?.total_pages}
               </span>
               <div className="flex gap-2">
-                <button className="rounded-lg border px-3 py-1.5 disabled:opacity-50" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} type="button">Previous</button>
-                <button className="rounded-lg border px-3 py-1.5 disabled:opacity-50" disabled={page >= (notifications.data?.total_pages ?? 1)} onClick={() => setPage((value) => value + 1)} type="button">Next</button>
+                <button
+                  className="rounded-lg border px-3 py-1.5 disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((value) => value - 1)}
+                  type="button"
+                >
+                  Previous
+                </button>
+                <button
+                  className="rounded-lg border px-3 py-1.5 disabled:opacity-50"
+                  disabled={page >= (notifications.data?.total_pages ?? 1)}
+                  onClick={() => setPage((value) => value + 1)}
+                  type="button"
+                >
+                  Next
+                </button>
               </div>
             </footer>
           )}

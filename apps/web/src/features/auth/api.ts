@@ -4,9 +4,11 @@ import {
   operation,
 } from '@/components/feedback/events'
 
-export const apiBaseUrl =
-  import.meta.env.VITE_API_URL ??
-  `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
+
+export const apiBaseUrl = (
+  configuredApiUrl || `${window.location.origin}/api/v1`
+).replace(/\/$/, '')
 
 export interface AuthUser {
   id: string
@@ -165,6 +167,7 @@ export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
   authenticated = false,
+  feedback = true,
 ): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase()
   const mutation =
@@ -188,7 +191,7 @@ export async function apiRequest<T>(
       options,
       authenticated ? accessToken : null,
     )
-    if (mutation)
+    if (mutation && feedback)
       notify({
         tone: 'success',
         title:
@@ -210,7 +213,7 @@ export async function apiRequest<T>(
       authLog('access_token_rejected', { path, action: 'refresh_and_retry' })
       await refreshSession()
       const result = await fetchApi<T>(path, options, accessToken)
-      if (mutation)
+      if (mutation && feedback)
         notify({
           tone: 'success',
           title: 'Completed successfully',
@@ -223,7 +226,7 @@ export async function apiRequest<T>(
       if (window.location.pathname !== '/forbidden')
         window.location.assign('/forbidden')
     }
-    if (mutation)
+    if (mutation && feedback)
       notify({
         tone: 'error',
         title: 'Action could not be completed',
@@ -263,8 +266,11 @@ export async function apiRawRequest(
 }
 
 export async function authenticatedAsset(assetUrl: string): Promise<Blob> {
-  const asset = new URL(assetUrl, window.location.origin)
   const base = new URL(apiBaseUrl, window.location.origin)
+  const asset = new URL(
+    assetUrl,
+    assetUrl.startsWith('/') ? base.origin : window.location.origin,
+  )
   if (asset.origin !== base.origin || !asset.pathname.startsWith(base.pathname))
     throw new ApiError('Unsupported protected asset URL', 400)
   const relativePath = `${asset.pathname.slice(base.pathname.length)}${asset.search}`

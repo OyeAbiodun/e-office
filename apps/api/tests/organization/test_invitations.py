@@ -13,7 +13,12 @@ async def test_invitation_acceptance(
 ) -> None:
     delivered: list[str] = []
 
-    async def capture(_: IdentityEmailSender, email: str, token: str) -> None:
+    async def capture(
+        _: IdentityEmailSender,
+        email: str,
+        token: str,
+        organization_id: object | None = None,
+    ) -> None:
         delivered.append(token)
 
     monkeypatch.setattr(IdentityEmailSender, "send_invitation", capture)

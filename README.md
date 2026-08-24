@@ -7,6 +7,11 @@ foundation: an asynchronous FastAPI API, a React application, tenant-aware
 authentication, calendars, meeting lifecycle, collaboration, Internal Mail,
 administration centers, infrastructure, quality gates, and CI.
 
+This repository is under release-candidate hardening. Passing local checks is not a
+production-readiness claim; promotion requires the staging, SMTP, PostgreSQL migration,
+backup-restore, performance, and security evidence in the
+[GCP release checklist](docs/deployment/gcp.md#release-checklist).
+
 ## Architecture
 
 ```text
@@ -129,6 +134,7 @@ state transitions publish durable activity events used by the real dashboard.
 
 - [Local development](docs/local-development.md)
 - [GCP deployment](docs/deployment/gcp.md)
+- [Backup, restore, and disaster recovery](docs/disaster-recovery.md)
 - [Production-readiness audit](docs/production-readiness-audit.md)
 - [Environment variables](docs/environment.md)
 - [Administration Centers](docs/administration-centers.md)

@@ -68,7 +68,12 @@ from meetinghq_api.modules.meetings.schemas import (
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.events import DomainEvent
-from meetinghq_api.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from meetinghq_api.shared.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 
 TRANSITIONS: dict[MeetingStatus, frozenset[MeetingStatus]] = {
     MeetingStatus.DRAFT: frozenset({MeetingStatus.SCHEDULED, MeetingStatus.CANCELLED}),
@@ -102,6 +107,11 @@ class MeetingService:
         if meeting is None:
             raise NotFoundError("Meeting not found")
         return meeting
+
+    @staticmethod
+    def _require_organizer(meeting: Meeting, actor_id: uuid.UUID, allow_manage: bool) -> None:
+        if meeting.organizer_id != actor_id and not allow_manage:
+            raise AuthorizationError("Only the organizer or a meeting administrator can modify it")
 
     async def find(
         self,
@@ -282,8 +292,10 @@ class MeetingService:
         meeting_id: uuid.UUID,
         body: MeetingUpdate,
         actor_id: uuid.UUID,
+        allow_manage: bool = False,
     ) -> Meeting:
         meeting = await self.get(organization_id, meeting_id)
+        self._require_organizer(meeting, actor_id, allow_manage)
         for field, value in body.model_dump(exclude_unset=True).items():
             setattr(meeting, field, value)
         events = list(
@@ -301,8 +313,10 @@ class MeetingService:
             "meeting_updated",
             f"Meeting updated: {meeting.title}",
             f"{meeting.title} was updated. Open MeetingHQ for the latest details.",
+            calendar_method="REQUEST",
         )
         await self._record("MeetingUpdated", meeting, actor_id)
+        meeting.updated_at = datetime.now(UTC)
         return meeting
 
     async def transition(
@@ -311,8 +325,10 @@ class MeetingService:
         meeting_id: uuid.UUID,
         target: MeetingStatus,
         actor_id: uuid.UUID,
+        allow_manage: bool = False,
     ) -> Meeting:
         meeting = await self.get(organization_id, meeting_id)
+        self._require_organizer(meeting, actor_id, allow_manage)
         if target not in TRANSITIONS[meeting.status]:
             raise ValidationError(f"Cannot transition meeting from {meeting.status} to {target}")
         meeting.status = target
@@ -329,6 +345,7 @@ class MeetingService:
                 "meeting_cancelled",
                 f"Meeting cancelled: {meeting.title}",
                 f"{meeting.title} scheduled for {meeting.start_datetime.isoformat()} was cancelled.",
+                calendar_method="CANCEL",
             )
         names = {
             MeetingStatus.CANCELLED: "MeetingCancelled",
@@ -338,6 +355,7 @@ class MeetingService:
         await self._record(
             names.get(target, "MeetingUpdated"), meeting, actor_id, {"status": target}
         )
+        meeting.updated_at = datetime.now(UTC)
         return meeting
 
     async def reschedule(
@@ -346,8 +364,10 @@ class MeetingService:
         meeting_id: uuid.UUID,
         body: RescheduleRequest,
         actor_id: uuid.UUID,
+        allow_manage: bool = False,
     ) -> Meeting:
         meeting = await self.get(organization_id, meeting_id)
+        self._require_organizer(meeting, actor_id, allow_manage)
         if meeting.status in {
             MeetingStatus.CANCELLED,
             MeetingStatus.COMPLETED,
@@ -424,8 +444,10 @@ class MeetingService:
             "meeting_updated",
             f"Meeting rescheduled: {meeting.title}",
             f"{meeting.title} now starts at {meeting.start_datetime.isoformat()} ({meeting.timezone}).",
+            calendar_method="REQUEST",
         )
         await self._record("MeetingRescheduled", meeting, actor_id)
+        meeting.updated_at = datetime.now(UTC)
         return meeting
 
     async def duplicate(

@@ -1,6 +1,9 @@
 """System Health and Audit Center integration coverage."""
 
 from httpx import AsyncClient
+from pytest import MonkeyPatch
+
+from meetinghq_api.modules.notifications.service import MeetingEmailSender
 
 
 async def test_system_health_returns_live_operational_snapshot(
@@ -28,6 +31,42 @@ async def test_system_health_returns_live_operational_snapshot(
         "integrations",
     }
     assert data["queue"].keys() == {"pending", "failed", "delivered"}
+
+    components = data["components"]
+    expected_score = max(
+        0,
+        100
+        - sum(
+            15
+            for component in components
+            if component["requirement"] in {"required", "configured"}
+            and component["status"] == "not_configured"
+        )
+        - sum(
+            10
+            for component in components
+            if component["requirement"] in {"required", "configured"}
+            and component["status"] == "degraded"
+        )
+        - sum(
+            25
+            for component in components
+            if component["requirement"] in {"required", "configured"}
+            and component["status"] == "unavailable"
+        ),
+    )
+    assert data["score"] == expected_score
+
+    smtp = next(component for component in components if component["key"] == "smtp")
+    assert smtp["status"] == "not_configured"
+    assert smtp["requirement"] == "recommended"
+    assert smtp["configured"] is False
+
+    storage = next(component for component in components if component["key"] == "storage")
+    disk = next(component for component in components if component["key"] == "disk")
+    assert storage["details"]["path"] == disk["details"]["path"]
+    assert storage["details"]["total_bytes"] == disk["details"]["total_bytes"]
+    assert abs(storage["details"]["used_bytes"] - disk["details"]["used_bytes"]) < 10 * 1024 * 1024
 
 
 async def test_audit_center_lists_and_exports_only_current_tenant(
@@ -61,3 +100,42 @@ async def test_audit_center_lists_and_exports_only_current_tenant(
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("text/csv")
     assert "admin@other.example" not in exported.text
+
+
+async def test_system_health_validates_tenant_smtp_configuration(
+    meeting_client: AsyncClient,
+    meeting_identity: tuple[dict[str, str], str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    headers, _ = meeting_identity
+    configured = await meeting_client.put(
+        "/api/v1/integrations/smtp",
+        headers=headers,
+        json={
+            "values": {
+                "host": "smtp.example.test",
+                "port": 587,
+                "username": "mailer@example.test",
+                "password": "tenant-secret-not-returned",
+                "from_email": "meetings@example.test",
+            }
+        },
+    )
+    assert configured.status_code == 200
+
+    async def successful_probe(_: MeetingEmailSender) -> None:
+        return None
+
+    monkeypatch.setattr(MeetingEmailSender, "test_connection", successful_probe)
+    response = await meeting_client.get("/api/v1/system-health", headers=headers)
+
+    assert response.status_code == 200
+    smtp = next(
+        component
+        for component in response.json()["data"]["components"]
+        if component["key"] == "smtp"
+    )
+    assert smtp["status"] == "healthy"
+    assert smtp["requirement"] == "configured"
+    assert smtp["configured"] is True
+    assert smtp["details"] == {"mode": "smtp", "validated": True}

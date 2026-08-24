@@ -1,7 +1,7 @@
 """Redis-backed authentication rate-limit hook."""
 
 from meetinghq_api.core.config import Settings
-from meetinghq_api.core.errors import RateLimitError
+from meetinghq_api.core.errors import InfrastructureUnavailableError, RateLimitError
 from meetinghq_api.infrastructure.redis import redis_client
 
 
@@ -22,7 +22,9 @@ class AuthRateLimiter:
                 raise RateLimitError("Too many requests. Please try again later.")
         except RateLimitError:
             raise
-        except Exception:
-            # Availability wins when the optional limiter is unavailable; production
-            # monitoring must alert on Redis readiness independently.
+        except Exception as exc:
+            if self._settings.auth_rate_limit_fail_closed:
+                raise InfrastructureUnavailableError(
+                    "Authentication protection is temporarily unavailable"
+                ) from exc
             return

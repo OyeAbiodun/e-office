@@ -19,6 +19,7 @@ from meetinghq_api.modules.notifications.models import (
     MeetingInvitationDelivery,
     MeetingReminder,
 )
+from meetinghq_api.modules.notifications.service import EmailDeliveryError, MeetingEmailSender
 from meetinghq_api.modules.system_health.models import SystemHealthSnapshot
 from meetinghq_api.modules.system_health.schemas import (
     ComponentHealth,
@@ -51,7 +52,7 @@ class SystemHealthService:
             await self._redis(),
             self._worker(now),
             self._scheduler(now),
-            self._smtp(),
+            await self._smtp(organization_id),
             self._storage(),
             *self._host_resources(),
             self._websocket(),
@@ -89,7 +90,7 @@ class SystemHealthService:
         evaluated = [
             component
             for component in components
-            if component.requirement == "required" or component.configured
+            if component.requirement in {"required", "configured"}
         ]
         score = max(
             0,
@@ -269,25 +270,50 @@ class SystemHealthService:
             details={"poll_seconds": self.settings.reminder_poll_seconds},
         )
 
-    def _smtp(self) -> ComponentHealth:
-        configured = bool(self.settings.smtp_host)
-        return ComponentHealth(
-            key="smtp",
-            name="Email delivery",
-            category="providers",
-            status="healthy" if configured else "not_configured",
-            requirement="configured" if configured else "recommended",
-            configured=configured,
-            message=(
-                "SMTP provider is configured for outbound delivery."
-                if configured
-                else (
+    async def _smtp(self, organization_id: uuid.UUID) -> ComponentHealth:
+        sender = await MeetingEmailSender.for_organization(
+            self.session, self.settings, organization_id
+        )
+        configured = sender.configured
+        if not configured:
+            return ComponentHealth(
+                key="smtp",
+                name="Email delivery",
+                category="providers",
+                status="not_configured",
+                requirement="recommended",
+                configured=False,
+                message=(
                     "SMTP is not configured; messages are written to the local "
                     "outbox and cannot reach external participants."
-                )
-            ),
-            details={"mode": "smtp" if configured else "local_outbox"},
-        )
+                ),
+                details={"mode": "local_outbox", "validated": False},
+            )
+        started = time.perf_counter()
+        try:
+            await sender.test_connection()
+            return ComponentHealth(
+                key="smtp",
+                name="Email delivery",
+                category="providers",
+                status="healthy",
+                requirement="configured",
+                configured=True,
+                message="The configured SMTP provider accepted a handshake and authentication.",
+                latency_ms=round((time.perf_counter() - started) * 1000, 2),
+                details={"mode": "smtp", "validated": True},
+            )
+        except EmailDeliveryError as error:
+            return ComponentHealth(
+                key="smtp",
+                name="Email delivery",
+                category="providers",
+                status="unavailable",
+                requirement="configured",
+                configured=True,
+                message="The configured SMTP provider failed validation.",
+                details={"mode": "smtp", "validated": False, "error": str(error)},
+            )
 
     def _storage(self) -> ComponentHealth:
         path = Path(self.settings.local_storage_path).resolve()
@@ -295,16 +321,33 @@ class SystemHealthService:
             path.mkdir(parents=True, exist_ok=True)
             usage = shutil.disk_usage(path)
             free_percent = round((usage.free / usage.total) * 100, 1)
+            status: HealthState = (
+                "unavailable"
+                if free_percent <= self.settings.storage_critical_free_percent
+                else (
+                    "degraded"
+                    if free_percent <= self.settings.storage_warning_free_percent
+                    else "healthy"
+                )
+            )
             return ComponentHealth(
                 key="storage",
                 name="File storage",
                 category="infrastructure",
-                status="healthy" if free_percent >= 10 else "degraded",
-                message=f"Storage is writable with {free_percent}% free capacity.",
+                status=status,
+                message=(
+                    f"Configured storage path {path} is writable with "
+                    f"{free_percent}% free capacity."
+                ),
                 details={
                     "provider": self.settings.storage_provider,
+                    "path": str(path),
                     "free_bytes": usage.free,
+                    "used_bytes": usage.used,
                     "total_bytes": usage.total,
+                    "free_percent": free_percent,
+                    "warning_free_percent": self.settings.storage_warning_free_percent,
+                    "critical_free_percent": self.settings.storage_critical_free_percent,
                 },
             )
         except OSError as error:
@@ -324,7 +367,10 @@ class SystemHealthService:
             category="application",
             status="healthy",
             message="WebSocket endpoint is registered and available.",
-            details={"path": "/api/v1/chat/ws"},
+            details={
+                "paths": ["/api/v1/chat/ws/{conversation_id}", "/api/v1/notifications/ws"],
+                "probe": "route_registration_only",
+            },
         )
 
     async def _integrations(self, organization_id: object) -> ComponentHealth:
@@ -381,39 +427,80 @@ class SystemHealthService:
         )
 
     def _host_resources(self) -> list[ComponentHealth]:
-        disk = shutil.disk_usage(Path(self.settings.local_storage_path).resolve())
+        measured_path = Path(self.settings.local_storage_path).resolve()
+        disk = shutil.disk_usage(measured_path)
         disk_percent = round((disk.used / disk.total) * 100, 1)
         memory = psutil.virtual_memory()
         cpu_percent = psutil.cpu_percent(interval=None)
+        disk_status = self._capacity_status(
+            disk_percent,
+            self.settings.disk_warning_used_percent,
+            self.settings.disk_critical_used_percent,
+        )
+        cpu_status = self._capacity_status(
+            cpu_percent,
+            self.settings.cpu_warning_used_percent,
+            self.settings.cpu_critical_used_percent,
+        )
+        memory_status = self._capacity_status(
+            memory.percent,
+            self.settings.memory_warning_used_percent,
+            self.settings.memory_critical_used_percent,
+        )
         return [
             ComponentHealth(
                 key="disk",
                 name="Disk capacity",
                 category="infrastructure",
-                status="healthy" if disk_percent < 90 else "degraded",
-                message=f"Disk utilization is {disk_percent}%.",
-                details={"used_percent": disk_percent},
+                status=disk_status,
+                requirement="recommended",
+                message=f"Filesystem containing {measured_path} is {disk_percent}% utilized.",
+                details={
+                    "path": str(measured_path),
+                    "total_bytes": disk.total,
+                    "used_bytes": disk.used,
+                    "available_bytes": disk.free,
+                    "used_percent": disk_percent,
+                    "warning_used_percent": self.settings.disk_warning_used_percent,
+                    "critical_used_percent": self.settings.disk_critical_used_percent,
+                },
             ),
             ComponentHealth(
                 key="cpu",
                 name="CPU",
                 category="infrastructure",
-                status="healthy" if cpu_percent < 95 else "degraded",
+                status=cpu_status,
+                requirement="recommended",
                 message=f"CPU utilization is {cpu_percent:.1f}%.",
-                details={"used_percent": round(cpu_percent, 1)},
+                details={
+                    "used_percent": round(cpu_percent, 1),
+                    "warning_used_percent": self.settings.cpu_warning_used_percent,
+                    "critical_used_percent": self.settings.cpu_critical_used_percent,
+                },
             ),
             ComponentHealth(
                 key="memory",
                 name="Memory",
                 category="infrastructure",
-                status="healthy" if memory.percent < 95 else "degraded",
+                status=memory_status,
+                requirement="recommended",
                 message=f"Memory utilization is {memory.percent:.1f}%.",
                 details={
                     "used_percent": round(memory.percent, 1),
                     "available_bytes": memory.available,
+                    "warning_used_percent": self.settings.memory_warning_used_percent,
+                    "critical_used_percent": self.settings.memory_critical_used_percent,
                 },
             ),
         ]
+
+    @staticmethod
+    def _capacity_status(value: float, warning: float, critical: float) -> HealthState:
+        if value >= critical:
+            return "unavailable"
+        if value >= warning:
+            return "degraded"
+        return "healthy"
 
     def _security(self) -> ComponentHealth:
         default_secret = self.settings.jwt_secret == "local-development-secret-change-me"

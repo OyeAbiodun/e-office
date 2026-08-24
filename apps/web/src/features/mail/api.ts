@@ -44,6 +44,9 @@ export interface MailMessage {
   read_receipt_requested: boolean
   delivery_status: string
   delivery_error: string | null
+  delivery_attempt_count: number
+  delivery_last_attempt_at: string | null
+  delivery_next_attempt_at: string | null
   sent_at: string | null
   read_at: string | null
   created_at: string
@@ -128,18 +131,28 @@ export const mailApi = {
       '/mail/drafts',
       { method: 'POST', body: JSON.stringify(values) },
       true,
+      false,
     ),
   updateDraft: (id: string, values: MailDraft) =>
     apiRequest<MailMessage>(
       `/mail/drafts/${id}`,
       { method: 'PUT', body: JSON.stringify(values) },
       true,
+      false,
     ),
   send: (id: string) =>
     apiRequest<MailMessage>(
       `/mail/drafts/${id}/send`,
       { method: 'POST' },
       true,
+      false,
+    ),
+  retry: (id: string) =>
+    apiRequest<MailMessage>(
+      `/mail/messages/${id}/retry`,
+      { method: 'POST' },
+      true,
+      false,
     ),
   uploadAttachment: async (id: string, file: File) => {
     const form = new FormData()

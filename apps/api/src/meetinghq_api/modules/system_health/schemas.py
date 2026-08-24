@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 HealthState = Literal["healthy", "degraded", "unavailable", "not_configured"]
 RequirementState = Literal["required", "recommended", "optional", "configured"]
@@ -18,7 +18,7 @@ class ComponentHealth(BaseModel):
     configured: bool = True
     message: str
     latency_ms: float | None = None
-    details: dict[str, object] = {}
+    details: dict[str, object] = Field(default_factory=dict)
 
 
 class QueueHealth(BaseModel):

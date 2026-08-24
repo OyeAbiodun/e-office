@@ -8,6 +8,7 @@ from meetinghq_api.core.config import get_settings
 from meetinghq_api.core.logging import configure_logging
 from meetinghq_api.infrastructure.database import engine, session_factory
 from meetinghq_api.infrastructure.redis import redis_client
+from meetinghq_api.modules.mail.service import MailService
 from meetinghq_api.modules.notifications.service import NotificationService
 
 logger = structlog.get_logger(__name__)
@@ -19,7 +20,10 @@ async def run_once() -> int:
     configure_logging(settings.log_level, json_output=settings.environment != "local")
     try:
         async with session_factory() as session:
-            delivered = await NotificationService(session, settings).process_due_reminders()
+            service = NotificationService(session, settings)
+            delivered = await service.process_due_invitations()
+            delivered += await service.process_due_reminders()
+            delivered += await MailService(session, settings).process_due_deliveries()
             await session.commit()
         await logger.ainfo("scheduled_worker_completed", delivered=delivered)
         return delivered

@@ -102,6 +102,16 @@ async def send_draft(
     return await MailService(session, settings).send_draft(user, message_id)
 
 
+@router.post("/messages/{message_id}/retry", response_model=MailMessageResponse)
+async def retry_delivery(
+    message_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: MailCreator,
+) -> MailMessageResponse:
+    return await MailService(session, settings).retry_delivery(user, message_id)
+
+
 @router.post(
     "/drafts/{message_id}/attachments",
     response_model=MailAttachmentResponse,

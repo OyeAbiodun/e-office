@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,6 +46,11 @@ class MailMessage(Base):
     read_receipt_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     delivery_status: Mapped[str] = mapped_column(String(24), default="draft")
     delivery_error: Mapped[str | None] = mapped_column(String(500))
+    delivery_attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    delivery_last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     reply_to_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

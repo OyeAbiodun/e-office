@@ -213,11 +213,13 @@ export function CommandCenter({
               Searching your workspace…
             </p>
           )}
-          {panel === 'command' && !search.isFetching && results.length === 0 && (
-            <p className="p-8 text-center text-sm text-muted-foreground">
-              No pages or resources match “{query}”.
-            </p>
-          )}
+          {panel === 'command' &&
+            !search.isFetching &&
+            results.length === 0 && (
+              <p className="p-8 text-center text-sm text-muted-foreground">
+                No pages or resources match “{query}”.
+              </p>
+            )}
           {panel === 'notifications' && notifications.isLoading && (
             <div
               aria-label="Loading activity"
@@ -251,7 +253,8 @@ export function CommandCenter({
                 <Activity className="mx-auto size-8 text-muted-foreground" />
                 <p className="mt-3 font-medium">You’re all caught up</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  New invitations, RSVP updates, mail, and reminders appear here.
+                  New invitations, RSVP updates, mail, and reminders appear
+                  here.
                 </p>
               </div>
             )}

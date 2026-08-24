@@ -1,10 +1,19 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
 
+function requiredEnvironment(name: string) {
+  const value = process.env[name]
+  if (!value) throw new Error(`${name} must be set for browser acceptance`)
+  return value
+}
+
+const organizerEmail = requiredEnvironment('PLAYWRIGHT_ORGANIZER_EMAIL')
+const organizerPassword = requiredEnvironment('PLAYWRIGHT_ORGANIZER_PASSWORD')
+
 async function login(page: Page) {
   await page.goto('/login')
-  await page.getByLabel('Work email').fill('textabi12@gmail.com')
-  await page.getByLabel('Password').fill('ChangeMe123!')
+  await page.getByLabel('Work email').fill(organizerEmail)
+  await page.getByLabel('Password').fill(organizerPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL('/', { timeout: 15_000 })
   await expect(
@@ -76,7 +85,7 @@ test('internal mail persists a sent rich-text message', async ({ page }) => {
   const subject = `Mail verification ${Date.now()}`
   await page
     .getByRole('textbox', { name: 'To recipients' })
-    .fill('textabi12@gmail.com')
+    .fill(organizerEmail)
   await page.getByRole('textbox', { name: 'Subject' }).fill(subject)
   await page
     .getByRole('textbox', { name: 'Message body' })

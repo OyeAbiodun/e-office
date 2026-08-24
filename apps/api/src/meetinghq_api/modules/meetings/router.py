@@ -57,6 +57,10 @@ AppSettings = Annotated[Settings, Depends(get_settings)]
 ArtifactUpload = Annotated[UploadFile, File()]
 
 
+def has_permission(user: User, permission: str) -> bool:
+    return any(item.name == permission for role in user.roles for item in role.permissions)
+
+
 @router.get("/meetings/dashboard", response_model=MeetingDashboard)
 async def meeting_dashboard(session: Session, user: ReadUser) -> MeetingDashboard:
     return MeetingDashboard.model_validate(
@@ -104,7 +108,13 @@ async def update_meeting(
     user: Annotated[User, require_permission(Permissions.MEETINGS_UPDATE)],
 ) -> MeetingResponse:
     return MeetingResponse.model_validate(
-        await MeetingService(session).update(user.organization_id, meeting_id, body, user.id)
+        await MeetingService(session).update(
+            user.organization_id,
+            meeting_id,
+            body,
+            user.id,
+            allow_manage=has_permission(user, Permissions.MEETINGS_MANAGE),
+        )
     )
 
 
@@ -117,7 +127,7 @@ async def transition_meeting(
 ) -> MeetingResponse:
     return MeetingResponse.model_validate(
         await MeetingService(session).transition(
-            user.organization_id, meeting_id, body.status, user.id
+            user.organization_id, meeting_id, body.status, user.id, allow_manage=True
         )
     )
 
@@ -132,7 +142,11 @@ async def cancel_meeting(
 
     return MeetingResponse.model_validate(
         await MeetingService(session).transition(
-            user.organization_id, meeting_id, MeetingStatus.CANCELLED, user.id
+            user.organization_id,
+            meeting_id,
+            MeetingStatus.CANCELLED,
+            user.id,
+            allow_manage=has_permission(user, Permissions.MEETINGS_MANAGE),
         )
     )
 
@@ -147,7 +161,11 @@ async def archive_meeting(
 
     return MeetingResponse.model_validate(
         await MeetingService(session).transition(
-            user.organization_id, meeting_id, MeetingStatus.ARCHIVED, user.id
+            user.organization_id,
+            meeting_id,
+            MeetingStatus.ARCHIVED,
+            user.id,
+            allow_manage=True,
         )
     )
 
@@ -160,7 +178,13 @@ async def reschedule_meeting(
     user: Annotated[User, require_permission(Permissions.MEETINGS_UPDATE)],
 ) -> MeetingResponse:
     return MeetingResponse.model_validate(
-        await MeetingService(session).reschedule(user.organization_id, meeting_id, body, user.id)
+        await MeetingService(session).reschedule(
+            user.organization_id,
+            meeting_id,
+            body,
+            user.id,
+            allow_manage=has_permission(user, Permissions.MEETINGS_MANAGE),
+        )
     )
 
 

@@ -24,6 +24,6 @@ async def client() -> AsyncIterator[AsyncClient]:
     """Provide an in-process HTTP client."""
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test",
+        base_url="http://127.0.0.1",
     ) as test_client:
         yield test_client

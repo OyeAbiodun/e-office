@@ -61,6 +61,9 @@ class MailMessageResponse(BaseModel):
     read_receipt_requested: bool
     delivery_status: str
     delivery_error: str | None
+    delivery_attempt_count: int
+    delivery_last_attempt_at: datetime | None
+    delivery_next_attempt_at: datetime | None
     sent_at: datetime | None
     read_at: datetime | None
     created_at: datetime

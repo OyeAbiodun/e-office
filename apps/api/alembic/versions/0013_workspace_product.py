@@ -47,7 +47,11 @@ def upgrade() -> None:
                 sa.Column(
                     "owner_id",
                     sa.Uuid(),
-                    sa.ForeignKey("users.id", ondelete="SET NULL"),
+                    sa.ForeignKey(
+                        "users.id",
+                        name="fk_workspaces_owner_id_users",
+                        ondelete="SET NULL",
+                    ),
                 )
             )
     indexes = {index["name"] for index in sa.inspect(op.get_bind()).get_indexes("workspaces")}
@@ -112,8 +116,7 @@ def upgrade() -> None:
     )
 
     # Existing primary workspaces gain an explicit owner from their owner membership.
-    op.execute(
-        """
+    op.execute("""
         UPDATE workspaces
         SET owner_id = (
             SELECT workspace_memberships.user_id
@@ -122,8 +125,7 @@ def upgrade() -> None:
               AND workspace_memberships.role = 'owner'
             LIMIT 1
         )
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

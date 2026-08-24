@@ -821,10 +821,7 @@ function MenuManager({
       await onPublished()
     },
   })
-  const update = (
-    key: string,
-    body: Partial<(typeof draft)[number]>,
-  ) => {
+  const update = (key: string, body: Partial<(typeof draft)[number]>) => {
     setDraft((current) =>
       current.map((item) => (item.key === key ? { ...item, ...body } : item)),
     )
@@ -972,9 +969,7 @@ function MenuManager({
                 {draft
                   .filter(
                     (item) =>
-                      item.section === section &&
-                      item.enabled &&
-                      !item.hidden,
+                      item.section === section && item.enabled && !item.hidden,
                   )
                   .sort((left, right) => left.position - right.position)
                   .map((item) => (

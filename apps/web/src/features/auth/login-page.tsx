@@ -28,7 +28,8 @@ export function LoginPage() {
         to: user.force_password_change ? '/change-password' : '/',
       })
     } catch (caught) {
-      const message = caught instanceof ApiError ? caught.message : 'Unable to sign in'
+      const message =
+        caught instanceof ApiError ? caught.message : 'Unable to sign in'
       if (message.toLowerCase().includes('multi-factor')) setMfaRequired(true)
       setError(message)
     }

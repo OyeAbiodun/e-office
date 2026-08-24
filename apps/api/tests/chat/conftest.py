@@ -27,7 +27,7 @@ async def chat_client() -> AsyncIterator[AsyncClient]:
                 raise
 
     app.dependency_overrides[get_database_session] = database_override
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1") as client:
         yield client
     app.dependency_overrides.clear()
     await engine.dispose()

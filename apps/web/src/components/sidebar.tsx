@@ -86,8 +86,7 @@ export function Sidebar({
   })
   const mailSummary = useQuery({
     queryKey: ['mail-messages', 'inbox', 'shell-summary'],
-    queryFn: () =>
-      mailApi.messages({ folder: 'inbox', page: 1, pageSize: 10 }),
+    queryFn: () => mailApi.messages({ folder: 'inbox', page: 1, pageSize: 10 }),
     refetchInterval: 15_000,
   })
   const label = organization.data?.name ?? 'MeetingHQ'

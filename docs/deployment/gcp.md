@@ -72,16 +72,19 @@ Never put a secret in `VITE_*`; Vite values are embedded in public browser asset
 
 ## Production configuration
 
-Set at minimum:
+For the first isolated **staging** acceptance environment, set at minimum:
 
 ```dotenv
-MEETINGHQ_ENVIRONMENT=production
+MEETINGHQ_ENVIRONMENT=staging
 MEETINGHQ_LOG_LEVEL=INFO
 MEETINGHQ_API_CORS_ORIGINS=["https://meetinghq.example"]
+MEETINGHQ_TRUSTED_HOSTS=["meetinghq.example"]
+MEETINGHQ_WEB_APP_URL=https://meetinghq.example
 MEETINGHQ_DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST:5432/meetinghq?ssl=require
 MEETINGHQ_REDIS_URL=redis://REDIS_PRIVATE_IP:6379/0
 MEETINGHQ_JWT_SECRET=<secret-manager-reference>
 MEETINGHQ_SECURE_COOKIES=true
+MEETINGHQ_AUTH_RATE_LIMIT_FAIL_CLOSED=true
 MEETINGHQ_STORAGE_PROVIDER=local
 MEETINGHQ_LOCAL_STORAGE_PATH=/var/lib/meetinghq/storage
 MEETINGHQ_PUBLIC_STORAGE_URL=/api/v1/storage
@@ -94,6 +97,11 @@ MEETINGHQ_SMTP_FROM_EMAIL=meetings@meetinghq.example
 MEETINGHQ_EMAIL_OUTBOX_PATH=/var/lib/meetinghq/storage/outbox
 VITE_API_URL=https://meetinghq.example/api/v1
 ```
+
+The current local adapter over a shared Filestore mount is acceptable only for isolated
+staging acceptance. `MEETINGHQ_ENVIRONMENT=production` intentionally refuses the local
+storage provider. A production object-storage adapter (recommended: private GCS with signed,
+tenant-scoped retrieval) remains a release blocker and must replace this staging bridge.
 
 The API and worker must mount the same Filestore path at
 `/var/lib/meetinghq/storage`. The web workload does not need this mount.

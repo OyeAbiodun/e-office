@@ -30,7 +30,7 @@ class InvitationService:
         self.session = session
         self.settings = settings
         self.events = events or TransactionalDomainEventPublisher(session)
-        self.email = IdentityEmailSender()
+        self.email = IdentityEmailSender(session, settings)
 
     async def list(self, organization_id: uuid.UUID) -> list[Invitation]:
         invitations = list(
@@ -88,7 +88,7 @@ class InvitationService:
         )
         self.session.add(invitation)
         await self.session.flush()
-        await self.email.send_invitation(normalized, raw_token)
+        await self.email.send_invitation(normalized, raw_token, organization_id)
         await self.events.publish(
             DomainEvent(
                 name="UserInvited",
@@ -115,7 +115,7 @@ class InvitationService:
         invitation.expires_at = datetime.now(UTC) + timedelta(
             days=self.settings.invitation_ttl_days
         )
-        await self.email.send_invitation(invitation.email, raw_token)
+        await self.email.send_invitation(invitation.email, raw_token, invitation.organization_id)
         return invitation
 
     async def cancel(self, organization_id: uuid.UUID, invitation_id: uuid.UUID) -> None:

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
+import { AuthenticatedAvatar } from '@/components/authenticated-avatar'
 import { useAuth } from '@/features/auth/auth-store'
 import { recentPages, subscribeRecentPages } from '@/lib/recent-pages'
 
@@ -67,7 +68,12 @@ export function ProfileMenu() {
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
-        {initials || 'U'}
+        <AuthenticatedAvatar
+          alt={`${user.display_name} profile picture`}
+          className="size-full object-cover"
+          fallback={initials}
+          src={user.avatar_url}
+        />
       </button>
       {open && (
         <div

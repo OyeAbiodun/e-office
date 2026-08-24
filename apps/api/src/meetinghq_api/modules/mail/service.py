@@ -5,7 +5,7 @@ import html
 import re
 import smtplib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -109,13 +109,27 @@ class MailDeliveryAdapter:
                 subtype=subtype or "octet-stream",
                 filename=attachment.filename,
             )
-        await asyncio.to_thread(self._smtp_send, host, message)
+        for attempt in range(1, self.settings.smtp_max_attempts + 1):
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(self._smtp_send, host, message),
+                    timeout=self.settings.smtp_timeout_seconds + 2,
+                )
+                break
+            except smtplib.SMTPAuthenticationError as exc:
+                raise ConflictError("SMTP authentication failed") from exc
+            except smtplib.SMTPRecipientsRefused as exc:
+                raise ValidationError("SMTP rejected one or more recipients") from exc
+            except Exception as exc:
+                if attempt >= self.settings.smtp_max_attempts:
+                    raise ConflictError(f"SMTP delivery failed ({type(exc).__name__})") from exc
+                await asyncio.sleep(self.settings.smtp_retry_base_seconds * (2 ** (attempt - 1)))
         return message_id
 
     def _smtp_send(self, host: str, message: EmailMessage) -> None:
         raw_port = self.values.get("port")
         port = int(raw_port) if isinstance(raw_port, (int, str)) else 587
-        with smtplib.SMTP(host, port, timeout=20) as client:
+        with smtplib.SMTP(host, port, timeout=self.settings.smtp_timeout_seconds) as client:
             if self.values.get("starttls", True):
                 client.starttls()
             username = self._string("username")
@@ -275,30 +289,141 @@ class MailService:
                     )
                 )
         external = [address for address in all_recipients if address not in internal_users]
-        delivery_error: str | None = None
-        if external:
-            configuration = await self._smtp_configuration(user.organization_id)
-            try:
-                await MailDeliveryAdapter(self.settings, configuration).send(
-                    user, external, message, attachments
-                )
-            except Exception as error:
-                delivery_error = str(error)[:500]
         message.folder = "sent"
-        message.status = "sent" if not delivery_error else "failed"
-        message.delivery_status = "delivered" if not delivery_error else "failed"
-        message.delivery_error = delivery_error
         message.sent_at = now
         message.is_read = True
         message.updated_at = now
+        if external:
+            await self._attempt_external_delivery(user, message, attachments, external)
+        else:
+            message.status = "sent"
+            message.delivery_status = "delivered"
+            message.delivery_error = None
         await self.session.flush()
         await self._audit(
             user,
             "mail.message.send",
             message.id,
-            {"internal_recipients": len(internal_users), "external_recipients": len(external)},
+            {
+                "internal_recipients": len(internal_users),
+                "external_recipients": len(external),
+                "delivery_status": message.delivery_status,
+                "delivery_attempt": message.delivery_attempt_count,
+            },
         )
         return self._response(message, attachments)
+
+    async def retry_delivery(self, user: User, message_id: uuid.UUID) -> MailMessageResponse:
+        """Retry a failed outbound message without duplicating internal mailbox copies."""
+        message = await self._message(user, message_id)
+        if message.delivery_status != "failed":
+            raise ConflictError("Only failed messages can be retried")
+        if message.delivery_attempt_count >= self.settings.delivery_max_attempts:
+            raise ConflictError("This message has reached the delivery retry limit")
+        attachments = (await self.repository.attachments([message.id])).get(message.id, [])
+        external = await self._external_recipients(message)
+        if not external:
+            raise ConflictError("This message has no external recipients to retry")
+        await self._attempt_external_delivery(user, message, attachments, external)
+        await self._audit(
+            user,
+            "mail.message.retry",
+            message.id,
+            {"attempt": message.delivery_attempt_count},
+        )
+        return self._response(message, attachments)
+
+    async def process_due_deliveries(self) -> int:
+        """Claim a bounded batch of failed SMTP messages for automatic retry."""
+        now = datetime.now(UTC)
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(MailMessage)
+                    .where(
+                        MailMessage.delivery_status == "failed",
+                        MailMessage.delivery_next_attempt_at <= now,
+                        MailMessage.delivery_attempt_count < self.settings.delivery_max_attempts,
+                    )
+                    .order_by(MailMessage.delivery_next_attempt_at)
+                    .limit(50)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+        )
+        delivered = 0
+        for message in rows:
+            owner = await self.session.scalar(
+                select(User).where(
+                    User.id == message.owner_id,
+                    User.organization_id == message.organization_id,
+                    User.removed_at.is_(None),
+                )
+            )
+            if owner is None:
+                message.delivery_next_attempt_at = None
+                continue
+            attachments = (await self.repository.attachments([message.id])).get(message.id, [])
+            external = await self._external_recipients(message)
+            if external and await self._attempt_external_delivery(
+                owner, message, attachments, external
+            ):
+                delivered += 1
+        return delivered
+
+    async def _attempt_external_delivery(
+        self,
+        user: User,
+        message: MailMessage,
+        attachments: list[MailAttachment],
+        external: list[str],
+    ) -> bool:
+        attempted_at = datetime.now(UTC)
+        message.delivery_attempt_count += 1
+        message.delivery_last_attempt_at = attempted_at
+        try:
+            configuration = await self._smtp_configuration(user.organization_id)
+            await MailDeliveryAdapter(self.settings, configuration).send(
+                user, external, message, attachments
+            )
+            message.status = "sent"
+            message.delivery_status = "delivered"
+            message.delivery_error = None
+            message.delivery_next_attempt_at = None
+            message.updated_at = datetime.now(UTC)
+            return True
+        except (ConflictError, ValidationError) as error:
+            message.status = "failed"
+            message.delivery_status = "failed"
+            message.delivery_error = str(error)[:500]
+        except Exception as error:
+            message.status = "failed"
+            message.delivery_status = "failed"
+            message.delivery_error = f"Delivery failed ({type(error).__name__})"
+        if message.delivery_attempt_count < self.settings.delivery_max_attempts:
+            delay = self.settings.delivery_retry_base_seconds * (
+                2 ** (message.delivery_attempt_count - 1)
+            )
+            message.delivery_next_attempt_at = attempted_at + timedelta(seconds=delay)
+        else:
+            message.delivery_next_attempt_at = None
+        message.updated_at = datetime.now(UTC)
+        return False
+
+    async def _external_recipients(self, message: MailMessage) -> list[str]:
+        recipients = self._unique_recipients(message)
+        internal = set(
+            (
+                await self.session.scalars(
+                    select(func.lower(User.email)).where(
+                        User.organization_id == message.organization_id,
+                        func.lower(User.email).in_(recipients),
+                        User.removed_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        return [address for address in recipients if address not in internal]
 
     async def add_attachment(
         self,

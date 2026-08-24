@@ -1,6 +1,11 @@
 """Internal Mail delivery, tenancy, and mailbox workflow coverage."""
 
 from httpx import AsyncClient
+from pytest import MonkeyPatch
+
+from meetinghq_api.modules.mail.models import MailAttachment, MailMessage
+from meetinghq_api.modules.mail.service import MailDeliveryAdapter, MailService
+from meetinghq_api.modules.users.models import User
 
 
 async def test_internal_mail_draft_delivery_and_tenant_isolation(
@@ -97,6 +102,7 @@ async def test_internal_mail_draft_delivery_and_tenant_isolation(
 async def test_external_mail_requires_integration_center_configuration(
     meeting_client: AsyncClient,
     meeting_identity: tuple[dict[str, str], str],
+    monkeypatch: MonkeyPatch,
 ) -> None:
     headers, _ = meeting_identity
     status = await meeting_client.get("/api/v1/mail/status", headers=headers)
@@ -120,8 +126,36 @@ async def test_external_mail_requires_integration_center_configuration(
     sent = await meeting_client.post(
         f"/api/v1/mail/drafts/{draft.json()['data']['id']}/send", headers=headers
     )
-    assert sent.status_code == 409
-    assert "Integration Center" in sent.json()["error"]["message"]
+    assert sent.status_code == 200, sent.text
+    failed = sent.json()["data"]
+    assert failed["delivery_status"] == "failed"
+    assert failed["delivery_attempt_count"] == 1
+    assert failed["delivery_next_attempt_at"] is not None
+    assert "Integration Center" in failed["delivery_error"]
+
+    async def configured(_service: MailService, _organization_id: object) -> dict[str, object]:
+        return {"host": "smtp.example.test"}
+
+    async def delivered(
+        _adapter: MailDeliveryAdapter,
+        _sender: User,
+        _recipients: list[str],
+        _draft: MailMessage,
+        _attachments: list[MailAttachment],
+    ) -> str:
+        return "<retry-success@meetinghq>"
+
+    monkeypatch.setattr(MailService, "_smtp_configuration", configured)
+    monkeypatch.setattr(MailDeliveryAdapter, "send", delivered)
+    retried = await meeting_client.post(
+        f"/api/v1/mail/messages/{draft.json()['data']['id']}/retry", headers=headers
+    )
+    assert retried.status_code == 200, retried.text
+    recovered = retried.json()["data"]
+    assert recovered["delivery_status"] == "delivered"
+    assert recovered["delivery_attempt_count"] == 2
+    assert recovered["delivery_error"] is None
+    assert recovered["delivery_next_attempt_at"] is None
 
 
 async def test_mail_draft_sanitizes_active_html(

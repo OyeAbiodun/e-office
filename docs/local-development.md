@@ -33,7 +33,7 @@ Run backend checks:
 
 ```bash
 ruff check apps/api
-ruff format --check apps/api
+black --check apps/api
 mypy --config-file apps/api/pyproject.toml
 pytest apps/api
 ```
@@ -70,8 +70,16 @@ npm run format:check
 npm run test
 npm run build
 npx playwright install chromium
+PLAYWRIGHT_ORGANIZER_EMAIL=admin@example.test \
+PLAYWRIGHT_ORGANIZER_PASSWORD='<local-bootstrap-password>' \
 npm run test:e2e
 ```
+
+Browser acceptance defaults to the isolated origins `http://127.0.0.1:5174` and
+`http://127.0.0.1:8001/api/v1`. Override `PLAYWRIGHT_BASE_URL` and
+`PLAYWRIGHT_API_URL` explicitly when those ports are unavailable. Never point acceptance
+tests at a shared, staging, or production database: the suite creates users, meetings,
+calendar entries, notifications, and mail, and intentionally exercises lifecycle changes.
 
 ## Adding a backend feature
 

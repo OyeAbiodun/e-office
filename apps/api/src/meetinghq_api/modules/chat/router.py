@@ -342,55 +342,61 @@ async def chat_socket(
         except Exception:
             await websocket.close(code=4404)
             return
-        await realtime_hub.connect(user.id, conversation_id, websocket)
-        await PresenceService(session).set(user.organization_id, user.id, PresenceStatus.ONLINE)
+        organization_id = user.organization_id
+    await realtime_hub.connect(user_id, conversation_id, websocket)
+    async with session_factory() as session:
+        await PresenceService(session).set(organization_id, user_id, PresenceStatus.ONLINE)
         await session.commit()
-        await realtime_hub.publish(
-            conversation_id,
-            {"type": "presence.changed", "data": {"user_id": str(user.id), "status": "online"}},
-        )
-        try:
-            while True:
-                packet = await websocket.receive_json()
-                event_type = packet.get("type")
-                data = packet.get("data") or {}
-                if event_type == "typing":
-                    await realtime_hub.publish(
-                        conversation_id,
-                        {
-                            "type": "typing",
-                            "data": {"user_id": str(user.id), "active": bool(data.get("active"))},
-                        },
-                    )
-                elif event_type == "message.send":
+    await realtime_hub.publish(
+        conversation_id,
+        {
+            "type": "presence.changed",
+            "data": {"user_id": str(user_id), "status": "online"},
+        },
+    )
+    try:
+        while True:
+            packet = await websocket.receive_json()
+            event_type = packet.get("type")
+            data = packet.get("data") or {}
+            if event_type == "typing":
+                await realtime_hub.publish(
+                    conversation_id,
+                    {
+                        "type": "typing",
+                        "data": {"user_id": str(user_id), "active": bool(data.get("active"))},
+                    },
+                )
+            elif event_type == "message.send":
+                async with session_factory() as session:
                     message = await ChatService(session, realtime_hub).send_message(
-                        user.organization_id,
+                        organization_id,
                         conversation_id,
                         MessageInput.model_validate(data),
-                        user.id,
+                        user_id,
                     )
                     await session.commit()
-                    await websocket.send_json(
-                        {"type": "message.ack", "data": {"id": str(message.id)}}
-                    )
-                elif event_type == "message.read":
+                await websocket.send_json({"type": "message.ack", "data": {"id": str(message.id)}})
+            elif event_type == "message.read":
+                async with session_factory() as session:
                     await ChatService(session, realtime_hub).mark_read(
-                        user.organization_id,
+                        organization_id,
                         conversation_id,
                         uuid.UUID(str(data["message_id"])),
-                        user.id,
+                        user_id,
                     )
                     await session.commit()
-        except WebSocketDisconnect:
-            realtime_hub.disconnect(user.id, conversation_id, websocket)
-            await PresenceService(session).set(
-                user.organization_id, user.id, PresenceStatus.OFFLINE
-            )
+    except (WebSocketDisconnect, RuntimeError, ValueError, KeyError):
+        pass
+    finally:
+        realtime_hub.disconnect(user_id, conversation_id, websocket)
+        async with session_factory() as session:
+            await PresenceService(session).set(organization_id, user_id, PresenceStatus.OFFLINE)
             await session.commit()
-            await realtime_hub.publish(
-                conversation_id,
-                {
-                    "type": "presence.changed",
-                    "data": {"user_id": str(user.id), "status": "offline"},
-                },
-            )
+        await realtime_hub.publish(
+            conversation_id,
+            {
+                "type": "presence.changed",
+                "data": {"user_id": str(user_id), "status": "offline"},
+            },
+        )

@@ -32,10 +32,14 @@ jobs:
       - name: Lint
         run: |
           ruff check .
-          ruff format --check .
+          black --check .
           mypy
       - name: Test
         run: pytest
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit .
       - name: Verify API starts
         env:
           MEETINGHQ_JWT_SECRET: ci-secret-value-with-at-least-32-characters
@@ -71,8 +75,87 @@ jobs:
           npm run format:check
       - name: Unit tests
         run: npm run test
+      - name: Dependency audit
+        run: npm audit --audit-level=high
       - name: Build
         run: npm run build
+
+  e2e:
+    name: Meeting lifecycle acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: meetinghq
+          POSTGRES_USER: meetinghq
+          POSTGRES_PASSWORD: meetinghq-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meetinghq -d meetinghq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MEETINGHQ_DATABASE_URL: postgresql+asyncpg://meetinghq:meetinghq-ci-only@127.0.0.1:5432/meetinghq
+      MEETINGHQ_REDIS_URL: redis://127.0.0.1:6379/0
+      MEETINGHQ_JWT_SECRET: meetinghq-ci-release-acceptance-secret
+      MEETINGHQ_API_CORS_ORIGINS: '["http://127.0.0.1:5174"]'
+      MEETINGHQ_TRUSTED_HOSTS: '["127.0.0.1","localhost"]'
+      MEETINGHQ_WEB_APP_URL: http://127.0.0.1:5174
+      INITIAL_SUPER_ADMIN_EMAIL: release.acceptance@meetinghq.local
+      INITIAL_SUPER_ADMIN_PASSWORD: MeetingHQ-Release-Acceptance-2026!
+      INITIAL_SUPER_ADMIN_FIRST_NAME: Release
+      INITIAL_SUPER_ADMIN_LAST_NAME: Acceptance
+      INITIAL_ORGANIZATION_NAME: MeetingHQ Acceptance
+      INITIAL_WORKSPACE_NAME: Main Workspace
+      PLAYWRIGHT_API_URL: http://127.0.0.1:8001/api/v1
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:5174
+      PLAYWRIGHT_ORGANIZER_EMAIL: release.acceptance@meetinghq.local
+      PLAYWRIGHT_ORGANIZER_PASSWORD: MeetingHQ-Release-Acceptance-2026!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install API and web dependencies
+        run: |
+          pip install -e "apps/api[dev]"
+          npm ci --prefix apps/web
+      - name: Migrate and start isolated API
+        run: |
+          cd apps/api
+          alembic upgrade head
+          uvicorn meetinghq_api.main:app --host 127.0.0.1 --port 8001 > api.log 2>&1 &
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:8001/api/v1/ready && exit 0
+            sleep 1
+          done
+          cat api.log
+          exit 1
+      - name: Run browser acceptance
+        working-directory: apps/web
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e -- --project=chromium
 
   containers:
     name: Container configuration
@@ -85,4 +168,3 @@ jobs:
         run: docker compose config --quiet
       - name: Build containers
         run: docker compose build api web
-
