@@ -27,7 +27,18 @@ uvicorn meetinghq_api.main:app --reload
 ```
 
 On PowerShell, activate with `.venv\Scripts\Activate.ps1`. When PostgreSQL and Redis run
-on the host, change their hostnames in `.env` from `postgres` and `redis` to `localhost`.
+on the host, point their URLs in the ignored local `.env` at the native services. The
+recommended isolated Windows PostgreSQL port is `5433` and Redis remains on `6380`:
+
+```dotenv
+MEETINGHQ_DATABASE_URL=postgresql+asyncpg://meetinghq:<local-password>@127.0.0.1:5433/meetinghq
+MEETINGHQ_REDIS_URL=redis://127.0.0.1:6380/0
+```
+
+The port is not compiled into the API. Alembic, the API, embedded reminder scheduler,
+dedicated worker, and health checks all consume `MEETINGHQ_DATABASE_URL`. Backup and restore
+commands consume `PGHOST` and `PGPORT`; use `PGPORT=5433` for this native installation.
+Compose and production examples intentionally retain their own configuration-driven defaults.
 
 Run backend checks:
 

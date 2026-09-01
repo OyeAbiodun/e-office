@@ -31,7 +31,7 @@ Key values required for a clean start:
 MEETINGHQ_ENVIRONMENT=local
 MEETINGHQ_API_HOST=0.0.0.0
 MEETINGHQ_API_PORT=8000
-MEETINGHQ_DATABASE_URL=postgresql+asyncpg://meetinghq:meetinghq_dev_only@localhost:5432/meetinghq
+MEETINGHQ_DATABASE_URL=postgresql+asyncpg://meetinghq:meetinghq_dev_only@127.0.0.1:5433/meetinghq
 MEETINGHQ_REDIS_URL=redis://localhost:6379/0
 MEETINGHQ_JWT_SECRET=replace-with-at-least-32-random-characters
 MEETINGHQ_API_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]
@@ -45,6 +45,8 @@ INITIAL_WORKSPACE_NAME=Main Workspace
 
 Notes:
 
+- In native Windows development, the isolated PostgreSQL service uses `127.0.0.1:5433`
+  and Redis uses `127.0.0.1:6380`. These endpoints remain configuration-driven.
 - In Docker Compose, the DB and Redis hostnames are `postgres` and `redis`.
 - In native local development on Windows or Linux host, change them to `localhost`.
 - `VITE_API_URL` must be public-safe, because Vite embeds it into browser assets.

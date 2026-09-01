@@ -1,10 +1,12 @@
 # Production Readiness Audit
 
-Last verified: 2026-08-24
+Last verified: 2026-09-01
 
-The SMTP/PostgreSQL production-target checkpoint, including isolated PostgreSQL 17.6,
-migration head `0029`, backup/restore evidence, current quality gates, and the truthful external
-SMTP blocker, is recorded in [smtp-postgresql-readiness.md](./smtp-postgresql-readiness.md).
+The SMTP/PostgreSQL production-target checkpoint, including isolated PostgreSQL 17.6 on
+configuration-driven native port `5433`, migration head
+`0030_email_calendar_delivery_integrity`, backup/restore evidence, current quality gates, and
+the truthful external SMTP blocker, is recorded in
+[smtp-postgresql-readiness.md](./smtp-postgresql-readiness.md).
 
 This document is the release evidence ledger for the Profile Center completion and production-readiness pass. `Green` means the behavior has direct local automated or browser evidence. `Yellow` means the implementation works locally but still needs deployment, operational, or broader acceptance evidence. `Red` means the required external production environment has not yet been provisioned or rehearsed.
 
@@ -17,7 +19,7 @@ This document is the release evidence ledger for the Profile Center completion a
 | Notifications | Yellow | Notification inbox, unread count, live WebSocket updates, preferences, and route access are implemented. A connection-pool exhaustion defect was fixed and the reconnect/accessibility paths pass E2E. | Prove long-duration reconnect behavior and external browser notification delivery in staging. |
 | Provider and integration truthfulness | Yellow | Provider registry, official UI branding, configured-versus-validated status, connection testing, audit metadata, and health integration are implemented. | Configure and validate production credentials for each enabled provider. |
 | System Health | Yellow | Required, recommended, optional, configured, unavailable, and healthy semantics are separated; history and recommendations are exposed. | Connect production observability and prove alerts, history retention, and incident operations. |
-| Automated quality gates | Green | Ruff, Black, strict MyPy, 67 backend tests, ESLint, TypeScript, 25 frontend tests, production build, 10 Playwright journeys, and npm audit pass. | Resolve the documented Python 3.14/aiosqlite cleanup warnings and standardize local Node on 22. |
+| Automated quality gates | Green | Ruff, Black, strict MyPy, 90 backend tests, ESLint, TypeScript, 28 frontend tests, production build, 12 Playwright journeys, and npm audit pass. | Resolve the documented Python 3.14/aiosqlite cleanup warnings and standardize local Node on 22. |
 | GCP deployment readiness | Red | A concrete deployment, migration, backup, restore, scaling, monitoring, and rollback runbook exists. | Provision a staging project and execute deployment, restore, failover, rollback, load, and security rehearsals. |
 
 ## Browser acceptance evidence
@@ -50,21 +52,26 @@ The WebSocket now authenticates in a short-lived session, opens a fresh short-li
 | Gate | Result |
 | --- | --- |
 | Ruff | Passed |
-| Black check | Passed; 198 files unchanged |
-| MyPy strict | Passed; 157 source files checked |
-| Pytest | Passed; 67 tests, 78% measured coverage |
+| Black check | Passed; 238 files unchanged |
+| MyPy strict | Passed; 158 source files checked |
+| Pytest | Passed; 90 tests, 79% measured coverage |
 | ESLint | Passed |
 | TypeScript | Passed |
-| Vitest | Passed; 25 tests |
-| Frontend production build | Passed; 5,765 modules transformed |
-| Playwright | Passed; 10 desktop/mobile journeys |
+| Vitest | Passed; 28 tests |
+| Frontend production build | Passed; 5,767 modules transformed |
+| Playwright | Passed; 12 desktop/mobile journeys |
 | npm audit | Passed; 0 vulnerabilities |
 
 The Playwright suite covers desktop and mobile command navigation, calendar create/edit/delete, internal mail sending, login shell behavior, and serious axe accessibility checks for Dashboard and Chat.
 
 ## Health-score interpretation
 
-The local health score is currently **80**, not 100. Thirteen of fifteen required components pass. The two truthful local failures are disk pressure (93.7% used) and low remaining storage (6.3% free). SMTP is recommended but unconfigured. Optional unconfigured services—including external integrations, SSL/domain/certificate checks, backups, cron, search, AI, calendar providers, and file providers—do not lower the score.
+The local health score is currently **90**, not 100. Eleven of twelve required components pass.
+The required failure is low remaining storage (7.3% free). Disk pressure (92.7% used) and memory
+pressure (92.5% used at the sampled instant) are degraded recommendations. SMTP is recommended
+but unconfigured. Optional unconfigured services—including external integrations,
+SSL/domain/certificate checks, backups, cron, search, AI, calendar providers, and file
+providers—do not lower the score.
 
 A score of 100 is therefore possible only when every required component passes; optional unconfigured services no longer create a permanent penalty.
 

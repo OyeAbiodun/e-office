@@ -1,6 +1,6 @@
 # SMTP and PostgreSQL readiness checkpoint
 
-Last verified: 2026-08-30
+Last verified: 2026-09-01
 
 This checkpoint records the local evidence for the SMTP administration and PostgreSQL
 production-target pass. It deliberately distinguishes implementation evidence, SMTP server
@@ -20,12 +20,21 @@ Failed SMTP test-email attempts return a typed failed result instead of raising 
 transaction can commit. The Integration Center displays that result as an error, so transport
 rejection can no longer appear as success.
 
-Migration `0030_calendar_delivery_sequence` adds the persisted meeting sequence. The
-migration is the current source head and passed automated application tests, but it has not been
-applied to the preserved PostgreSQL runtime during this checkpoint: Windows currently reserves
-TCP range `55420-55519`, including MeetingHQ's authorized port `55432`. Releasing that reservation
-requires an explicitly authorized, brief WinNAT pause/resume because it may affect Docker/WSL.
-Office Platform ports `5173/8000` were not touched.
+Migration `0030_calendar_delivery_sequence` adds the persisted meeting sequence. A metadata-only
+successor widens Alembic's default 32-character revision column and adopts the canonical revision
+identifier `0030_email_calendar_delivery_integrity`. This preserves compatibility with the
+already-applied short identifier while allowing the requested descriptive revision to be the
+live migration head.
+
+The preserved PostgreSQL 17.6 cluster now runs natively on configuration-driven port `5433`,
+which was verified free and outside every Windows reserved range. WinNAT, Docker/WSL networking,
+and Office Platform ports `5173/8000` were not touched.
+
+Before startup, `5433` had no listener and did not appear in any Windows excluded TCP range.
+The existing data directory was reused without restore or reinitialization. The API, Alembic,
+worker, scheduler, readiness checks, and System Health all consume the same
+`MEETINGHQ_DATABASE_URL`; backup and restore scripts continue to use the standard PostgreSQL
+environment, including `PGPORT`. Container and production defaults were left unchanged.
 
 No SMTP hostname, username, or password is configured in the isolated installation. Therefore
 provider connection, controlled-mailbox receipt, external invitation/update/cancellation/reminder,
@@ -63,14 +72,15 @@ a release blocker until an operator supplies a real provider and controlled reci
 | Item | Verified result |
 | --- | --- |
 | Server | PostgreSQL 17.6 |
-| Isolation | Dedicated `meetinghq` role/database on `127.0.0.1:55432`; Office PostgreSQL on `5432` was not stopped or reconfigured |
+| Isolation | Dedicated `meetinghq` role/database on `127.0.0.1:5433`; Office Platform ports `5173/8000` were not stopped or reconfigured |
 | Redis | MeetingHQ-only runtime on `127.0.0.1:6380` |
 | API / web | `127.0.0.1:8001` / `127.0.0.1:5174` |
-| Last PostgreSQL-verified migration | `0029_tenant_query_indexes` |
-| Current source migration head | `0030_calendar_delivery_sequence` (pending live PostgreSQL application) |
+| Last PostgreSQL-verified migration | `0030_email_calendar_delivery_integrity` |
+| Current source migration head | `0030_email_calendar_delivery_integrity` |
 | Clean migration | Empty PostgreSQL database migrated from `0001` through `0029` |
 | Drift | `alembic check`: `No new upgrade operations detected` on clean, restored, and active schemas |
 | Database timezone | UTC |
+| Bootstrap cardinality | One organization (`meetinghq`), one default workspace, one bootstrap user, and one Super Admin assignment after restart |
 | Schema | 76 tables, 138 primary-key constraints, 174 foreign keys, 87 unique constraints, 310 indexes after `0029` |
 | PostgreSQL types | 41 JSONB columns and 133 timestamp-with-time-zone columns |
 | Index validity | Zero invalid or unready indexes |
@@ -92,7 +102,8 @@ MeetingHQ database timezone to UTC as documented in [environment.md](./environme
   handling, its catalog was parsed by `pg_restore --list`, and a SHA-256 digest was recorded.
 - The dump restored into a new isolated database with organization/user counts preserved,
   migration revision `0029`, zero invalid indexes, and a clean Alembic drift check.
-- During a controlled outage of only PostgreSQL `55432`, `/api/v1/ready` returned `503`.
+- During an earlier controlled outage of only the isolated PostgreSQL service,
+  `/api/v1/ready` returned `503`.
   After restart it recovered to `200` without restarting the API.
 - A 100-request concurrent readiness probe returned 100 successes. PostgreSQL showed the
   configured 10 idle application pool connections plus the active inspection connection.
@@ -102,7 +113,7 @@ MeetingHQ database timezone to UTC as documented in [environment.md](./environme
 
 ## PostgreSQL meeting lifecycle
 
-The running API completed a real transaction journey against PostgreSQL `55432`: the Super
+The running API completed a real transaction journey against PostgreSQL `5433`: the Super
 Admin created a participant, the participant rotated a temporary password, and the organizer
 created a meeting with that participant. The participant received one unread invitation,
 transitioned through Tentative, Declined, and Accepted, and the organizer observed Accepted.
@@ -120,7 +131,7 @@ local delivery architecture and ICS semantics, not external SMTP mailbox deliver
 ## Authenticated browser acceptance
 
 The isolated browser and Playwright runs used web `127.0.0.1:5174`, API
-`127.0.0.1:8001`, PostgreSQL `127.0.0.1:55432`, and Redis `127.0.0.1:6380`.
+`127.0.0.1:8001`, PostgreSQL `127.0.0.1:5433`, and Redis `127.0.0.1:6380`.
 Office Platform ports `5173/8000` were not stopped or reconfigured. Bootstrap credentials
 were loaded from the ignored local environment and were not recorded in output, screenshots,
 traces, or this document.
