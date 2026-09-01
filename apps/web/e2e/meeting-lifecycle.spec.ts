@@ -40,9 +40,77 @@ async function apiLogin(
 async function browserLogin(page: Page, email: string, password: string) {
   await page.goto('/login')
   await page.getByLabel('Work email').fill(email)
-  await page.getByLabel('Password').fill(password)
+  const passwordField = page.getByLabel('Password')
+  await passwordField.fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await passwordField.fill('').catch(() => undefined)
   await expect(page).toHaveURL('/', { timeout: 15_000 })
+}
+
+async function waitForMeetingNotification(
+  request: APIRequestContext,
+  headers: Record<string, string>,
+  meetingId: string,
+  notificationType: string,
+) {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(
+          `${apiBase}/notifications?include_archived=true&page_size=100`,
+          { headers },
+        )
+        expect(response.ok(), await response.text()).toBeTruthy()
+        const payload = (await response.json()) as {
+          data: {
+            unread: number
+            notifications: Array<{
+              id: string
+              meeting_id: string
+              notification_type: string
+            }>
+          }
+        }
+        return {
+          notification: payload.data.notifications.find(
+            (item) =>
+              item.meeting_id === meetingId &&
+              item.notification_type === notificationType,
+          ),
+          unread: payload.data.unread,
+        }
+      },
+      { timeout: 75_000, intervals: [1_000, 2_000, 3_000] },
+    )
+    .toMatchObject({
+      notification: {
+        meeting_id: meetingId,
+        notification_type: notificationType,
+      },
+    })
+
+  const response = await request.get(
+    `${apiBase}/notifications?include_archived=true&page_size=100`,
+    { headers },
+  )
+  const payload = (await response.json()) as {
+    data: {
+      unread: number
+      notifications: Array<{
+        id: string
+        meeting_id: string
+        notification_type: string
+      }>
+    }
+  }
+  return {
+    notification: payload.data.notifications.find(
+      (item) =>
+        item.meeting_id === meetingId &&
+        item.notification_type === notificationType,
+    )!,
+    unread: payload.data.unread,
+  }
 }
 
 test('organizer and participant complete the meeting lifecycle', async ({
@@ -50,10 +118,12 @@ test('organizer and participant complete the meeting lifecycle', async ({
   page,
   request,
 }) => {
+  test.setTimeout(240_000)
   const organizer = await apiLogin(request, organizerEmail, organizerPassword)
   const suffix = Date.now()
-  const participantEmail = `meeting.e2e.${suffix}@meetinghq.local`
-  const participantPassword = `MeetingE2E${suffix}!`
+  const participantEmail = `meeting.e2e.${suffix}@example.com`
+  const temporaryPassword = `MeetingE2ETemp${suffix}!`
+  const participantPassword = `MeetingE2EFinal${suffix}!`
   const [workspacesResponse, rolesResponse] = await Promise.all([
     request.get(`${apiBase}/workspaces`, { headers: organizer.headers }),
     request.get(`${apiBase}/roles`, { headers: organizer.headers }),
@@ -74,7 +144,7 @@ test('organizer and participant complete the meeting lifecycle', async ({
       email: participantEmail,
       workspace_id: workspaces.data[0].id,
       role_ids: [employeeRole?.id],
-      temporary_password: participantPassword,
+      temporary_password: temporaryPassword,
       send_welcome_email: false,
     },
   })
@@ -88,8 +158,9 @@ test('organizer and participant complete the meeting lifecycle', async ({
     .getByLabel('Description')
     .fill('Validate invitation, RSVP, calendar, and updates.')
   await page.getByRole('button', { name: /Continue/ }).click()
-  const start = new Date(Date.now() + 3 * 86_400_000)
-  start.setUTCMinutes(0, 0, 0)
+  const start = new Date()
+  start.setUTCSeconds(0, 0)
+  start.setUTCMinutes(start.getUTCMinutes() + 16)
   const end = new Date(start.getTime() + 45 * 60_000)
   await page.getByLabel('Starts').fill(start.toISOString().slice(0, 16))
   await page.getByLabel('Ends').fill(end.toISOString().slice(0, 16))
@@ -109,6 +180,23 @@ test('organizer and participant complete the meeting lifecycle', async ({
   const meetingId = page.url().split('/').at(-1)
   expect(meetingId).toBeTruthy()
 
+  const temporarySession = await apiLogin(
+    request,
+    participantEmail,
+    temporaryPassword,
+  )
+  const passwordChanged = await request.post(
+    `${apiBase}/auth/change-password`,
+    {
+      headers: temporarySession.headers,
+      data: {
+        current_password: temporaryPassword,
+        new_password: participantPassword,
+        confirm_new_password: participantPassword,
+      },
+    },
+  )
+  expect(passwordChanged.ok(), await passwordChanged.text()).toBeTruthy()
   const participant = await apiLogin(
     request,
     participantEmail,
@@ -130,8 +218,53 @@ test('organizer and participant complete the meeting lifecycle', async ({
   const participantPage = await participantContext.newPage()
   await browserLogin(participantPage, participantEmail, participantPassword)
   await participantPage.goto(`/meetings/${meetingId}`)
-  await participantPage.getByRole('button', { name: 'RSVP' }).click()
-  await participantPage.getByRole('button', { name: 'accepted' }).click()
+
+  const reminder = await waitForMeetingNotification(
+    request,
+    participant.headers,
+    meetingId!,
+    'meeting_reminder',
+  )
+  await participantPage.goto('/notifications')
+  await expect(
+    participantPage.getByRole('heading', { name: `Upcoming: ${title}` }),
+  ).toBeVisible()
+  const markedRead = await request.post(
+    `${apiBase}/notifications/${reminder.notification.id}/read`,
+    { headers: participant.headers },
+  )
+  expect(markedRead.ok(), await markedRead.text()).toBeTruthy()
+  const afterRead = await request.get(`${apiBase}/notifications`, {
+    headers: participant.headers,
+  })
+  const afterReadPayload = (await afterRead.json()) as {
+    data: { unread: number }
+  }
+  expect(afterReadPayload.data.unread).toBe(reminder.unread - 1)
+  await participantPage.goto(`/meetings/${meetingId}`)
+
+  for (const status of ['tentative', 'declined', 'accepted']) {
+    await participantPage.getByRole('button', { name: 'RSVP' }).click()
+    await participantPage.getByRole('button', { name: status }).click()
+    await expect(
+      participantPage
+        .getByRole('paragraph')
+        .filter({ hasText: new RegExp(`^${status}$`) }),
+    ).toBeVisible()
+    const statusDetail = await request.get(`${apiBase}/meetings/${meetingId}`, {
+      headers: organizer.headers,
+    })
+    const statusPayload = (await statusDetail.json()) as {
+      data: {
+        attendees: Array<{ email: string; attendance_status: string }>
+      }
+    }
+    expect(
+      statusPayload.data.attendees.find(
+        (item) => item.email === participantEmail,
+      )?.attendance_status,
+    ).toBe(status)
+  }
 
   const detail = await request.get(`${apiBase}/meetings/${meetingId}`, {
     headers: organizer.headers,
@@ -201,11 +334,67 @@ test('organizer and participant complete the meeting lifecycle', async ({
     await Promise.all(
       eventPages.map(
         async (response) =>
-          ((await response.json()) as { data: Array<{ meeting_id: string }> })
-            .data,
+          (
+            (await response.json()) as {
+              data: Array<{
+                meeting_id: string
+                start_datetime: string
+                status: string
+              }>
+            }
+          ).data,
       ),
     )
   ).flat()
-  expect(events.some((event) => event.meeting_id === meetingId)).toBeTruthy()
+  const meetingEvents = events.filter((event) => event.meeting_id === meetingId)
+  expect(meetingEvents).toHaveLength(1)
+  expect(new Date(meetingEvents[0].start_datetime).getTime()).toBe(
+    rescheduledStart.getTime(),
+  )
+  expect(meetingEvents[0].status).toBe('cancelled')
+
+  const lifecycleInbox = await request.get(
+    `${apiBase}/notifications?include_archived=true&page_size=100`,
+    { headers: participant.headers },
+  )
+  const lifecyclePayload = (await lifecycleInbox.json()) as {
+    data: {
+      notifications: Array<{ meeting_id: string; notification_type: string }>
+    }
+  }
+  const lifecycleTypes = new Set(
+    lifecyclePayload.data.notifications
+      .filter((item) => item.meeting_id === meetingId)
+      .map((item) => item.notification_type),
+  )
+  expect(lifecycleTypes).toEqual(
+    new Set([
+      'meeting_invitation',
+      'meeting_reminder',
+      'meeting_updated',
+      'meeting_cancelled',
+    ]),
+  )
+
+  const audit = await request.get(`${apiBase}/audit?limit=200`, {
+    headers: organizer.headers,
+  })
+  expect(audit.ok(), await audit.text()).toBeTruthy()
+  const auditPayload = (await audit.json()) as {
+    data: {
+      items: Array<{
+        action: string
+        resource_id: string | null
+      }>
+    }
+  }
+  const meetingAuditActions = new Set(
+    auditPayload.data.items
+      .filter((item) => item.resource_id === meetingId)
+      .map((item) => item.action),
+  )
+  expect(meetingAuditActions).toContain('MeetingCreated')
+  expect(meetingAuditActions).toContain('MeetingRescheduled')
+  expect(meetingAuditActions).toContain('MeetingCancelled')
   await participantContext.close()
 })

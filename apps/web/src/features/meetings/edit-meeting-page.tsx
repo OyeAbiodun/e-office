@@ -4,6 +4,7 @@ import { Check, Clock3 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { meetingApi } from '@/features/meetings/api'
+import { toZonedDateTimeInput } from '@/lib/date-time'
 
 export function EditMeetingPage() {
   const { meetingId } = useParams({
@@ -28,12 +29,14 @@ export function EditMeetingPage() {
     setForm({
       title: meeting.data.title,
       description: meeting.data.description ?? '',
-      start_datetime: new Date(meeting.data.start_datetime)
-        .toISOString()
-        .slice(0, 16),
-      end_datetime: new Date(meeting.data.end_datetime)
-        .toISOString()
-        .slice(0, 16),
+      start_datetime: toZonedDateTimeInput(
+        meeting.data.start_datetime,
+        meeting.data.timezone,
+      ),
+      end_datetime: toZonedDateTimeInput(
+        meeting.data.end_datetime,
+        meeting.data.timezone,
+      ),
       timezone: meeting.data.timezone,
     })
   }, [meeting.data])
@@ -46,14 +49,21 @@ export function EditMeetingPage() {
       })
       if (
         meeting.data &&
-        (new Date(form.start_datetime).toISOString() !==
-          meeting.data.start_datetime ||
-          new Date(form.end_datetime).toISOString() !==
-            meeting.data.end_datetime)
+        (form.start_datetime !==
+          toZonedDateTimeInput(
+            meeting.data.start_datetime,
+            meeting.data.timezone,
+          ) ||
+          form.end_datetime !==
+            toZonedDateTimeInput(
+              meeting.data.end_datetime,
+              meeting.data.timezone,
+            ) ||
+          form.timezone !== meeting.data.timezone)
       ) {
         await meetingApi.reschedule(meetingId, {
-          start_datetime: new Date(form.start_datetime).toISOString(),
-          end_datetime: new Date(form.end_datetime).toISOString(),
+          start_datetime: form.start_datetime,
+          end_datetime: form.end_datetime,
           timezone: form.timezone,
           room_id: meeting.data.room_id,
         })

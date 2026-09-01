@@ -22,8 +22,10 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
         subject: str,
         text: str,
         ics: str | None = None,
+        message_key: str | None = None,
     ) -> str:
         sent.append((recipient, subject, ics))
+        assert message_key is not None
         return "<mvp-test@meetinghq>"
 
     monkeypatch.setattr(MeetingEmailSender, "send", capture)
@@ -67,6 +69,7 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
     assert sent[0][2] is not None
     assert "BEGIN:VCALENDAR" in sent[0][2]
     assert "METHOD:REQUEST" in sent[0][2]
+    assert "SEQUENCE:0" in sent[0][2]
     assert "Room 101" in sent[0][2]
 
     participant_login = await meeting_client.post(
@@ -145,10 +148,25 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
     )
     assert rescheduled.status_code == 200, rescheduled.text
     assert rescheduled.json()["data"]["timezone"] == "America/New_York"
+    assert datetime.fromisoformat(rescheduled.json()["data"]["start_datetime"]).tzinfo is not None
     update_ics = next(ics for _, subject, ics in sent if subject.startswith("Meeting rescheduled"))
     assert update_ics is not None
     assert "METHOD:REQUEST" in update_ics
+    assert "SEQUENCE:1" in update_ics
     assert "STATUS:CONFIRMED" in update_ics
+    participant_events = []
+    for calendar in calendars:
+        events = await meeting_client.get(
+            f"/api/v1/calendars/{calendar['id']}/events",
+            headers=participant_headers,
+        )
+        participant_events.extend(
+            event for event in events.json()["data"] if event["meeting_id"] == meeting_id
+        )
+    assert len(participant_events) == 1
+    participant_start = datetime.fromisoformat(participant_events[0]["start_datetime"])
+    assert participant_start.tzinfo is not None
+    assert participant_start == rescheduled_start
 
     cancelled = await meeting_client.post(
         f"/api/v1/meetings/{meeting_id}/cancel", headers=admin_headers
@@ -160,6 +178,7 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
     )
     assert cancellation_ics is not None
     assert "METHOD:CANCEL" in cancellation_ics
+    assert "SEQUENCE:2" in cancellation_ics
     assert "STATUS:CANCELLED" in cancellation_ics
 
     participant_notifications = await meeting_client.get(
@@ -170,6 +189,15 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
         for item in participant_notifications.json()["data"]["notifications"]
     }
     assert {"meeting_invitation", "meeting_updated", "meeting_cancelled"} <= types
+
+    delivery_audit = await meeting_client.get(
+        "/api/v1/audit?action=meeting.delivery.accepted", headers=admin_headers
+    )
+    assert delivery_audit.status_code == 200
+    delivery_items = delivery_audit.json()["data"]["items"]
+    assert len(delivery_items) == 3
+    assert all("recipient_domain" in item["metadata"] for item in delivery_items)
+    assert all("@" not in item["metadata"]["recipient_domain"] for item in delivery_items)
 
     other_tenant = await meeting_client.post(
         "/api/v1/auth/register",
@@ -219,6 +247,7 @@ async def test_transient_email_failure_does_not_rollback_the_meeting(
         _subject: str,
         _text: str,
         _ics: str | None = None,
+        _message_key: str | None = None,
     ) -> str:
         raise EmailDeliveryError("SMTP temporarily unavailable")
 

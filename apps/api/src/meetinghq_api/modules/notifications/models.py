@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -22,6 +23,22 @@ from meetinghq_api.infrastructure.database import Base
 
 class Notification(Base):
     __tablename__ = "notifications"
+    __table_args__ = (
+        Index(
+            "ix_notifications_org_user_delivery_cursor",
+            "organization_id",
+            "user_id",
+            "delivered_at",
+            "id",
+        ),
+        Index(
+            "ix_notifications_org_user_unread",
+            "organization_id",
+            "user_id",
+            "read_at",
+            "archived_at",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(

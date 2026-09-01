@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from meetinghq_api.core.config import Settings
 from meetinghq_api.infrastructure.redis import redis_client
 from meetinghq_api.infrastructure.runtime_health import runtime_health
+from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.configuration.models import ConfigurationEntry
 from meetinghq_api.modules.notifications.models import (
     MeetingInvitationDelivery,
@@ -26,6 +27,7 @@ from meetinghq_api.modules.system_health.schemas import (
     HealthHistoryPoint,
     HealthState,
     QueueHealth,
+    RequirementState,
     SystemHealthResponse,
 )
 
@@ -179,6 +181,12 @@ class SystemHealthService:
         started = time.perf_counter()
         try:
             await self.session.execute(text("SELECT 1"))
+            revision = await self.session.scalar(text("SELECT version_num FROM alembic_version"))
+            bind = self.session.bind
+            pool = getattr(bind, "pool", None)
+            pool_status = pool.status() if pool is not None and hasattr(pool, "status") else None
+            driver = self.settings.database_url.partition("://")[0]
+            database_name = self.settings.database_url.partition("?")[0].rsplit("/", 1)[-1]
             return ComponentHealth(
                 key="database",
                 name="Database",
@@ -186,6 +194,13 @@ class SystemHealthService:
                 status="healthy",
                 message="Database connection and query execution are healthy.",
                 latency_ms=round((time.perf_counter() - started) * 1000, 2),
+                details={
+                    "driver": driver,
+                    "database": database_name,
+                    "migration_revision": str(revision) if revision else None,
+                    "schema_health": "revisioned" if revision else "unknown",
+                    "pool_status": pool_status,
+                },
             )
         except Exception as error:
             return ComponentHealth(
@@ -275,13 +290,16 @@ class SystemHealthService:
             self.session, self.settings, organization_id
         )
         configured = sender.configured
+        requirement: RequirementState = (
+            "required" if self.settings.environment in {"staging", "production"} else "recommended"
+        )
         if not configured:
             return ComponentHealth(
                 key="smtp",
                 name="Email delivery",
                 category="providers",
                 status="not_configured",
-                requirement="recommended",
+                requirement=requirement,
                 configured=False,
                 message=(
                     "SMTP is not configured; messages are written to the local "
@@ -289,19 +307,50 @@ class SystemHealthService:
                 ),
                 details={"mode": "local_outbox", "validated": False},
             )
+        if not sender.enabled:
+            return ComponentHealth(
+                key="smtp",
+                name="Email delivery",
+                category="providers",
+                status="unavailable" if requirement == "required" else "degraded",
+                requirement=requirement,
+                configured=True,
+                message="SMTP is configured but outbound email delivery is disabled.",
+                details={"mode": "smtp", "enabled": False, "validated": False},
+            )
         started = time.perf_counter()
+        recent_failures = int(
+            await self.session.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(
+                    AuditLog.organization_id == organization_id,
+                    AuditLog.resource == "integration",
+                    AuditLog.action.in_(("smtp.test_email_failed",)),
+                )
+            )
+            or 0
+        )
         try:
             await sender.test_connection()
+            checked_at = datetime.now(UTC)
             return ComponentHealth(
                 key="smtp",
                 name="Email delivery",
                 category="providers",
                 status="healthy",
-                requirement="configured",
+                requirement=requirement if requirement == "required" else "configured",
                 configured=True,
                 message="The configured SMTP provider accepted a handshake and authentication.",
                 latency_ms=round((time.perf_counter() - started) * 1000, 2),
-                details={"mode": "smtp", "validated": True},
+                details={
+                    "mode": "smtp",
+                    "configured": True,
+                    "enabled": True,
+                    "validated": True,
+                    "last_validation": checked_at.isoformat(),
+                    "recent_failures": recent_failures,
+                },
             )
         except EmailDeliveryError as error:
             return ComponentHealth(
@@ -309,10 +358,17 @@ class SystemHealthService:
                 name="Email delivery",
                 category="providers",
                 status="unavailable",
-                requirement="configured",
+                requirement=requirement if requirement == "required" else "configured",
                 configured=True,
                 message="The configured SMTP provider failed validation.",
-                details={"mode": "smtp", "validated": False, "error": str(error)},
+                details={
+                    "mode": "smtp",
+                    "configured": True,
+                    "enabled": True,
+                    "validated": False,
+                    "error": type(error).__name__,
+                    "recent_failures": recent_failures,
+                },
             )
 
     def _storage(self) -> ComponentHealth:

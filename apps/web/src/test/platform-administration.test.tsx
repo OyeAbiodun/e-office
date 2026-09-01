@@ -8,6 +8,7 @@ import { RolesPage } from '@/features/users/roles-page'
 const mocks = vi.hoisted(() => ({
   confirm: vi.fn(async () => true),
   configure: vi.fn(),
+  configureSmtp: vi.fn(),
   disconnect: vi.fn(),
   audit: vi.fn(),
   features: vi.fn(),
@@ -18,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   permissions: vi.fn(),
   roles: vi.fn(),
   synchronize: vi.fn(),
+  smtpConfiguration: vi.fn(),
+  sendSmtpTestEmail: vi.fn(),
+  testIntegration: vi.fn(),
   updateFeature: vi.fn(),
   updateMenu: vi.fn(),
   previewMenus: vi.fn(),
@@ -41,7 +45,15 @@ vi.mock('@/components/feedback/confirmation', () => ({
 
 vi.mock('@/features/auth/auth-store', () => ({
   useAuth: () => ({
-    user: { id: 'admin-1', roles: ['Super Admin'] },
+    user: {
+      id: 'admin-1',
+      roles: ['Super Admin'],
+      permissions: [
+        'integrations.view',
+        'integrations.manage',
+        'integrations.test',
+      ],
+    },
   }),
 }))
 
@@ -52,6 +64,10 @@ vi.mock('@/features/integrations/api', () => ({
     disconnect: mocks.disconnect,
     synchronize: mocks.synchronize,
     audit: mocks.audit,
+    smtpConfiguration: mocks.smtpConfiguration,
+    configureSmtp: mocks.configureSmtp,
+    sendSmtpTestEmail: mocks.sendSmtpTestEmail,
+    test: mocks.testIntegration,
   },
 }))
 
@@ -146,6 +162,48 @@ beforeEach(() => {
   mocks.disconnect.mockResolvedValue({ key: 'gmail', configured: false })
   mocks.synchronize.mockResolvedValue({ key: 'gmail', configured: true })
   mocks.audit.mockResolvedValue([])
+  mocks.smtpConfiguration.mockResolvedValue({
+    provider_display_name: 'Transactional SMTP',
+    host: 'smtp.example.test',
+    port: 587,
+    security_mode: 'starttls',
+    allow_insecure: false,
+    connection_timeout: 20,
+    authentication_enabled: true,
+    authentication_method: 'password',
+    username: 'mailer@example.test',
+    password_configured: true,
+    password_mask: '••••••••••••',
+    from_email: 'meetings@example.test',
+    from_name: 'MeetingHQ',
+    reply_to: null,
+    return_path: null,
+    enabled: true,
+    max_retry_attempts: 3,
+    retry_delay_seconds: 1,
+    timeout_seconds: 20,
+    default_priority: 'normal',
+    state: 'healthy',
+    revision: 2,
+    updated_at: '2026-08-03T00:00:00Z',
+    last_validated_at: '2026-08-03T00:01:00Z',
+  })
+  mocks.configureSmtp.mockResolvedValue({})
+  mocks.testIntegration.mockResolvedValue({
+    key: 'smtp',
+    status: 'healthy',
+    message: 'SMTP connection succeeded.',
+    latency_ms: 12,
+    checked_at: '2026-08-03T00:01:00Z',
+  })
+  mocks.sendSmtpTestEmail.mockResolvedValue({
+    status: 'accepted',
+    message: 'SMTP server accepted the message.',
+    recipient: 'operator@example.test',
+    message_id: '<safe-test-id@meetinghq>',
+    latency_ms: 15,
+    accepted_at: '2026-08-03T00:01:30Z',
+  })
   mocks.previewMenus.mockResolvedValue([])
   mocks.publishMenus.mockResolvedValue([])
   mocks.resetMenus.mockResolvedValue([])
@@ -235,6 +293,68 @@ test('Integration Center configures credentials inside its protected boundary', 
       client_secret: 'client-secret',
       tenant: 'example.test',
     }),
+  )
+})
+
+test('SMTP administration preserves a stored secret and tests the shared delivery path', async () => {
+  const smtpProvider = {
+    ...provider,
+    key: 'smtp',
+    name: 'SMTP',
+    auth_type: 'smtp',
+    configured: true,
+    validated: true,
+    health: 'healthy',
+  }
+  mocks.integrations.mockResolvedValue([smtpProvider])
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['integrations'], [smtpProvider])
+  render(
+    <QueryClientProvider client={client}>
+      <IntegrationCenterPage />
+    </QueryClientProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+  expect(
+    await screen.findByRole('heading', { name: 'SMTP delivery' }),
+  ).toBeVisible()
+  expect(await screen.findByText('Credential stored securely')).toBeVisible()
+  const password = screen.getByLabelText('Password / app password')
+  expect(password).toHaveValue('')
+  expect(password).toHaveAttribute(
+    'placeholder',
+    '•••••••••••• (leave blank to preserve)',
+  )
+  fireEvent.change(screen.getByLabelText('Provider display name'), {
+    target: { value: 'Primary SMTP' },
+  })
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Save SMTP configuration' }),
+  )
+  await waitFor(() =>
+    expect(mocks.configureSmtp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider_display_name: 'Primary SMTP',
+        password: '',
+      }),
+    ),
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Test & delivery' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+  await waitFor(() =>
+    expect(mocks.testIntegration).toHaveBeenCalledWith('smtp'),
+  )
+  fireEvent.change(screen.getByLabelText('SMTP test recipient'), {
+    target: { value: 'operator@example.test' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send test email' }))
+  await waitFor(() =>
+    expect(mocks.sendSmtpTestEmail).toHaveBeenCalledWith(
+      'operator@example.test',
+    ),
   )
 })
 

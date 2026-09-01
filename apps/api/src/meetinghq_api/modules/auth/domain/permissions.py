@@ -51,6 +51,9 @@ class Permissions:
     TEAMS_WRITE = "teams.write"
     INVITATIONS_READ = "invitations.read"
     INVITATIONS_WRITE = "invitations.write"
+    INTEGRATIONS_READ = "integrations.view"
+    INTEGRATIONS_MANAGE = "integrations.manage"
+    INTEGRATIONS_TEST = "integrations.test"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -91,6 +94,14 @@ _LEGACY_PERMISSION_CATALOG = tuple(
         (Permissions.TEAMS_WRITE, "teams", "write", "Manage teams"),
         (Permissions.INVITATIONS_READ, "invitations", "read", "View invitations"),
         (Permissions.INVITATIONS_WRITE, "invitations", "write", "Manage invitations"),
+        (Permissions.INTEGRATIONS_READ, "integrations", "view", "View integration settings"),
+        (
+            Permissions.INTEGRATIONS_MANAGE,
+            "integrations",
+            "manage",
+            "Manage integration settings",
+        ),
+        (Permissions.INTEGRATIONS_TEST, "integrations", "test", "Test integration delivery"),
     )
 )
 

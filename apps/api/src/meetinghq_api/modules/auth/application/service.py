@@ -240,7 +240,12 @@ class AuthService:
         raise AuthenticationError("Invalid multi-factor authentication code")
 
     async def refresh(
-        self, raw_token: str, ip_address: str | None, user_agent: str | None
+        self,
+        raw_token: str,
+        ip_address: str | None,
+        user_agent: str | None,
+        *,
+        allow_cookie_retry_grace: bool = False,
     ) -> TokenResponse:
         """Rotate a refresh token and reject replayed token families."""
         token = await self.session.scalar(
@@ -250,12 +255,26 @@ class AuthService:
         if token is None or token.revoked_at or token.expires_at.replace(tzinfo=UTC) <= now:
             raise AuthenticationError("Refresh token is invalid")
         if token.used_at:
-            await self._revoke_family(token.family_id, now)
-            raise AuthenticationError("Refresh token reuse detected")
+            used_at = token.used_at.replace(tzinfo=UTC)
+            within_cookie_retry_grace = (
+                allow_cookie_retry_grace
+                and self.settings.refresh_token_cookie_retry_grace_seconds > 0
+                and now - used_at
+                <= timedelta(seconds=self.settings.refresh_token_cookie_retry_grace_seconds)
+            )
+            if not within_cookie_retry_grace:
+                await self._revoke_family(token.family_id, now)
+                raise AuthenticationError("Refresh token reuse detected")
+            await logger.awarning(
+                "auth_refresh_cookie_retry_within_grace",
+                token_id=str(token.id),
+                family_id=str(token.family_id),
+            )
         user = await self._load_user(token.user_id)
         if user is None or user.status != UserStatus.ACTIVE:
             raise AuthenticationError("Refresh token is invalid")
-        token.used_at = now
+        if token.used_at is None:
+            token.used_at = now
         session = await self.session.scalar(
             select(UserSession).where(UserSession.refresh_token_id == token.id)
         )
@@ -312,6 +331,13 @@ class AuthService:
                 timedelta(minutes=self.settings.password_reset_ttl_minutes),
             )
             await self.email_sender.send_password_reset(user.email, raw_token, user.organization_id)
+            await self._audit(
+                user.organization_id,
+                user.id,
+                "auth.password_reset_requested",
+                "user",
+                {"recipient_domain": user.email.rpartition("@")[2].lower()},
+            )
 
     async def reset_password(self, raw_token: str, new_password: str) -> None:
         """Consume a reset token, update the password, and revoke sessions."""

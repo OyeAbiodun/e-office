@@ -142,7 +142,8 @@ def upgrade() -> None:
     for column in ("organization_id", "conversation_id", "user_id"):
         op.create_index(f"ix_channel_preferences_{column}", "channel_preferences", [column])
 
-    op.execute("""
+    op.execute(
+        """
         UPDATE teams
         SET owner_id = (
             SELECT team_members.user_id
@@ -151,7 +152,8 @@ def upgrade() -> None:
               AND team_members.role = 'OWNER'
             LIMIT 1
         )
-        """)
+        """
+    )
 
 
 def downgrade() -> None:

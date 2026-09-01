@@ -1,9 +1,9 @@
 """Meeting API contracts."""
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from meetinghq_api.modules.calendar.schemas import RecurrenceRuleInput
 from meetinghq_api.modules.meetings.models import AttendanceStatus, MeetingStatus
@@ -72,8 +72,15 @@ class MeetingResponse(OrmModel):
     timezone: str
     status: MeetingStatus
     visibility: str
+    sequence: int
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("start_datetime", "end_datetime", mode="before")
+    @classmethod
+    def serialize_as_utc(cls, value: datetime) -> datetime:
+        """Keep meeting instants unambiguous across SQLite and PostgreSQL."""
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 class TransitionRequest(BaseModel):

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-import { meetingApi } from '@/features/meetings/api'
+import { meetingApi, type MeetingDetail } from '@/features/meetings/api'
 import { useAuth } from '@/features/auth/auth-store'
 
 type Section =
@@ -58,6 +58,14 @@ export function MeetingDetailPage() {
     await queryClient.invalidateQueries({
       queryKey: ['meeting-analytics', meetingId],
     })
+  }
+  const transition = async (status: string) => {
+    const updated = await meetingApi.transition(meetingId, status)
+    await refresh()
+    queryClient.setQueryData<MeetingDetail>(
+      ['meeting', meetingId],
+      (current) => (current ? { ...current, ...updated } : current),
+    )
   }
   const add = async () => {
     if (!value.trim()) return
@@ -169,11 +177,7 @@ export function MeetingDetailPage() {
               {data.status === 'scheduled' && (
                 <button
                   className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
-                  onClick={() =>
-                    void meetingApi
-                      .transition(meetingId, 'in_progress')
-                      .then(refresh)
-                  }
+                  onClick={() => void transition('in_progress')}
                 >
                   Start
                 </button>
@@ -181,11 +185,7 @@ export function MeetingDetailPage() {
               {data.status === 'in_progress' && (
                 <button
                   className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
-                  onClick={() =>
-                    void meetingApi
-                      .transition(meetingId, 'completed')
-                      .then(refresh)
-                  }
+                  onClick={() => void transition('completed')}
                 >
                   <CheckCircle2 className="mr-2 inline size-4" />
                   Complete
@@ -196,11 +196,7 @@ export function MeetingDetailPage() {
               ) && (
                 <button
                   className="rounded-xl border border-red-500/30 px-4 py-2.5 text-sm font-medium text-red-600"
-                  onClick={() =>
-                    void meetingApi
-                      .transition(meetingId, 'cancelled')
-                      .then(refresh)
-                  }
+                  onClick={() => void transition('cancelled')}
                 >
                   Cancel
                 </button>
@@ -208,11 +204,7 @@ export function MeetingDetailPage() {
               {['completed', 'cancelled'].includes(data.status) && (
                 <button
                   className="rounded-xl border px-4 py-2.5 text-sm font-medium"
-                  onClick={() =>
-                    void meetingApi
-                      .transition(meetingId, 'archived')
-                      .then(refresh)
-                  }
+                  onClick={() => void transition('archived')}
                 >
                   Archive
                 </button>

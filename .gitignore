@@ -25,6 +25,7 @@ dist/
 storage/
 *.log
 apps/api/alembic-upgrade.*
+infrastructure/backups/
 
 # Node
 node_modules/

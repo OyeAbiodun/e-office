@@ -3,10 +3,10 @@
 import asyncio
 import html
 import re
-import smtplib
 import uuid
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
+from email.utils import format_datetime, formataddr
 from pathlib import Path
 
 import nh3
@@ -34,6 +34,7 @@ from meetinghq_api.modules.mail.schemas import (
     MailSignatureInput,
     MailTemplateInput,
 )
+from meetinghq_api.modules.notifications.service import EmailDeliveryError, MeetingEmailSender
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
@@ -90,10 +91,21 @@ class MailDeliveryAdapter:
                 "External mail delivery is not configured. Configure SMTP in Integration Center."
             )
         message = EmailMessage()
-        message["From"] = self._string("from_email") or sender.email
+        from_email = self._string("from_email") or sender.email
+        from_name = self._string("from_name") or sender.display_name
+        message["From"] = formataddr((from_name, from_email))
         message["To"] = ", ".join(recipients)
         message["Subject"] = draft.subject or "(No subject)"
-        message_id = f"<{uuid.uuid4()}@meetinghq>"
+        message["Date"] = format_datetime(datetime.now(UTC))
+        if reply_to := self._string("reply_to"):
+            message["Reply-To"] = reply_to
+        if return_path := self._string("return_path"):
+            message["Return-Path"] = return_path
+        if priority := self._string("default_priority"):
+            message["X-Priority"] = {"high": "1", "normal": "3", "low": "5"}.get(
+                priority.lower(), "3"
+            )
+        message_id = f"<mail-{draft.id}@meetinghq>"
         message["Message-ID"] = message_id
         message.set_content(draft.body_text or self._plain_text(draft.body_html))
         if draft.body_html:
@@ -109,33 +121,13 @@ class MailDeliveryAdapter:
                 subtype=subtype or "octet-stream",
                 filename=attachment.filename,
             )
-        for attempt in range(1, self.settings.smtp_max_attempts + 1):
-            try:
-                await asyncio.wait_for(
-                    asyncio.to_thread(self._smtp_send, host, message),
-                    timeout=self.settings.smtp_timeout_seconds + 2,
-                )
-                break
-            except smtplib.SMTPAuthenticationError as exc:
-                raise ConflictError("SMTP authentication failed") from exc
-            except smtplib.SMTPRecipientsRefused as exc:
-                raise ValidationError("SMTP rejected one or more recipients") from exc
-            except Exception as exc:
-                if attempt >= self.settings.smtp_max_attempts:
-                    raise ConflictError(f"SMTP delivery failed ({type(exc).__name__})") from exc
-                await asyncio.sleep(self.settings.smtp_retry_base_seconds * (2 ** (attempt - 1)))
+        try:
+            await MeetingEmailSender(self.settings, self.values).send_message(message)
+        except EmailDeliveryError as exc:
+            if "rejected" in str(exc).lower():
+                raise ValidationError(str(exc)) from exc
+            raise ConflictError(str(exc)) from exc
         return message_id
-
-    def _smtp_send(self, host: str, message: EmailMessage) -> None:
-        raw_port = self.values.get("port")
-        port = int(raw_port) if isinstance(raw_port, (int, str)) else 587
-        with smtplib.SMTP(host, port, timeout=self.settings.smtp_timeout_seconds) as client:
-            if self.values.get("starttls", True):
-                client.starttls()
-            username = self._string("username")
-            if username:
-                client.login(username, self._string("password") or "")
-            client.send_message(message)
 
     def _string(self, key: str) -> str | None:
         value = self.values.get(key)

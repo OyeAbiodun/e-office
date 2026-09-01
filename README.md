@@ -57,9 +57,9 @@ workspace. The Super Admin role receives the complete permission catalog.
 Configure these required variables before the first startup:
 
 ```dotenv
-INITIAL_SUPER_ADMIN_EMAIL=textabi12@gmail.com
-INITIAL_SUPER_ADMIN_PASSWORD=ChangeMe123!
-INITIAL_SUPER_ADMIN_FIRST_NAME=Abiodun
+INITIAL_SUPER_ADMIN_EMAIL=admin@example.com
+INITIAL_SUPER_ADMIN_PASSWORD=replace-with-a-unique-random-password
+INITIAL_SUPER_ADMIN_FIRST_NAME=Platform
 INITIAL_SUPER_ADMIN_LAST_NAME=
 INITIAL_ORGANIZATION_NAME=MeetingHQ
 INITIAL_WORKSPACE_NAME=Main Workspace
@@ -83,11 +83,14 @@ Open:
 
 The default credentials in `.env.example` are for local development only.
 
-Meeting invitations, password resets, and temporary credentials use SMTP when
-`MEETINGHQ_SMTP_HOST` is configured. Without SMTP, development installs write real
-RFC-compliant `.eml` messages to `apps/api/storage/outbox`; meeting invitations include
-an ICS calendar attachment. The reminder worker delivers the configured 15-minute,
-30-minute, 1-hour, and 24-hour reminders while the API is running.
+Super Admins manage SMTP at **Administration → Integration Center → Email → SMTP**.
+The write-only credential is encrypted at rest, a blank password preserves the current
+secret, and the UI provides live connection testing, real-path test-email submission,
+safe operational logs, and System Health status. Meeting invitations, password resets,
+security messages, notifications, reminders, and external Internal Mail all use this
+shared transport. Environment SMTP values are an emergency/bootstrap fallback, not the
+routine administration path. Without SMTP, local development writes RFC-compliant `.eml`
+messages to `apps/api/storage/outbox`; meeting invitations include an ICS attachment.
 
 Internal Mail is available at `/mail`. Organization-to-organization-user messages
 are delivered directly into tenant-isolated mailboxes. External delivery is enabled
@@ -113,6 +116,9 @@ installed.
 - `GET /api/v1/health` is a liveness probe and has no external dependencies.
 - `GET /api/v1/ready` checks PostgreSQL and Redis and returns `503` when either is
   unavailable.
+- System Health reports the active database driver, safe database name, pool state,
+  Alembic revision, and schema state. SMTP is required in staging/production and reports
+  healthy only after a live TLS/authentication probe succeeds.
 
 ## Authentication
 

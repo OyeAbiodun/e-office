@@ -1,9 +1,9 @@
 """Calendar API validation and representation contracts."""
 
 import uuid
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from meetinghq_api.modules.calendar.models import (
     CalendarType,
@@ -134,6 +134,19 @@ class EventResponse(OrmModel):
     recurrence_parent_id: uuid.UUID | None
     original_start_datetime: datetime | None
     category_id: uuid.UUID | None
+
+    @field_validator(
+        "start_datetime",
+        "end_datetime",
+        "original_start_datetime",
+        mode="before",
+    )
+    @classmethod
+    def serialize_as_utc(cls, value: datetime | None) -> datetime | None:
+        """Keep the API timestamp contract timezone-aware on every database backend."""
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 class RecurrenceExceptionCreate(EventUpdate):

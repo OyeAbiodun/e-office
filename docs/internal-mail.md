@@ -17,8 +17,9 @@ read receipts, and delivery status.
 - A provider failure is persisted as a failed delivery with a bounded error
   message; it is never reported as a successful send.
 
-The environment SMTP settings remain reserved for transactional platform email
-such as invitations, password resets, and meeting reminders.
+Tenant SMTP configuration is shared with transactional platform email. Environment SMTP
+settings remain an installation fallback only; a tenant configuration saved through
+Integration Center is authoritative for external mailbox delivery.
 
 ## Security
 
@@ -31,7 +32,7 @@ both organization and mailbox owner identifiers.
 
 ## Administration
 
-Configure external delivery at **Administration → Integration Center → SMTP**.
+Configure external delivery at **Administration → Integration Center → Email → SMTP**.
 Complete the Authentication and Configuration sections, save the provider, and
 run **Test Connection**. Audit Center records configuration and mail mutations
 without storing or exposing credentials.

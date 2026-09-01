@@ -308,6 +308,7 @@ class MeetingService:
         for calendar_event in events:
             calendar_event.title = meeting.title
             calendar_event.description = meeting.description
+        meeting.sequence += 1
         await self.notifications.notify_participants(
             meeting,
             "meeting_updated",
@@ -333,6 +334,7 @@ class MeetingService:
             raise ValidationError(f"Cannot transition meeting from {meeting.status} to {target}")
         meeting.status = target
         if target == MeetingStatus.CANCELLED and meeting.calendar_event_id:
+            meeting.sequence += 1
             events = (
                 await self.session.scalars(
                     select(CalendarEvent).where(CalendarEvent.meeting_id == meeting.id)
@@ -383,8 +385,9 @@ class MeetingService:
         )
         old_event = next(
             (item for item in old_events if item.id == meeting.calendar_event_id),
-            None,
+            old_events[0] if old_events else None,
         )
+        previous_statuses = {item.id: item.status for item in old_events}
         for existing_event in old_events:
             existing_event.status = EventStatus.CANCELLED
         calendar = (
@@ -406,27 +409,43 @@ class MeetingService:
         )
         if not validation.valid:
             for existing_event in old_events:
-                existing_event.status = EventStatus.CONFIRMED
+                existing_event.status = previous_statuses[existing_event.id]
             raise ConflictError("; ".join(validation.reasons))
-        event = await CalendarService(self.session).create_event(
-            organization_id,
-            calendar.id,
-            EventCreate(
-                title=meeting.title,
-                description=meeting.description,
-                start_datetime=body.start_datetime,
-                end_datetime=body.end_datetime,
-                timezone=body.timezone,
-                visibility=Visibility(meeting.visibility),
-            ),
-            actor_id,
-        )
-        meeting.calendar_event_id = event.id
-        event.meeting_id = meeting.id
+        calendar_service = CalendarService(self.session)
+        start = calendar_service.timezones.to_utc(body.start_datetime, body.timezone)
+        end = calendar_service.timezones.to_utc(body.end_datetime, body.timezone)
+        if old_event is None:
+            event = await calendar_service.create_event(
+                organization_id,
+                calendar.id,
+                EventCreate(
+                    title=meeting.title,
+                    description=meeting.description,
+                    start_datetime=body.start_datetime,
+                    end_datetime=body.end_datetime,
+                    timezone=body.timezone,
+                    visibility=Visibility(meeting.visibility),
+                ),
+                actor_id,
+            )
+            event.meeting_id = meeting.id
+            meeting.calendar_event_id = event.id
+        else:
+            event = old_event
+            event.calendar_id = calendar.id
+            for existing_event in old_events:
+                existing_event.title = meeting.title
+                existing_event.description = meeting.description
+                existing_event.start_datetime = start
+                existing_event.end_datetime = end
+                existing_event.timezone = body.timezone
+                existing_event.status = EventStatus.CONFIRMED
+                existing_event.updated_by = actor_id
         meeting.room_id = body.room_id
         meeting.start_datetime = event.start_datetime
         meeting.end_datetime = event.end_datetime
         meeting.timezone = body.timezone
+        meeting.sequence += 1
         participant_ids = set(
             (
                 await self.session.scalars(
@@ -437,8 +456,9 @@ class MeetingService:
                 )
             ).all()
         )
-        for participant_id in participant_ids:
-            await self._create_participant_event(meeting, participant_id, None)
+        if old_event is None:
+            for participant_id in participant_ids:
+                await self._create_participant_event(meeting, participant_id, None)
         await self.notifications.notify_participants(
             meeting,
             "meeting_updated",

@@ -13,8 +13,10 @@ const organizerPassword = requiredEnvironment('PLAYWRIGHT_ORGANIZER_PASSWORD')
 async function login(page: Page) {
   await page.goto('/login')
   await page.getByLabel('Work email').fill(organizerEmail)
-  await page.getByLabel('Password').fill(organizerPassword)
+  const passwordField = page.getByLabel('Password')
+  await passwordField.fill(organizerPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await passwordField.fill('').catch(() => undefined)
   await expect(page).toHaveURL('/', { timeout: 15_000 })
   await expect(
     page.getByRole('heading', { name: /Good (morning|afternoon|evening)/ }),
@@ -45,6 +47,26 @@ test('authenticated shell, command center, and navigation work', async ({
     .click()
   await expect(page).toHaveURL('/calendar')
   await expect(page.getByRole('heading', { name: 'Calendar' })).toBeVisible()
+
+  await page.goBack()
+  await expect(page).toHaveURL('/')
+  await page.goto('/profile/security/mfa')
+  await page.reload()
+  await expect(page).toHaveURL('/profile/security/mfa')
+  await expect(
+    page.getByRole('link', { name: 'Profile Center', exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: 'Security & MFA', exact: true }),
+  ).toBeVisible()
+
+  const secondPage = await page.context().newPage()
+  await secondPage.goto('/profile')
+  await expect(secondPage).toHaveURL('/profile')
+  await expect(
+    secondPage.getByRole('button', { name: /user account/i }),
+  ).toBeVisible()
+  await secondPage.close()
 })
 
 test('calendar can create, edit, and delete a real event', async ({ page }) => {
@@ -95,7 +117,9 @@ test('internal mail persists a sent rich-text message', async ({ page }) => {
   if ((page.viewportSize()?.width ?? 1280) < 1024)
     await page.getByRole('button', { name: 'Show mail folders' }).click()
   await page.getByRole('button', { name: /sent/i }).click()
-  await expect(page.getByText(subject)).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: subject, exact: true }),
+  ).toBeVisible()
 })
 
 test('dashboard and chat have no serious automated accessibility violations', async ({

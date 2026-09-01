@@ -2,9 +2,11 @@
 
 import asyncio
 import smtplib
+import ssl
 import uuid
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
+from email.utils import format_datetime, formataddr
 from pathlib import Path
 
 import structlog
@@ -67,12 +69,24 @@ class MeetingEmailSender:
         subject: str,
         text: str,
         ics: str | None = None,
+        message_key: str | None = None,
     ) -> str:
         message = EmailMessage()
-        message["From"] = self._string("from_email") or self.settings.smtp_from_email
+        from_email = self._string("from_email") or self.settings.smtp_from_email
+        from_name = self._string("from_name")
+        message["From"] = formataddr((from_name, from_email)) if from_name else from_email
         message["To"] = recipient
         message["Subject"] = subject
-        message_id = f"<{uuid.uuid4()}@meetinghq>"
+        message["Date"] = format_datetime(datetime.now(UTC))
+        if reply_to := self._string("reply_to"):
+            message["Reply-To"] = reply_to
+        if return_path := self._string("return_path"):
+            message["Return-Path"] = return_path
+        if priority := self._string("default_priority"):
+            message["X-Priority"] = {"high": "1", "normal": "3", "low": "5"}.get(
+                priority.lower(), "3"
+            )
+        message_id = f"<{message_key or uuid.uuid4()}@meetinghq>"
         message["Message-ID"] = message_id
         message.set_content(text)
         if ics:
@@ -84,11 +98,17 @@ class MeetingEmailSender:
                 filename="meeting.ics",
                 params={"method": method},
             )
-        if self._smtp_host():
-            await self._send_with_retry(message)
-        else:
-            await asyncio.to_thread(self._write_outbox, message)
+        await self.send_message(message)
         return message_id
+
+    async def send_message(self, message: EmailMessage) -> None:
+        """Send a prepared message through the same application-wide transport."""
+        if self._smtp_host():
+            if not self._enabled():
+                raise EmailDeliveryError("Outbound SMTP delivery is disabled")
+            await self._send_with_retry(message)
+            return
+        await asyncio.to_thread(self._write_outbox, message)
 
     async def test_connection(self) -> None:
         """Validate the configured SMTP handshake without sending a message."""
@@ -97,7 +117,7 @@ class MeetingEmailSender:
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(self._smtp_connect),
-                timeout=self.settings.smtp_timeout_seconds + 2,
+                timeout=self._timeout() + 2,
             )
         except EmailDeliveryError:
             raise
@@ -111,12 +131,18 @@ class MeetingEmailSender:
         """Return whether this resolved tenant transport has an SMTP endpoint."""
         return bool(self._smtp_host())
 
+    @property
+    def enabled(self) -> bool:
+        """Return whether configured outbound delivery is enabled."""
+        return self._enabled()
+
     async def _send_with_retry(self, message: EmailMessage) -> None:
-        for attempt in range(1, self.settings.smtp_max_attempts + 1):
+        max_attempts = self._max_attempts()
+        for attempt in range(1, max_attempts + 1):
             try:
                 await asyncio.wait_for(
                     asyncio.to_thread(self._smtp_send, message),
-                    timeout=self.settings.smtp_timeout_seconds + 2,
+                    timeout=self._timeout() + 2,
                 )
                 return
             except smtplib.SMTPAuthenticationError as exc:
@@ -127,14 +153,14 @@ class MeetingEmailSender:
                 await logger.awarning(
                     "smtp_delivery_attempt_failed",
                     attempt=attempt,
-                    max_attempts=self.settings.smtp_max_attempts,
+                    max_attempts=max_attempts,
                     error_type=type(exc).__name__,
                 )
-                if attempt >= self.settings.smtp_max_attempts:
+                if attempt >= max_attempts:
                     raise EmailDeliveryError(
                         f"SMTP delivery failed ({type(exc).__name__})"
                     ) from exc
-                await asyncio.sleep(self.settings.smtp_retry_base_seconds * (2 ** (attempt - 1)))
+                await asyncio.sleep(self._retry_base_seconds() * (2 ** (attempt - 1)))
 
     def _write_outbox(self, message: EmailMessage) -> None:
         outbox = Path(self.settings.email_outbox_path).resolve()
@@ -145,29 +171,35 @@ class MeetingEmailSender:
         host = self._smtp_host()
         if host is None:
             raise RuntimeError("SMTP host is not configured")
-        with smtplib.SMTP(
-            host,
-            self._port(),
-            timeout=self.settings.smtp_timeout_seconds,
-        ) as smtp:
-            if self._starttls():
-                smtp.starttls()
-            username = self._string("username") or self.settings.smtp_username
-            if username:
-                smtp.login(username, self._string("password") or self.settings.smtp_password or "")
+        with self._client(host) as smtp:
+            self._authenticate(smtp)
             smtp.send_message(message)
 
     def _smtp_connect(self) -> None:
         host = self._smtp_host()
         if host is None:
             raise EmailDeliveryError("SMTP is not configured")
-        with smtplib.SMTP(host, self._port(), timeout=self.settings.smtp_timeout_seconds) as smtp:
-            if self._starttls():
-                smtp.starttls()
-            username = self._string("username") or self.settings.smtp_username
-            if username:
-                smtp.login(username, self._string("password") or self.settings.smtp_password or "")
+        with self._client(host) as smtp:
+            self._authenticate(smtp)
             smtp.noop()
+
+    def _client(self, host: str) -> smtplib.SMTP:
+        security = self._security_mode()
+        context = ssl.create_default_context()
+        if security == "ssl_tls":
+            return smtplib.SMTP_SSL(host, self._port(), timeout=self._timeout(), context=context)
+        client = smtplib.SMTP(host, self._port(), timeout=self._timeout())
+        if security == "starttls":
+            client.starttls(context=context)
+        return client
+
+    def _authenticate(self, smtp: smtplib.SMTP) -> None:
+        authentication_enabled = self.values.get("authentication_enabled", True)
+        if not bool(authentication_enabled):
+            return
+        username = self._string("username") or self.settings.smtp_username
+        if username:
+            smtp.login(username, self._string("password") or self.settings.smtp_password or "")
 
     def _smtp_host(self) -> str | None:
         return self._string("host") or self.settings.smtp_host
@@ -177,8 +209,36 @@ class MeetingEmailSender:
         return int(value) if isinstance(value, (int, str)) else self.settings.smtp_port
 
     def _starttls(self) -> bool:
-        value = self.values.get("starttls")
-        return bool(value) if isinstance(value, bool) else self.settings.smtp_starttls
+        return self._security_mode() == "starttls"
+
+    def _security_mode(self) -> str:
+        value = self._string("security_mode")
+        if value in {"starttls", "ssl_tls", "none"}:
+            return value
+        legacy = self.values.get("starttls")
+        if isinstance(legacy, bool):
+            return "starttls" if legacy else "none"
+        return "starttls" if self.settings.smtp_starttls else "none"
+
+    def _enabled(self) -> bool:
+        value = self.values.get("enabled")
+        return bool(value) if isinstance(value, bool) else True
+
+    def _timeout(self) -> int:
+        value = self.values.get("timeout_seconds") or self.values.get("connection_timeout")
+        return int(value) if isinstance(value, (int, str)) else self.settings.smtp_timeout_seconds
+
+    def _max_attempts(self) -> int:
+        value = self.values.get("max_retry_attempts")
+        return int(value) if isinstance(value, (int, str)) else self.settings.smtp_max_attempts
+
+    def _retry_base_seconds(self) -> float:
+        value = self.values.get("retry_delay_seconds")
+        return (
+            float(value)
+            if isinstance(value, (int, float, str))
+            else self.settings.smtp_retry_base_seconds
+        )
 
     def _string(self, key: str) -> str | None:
         value = self.values.get(key)
@@ -467,6 +527,7 @@ class NotificationService:
                 recipient=participant.email,
             )
             self.session.add_all([in_app, email_delivery, ics_delivery])
+            await self.session.flush()
             attempted_at = datetime.now(UTC)
             try:
                 transport_id = await email.send(
@@ -474,6 +535,7 @@ class NotificationService:
                     f"Invitation: {meeting.title}",
                     self._invitation_text(meeting, organizer),
                     ics,
+                    message_key=f"meeting-{email_delivery.id}",
                 )
                 for delivery in (email_delivery, ics_delivery):
                     delivery.status = "sent"
@@ -481,6 +543,15 @@ class NotificationService:
                     delivery.sent_at = attempted_at
                     delivery.attempt_count = 1
                     delivery.last_attempt_at = attempted_at
+                await self._record_delivery_audit(
+                    meeting,
+                    organizer.id,
+                    "meeting.delivery.accepted",
+                    "meeting_invitation",
+                    ["email", "ics"],
+                    participant.email,
+                    transport_id,
+                )
             except Exception as exc:
                 for delivery in (email_delivery, ics_delivery):
                     delivery.status = "failed"
@@ -630,9 +701,22 @@ class NotificationService:
                         )
                         self.session.add(delivery)
                     deliveries.append(delivery)
+            if deliveries:
+                await self.session.flush()
             attempted_at = datetime.now(UTC)
             try:
-                transport_id = await email.send(user.email, subject, body, ics)
+                primary_delivery = next(
+                    (item for item in deliveries if item.channel.startswith("email")), None
+                )
+                transport_id = await email.send(
+                    user.email,
+                    subject,
+                    body,
+                    ics,
+                    message_key=(
+                        f"meeting-{primary_delivery.id}" if primary_delivery is not None else None
+                    ),
+                )
                 for delivery in deliveries:
                     delivery.status = "sent"
                     delivery.transport_id = transport_id
@@ -641,6 +725,15 @@ class NotificationService:
                     delivery.last_attempt_at = attempted_at
                     delivery.next_attempt_at = None
                     delivery.sent_at = attempted_at
+                await self._record_delivery_audit(
+                    meeting,
+                    meeting.organizer_id,
+                    "meeting.delivery.accepted",
+                    notification_type,
+                    [item.channel for item in deliveries],
+                    user.email,
+                    transport_id,
+                )
             except Exception as exc:
                 for delivery in deliveries:
                     delivery.status = "failed"
@@ -738,6 +831,7 @@ class NotificationService:
                         method=method,
                         status="CANCELLED" if method == "CANCEL" else "CONFIRMED",
                     ),
+                    message_key=f"meeting-{delivery.id}",
                 )
                 for item in companions:
                     item.status = "sent"
@@ -747,6 +841,15 @@ class NotificationService:
                     item.attempt_count = attempt
                     item.last_attempt_at = attempted_at
                     item.next_attempt_at = None
+                await self._record_delivery_audit(
+                    meeting,
+                    organizer.id,
+                    "meeting.delivery.retry_accepted",
+                    self._retry_notification_type(delivery.channel),
+                    [item.channel for item in companions],
+                    user.email,
+                    transport_id,
+                )
                 delivered += 1
             except Exception as exc:
                 for item in companions:
@@ -822,6 +925,15 @@ class NotificationService:
                 reminder.delivered_at = datetime.now(UTC)
                 reminder.error = None
                 reminder.next_attempt_at = None
+                await self._record_delivery_audit(
+                    meeting,
+                    meeting.organizer_id,
+                    "meeting.reminder.accepted",
+                    "meeting_reminder",
+                    ["email", "in_app"],
+                    user.email,
+                    None,
+                )
                 delivered += 1
             except Exception as exc:
                 reminder.status = "failed"
@@ -829,7 +941,61 @@ class NotificationService:
                 reminder.next_attempt_at = self._next_attempt_at(
                     reminder.attempt_count, reminder.last_attempt_at
                 )
+                self.session.add(
+                    AuditLog(
+                        organization_id=meeting.organization_id,
+                        user_id=meeting.organizer_id,
+                        action="meeting.reminder.failed",
+                        resource="meeting",
+                        resource_id=meeting.id,
+                        audit_metadata={
+                            "notification_type": "meeting_reminder",
+                            "recipient_domain": self._recipient_domain(user.email),
+                            "error": self._safe_delivery_error(exc),
+                            "attempt": reminder.attempt_count,
+                        },
+                    )
+                )
         return delivered
+
+    async def _record_delivery_audit(
+        self,
+        meeting: Meeting,
+        actor_id: uuid.UUID,
+        action: str,
+        notification_type: str,
+        channels: list[str],
+        recipient: str,
+        transport_id: str | None,
+    ) -> None:
+        self.session.add(
+            AuditLog(
+                organization_id=meeting.organization_id,
+                user_id=actor_id,
+                action=action,
+                resource="meeting",
+                resource_id=meeting.id,
+                audit_metadata={
+                    "notification_type": notification_type,
+                    "channels": channels,
+                    "recipient_domain": self._recipient_domain(recipient),
+                    "transport_id": transport_id,
+                },
+            )
+        )
+        await self.session.flush()
+
+    @staticmethod
+    def _recipient_domain(recipient: str) -> str:
+        return recipient.rpartition("@")[2].lower()
+
+    @staticmethod
+    def _retry_notification_type(channel: str) -> str:
+        if channel.endswith("cancel"):
+            return "meeting_cancelled"
+        if channel.endswith("update"):
+            return "meeting_updated"
+        return "meeting_invitation"
 
     def _next_attempt_at(self, attempt: int, attempted_at: datetime) -> datetime | None:
         if attempt >= self.settings.delivery_max_attempts:
@@ -882,6 +1048,7 @@ class NotificationService:
                 f"METHOD:{method}",
                 "BEGIN:VEVENT",
                 f"UID:{meeting.id}@meetinghq",
+                f"SEQUENCE:{meeting.sequence}",
                 f"DTSTAMP:{cls._ics_datetime(datetime.now(UTC))}",
                 f"DTSTART:{cls._ics_datetime(meeting.start_datetime)}",
                 f"DTEND:{cls._ics_datetime(meeting.end_datetime)}",

@@ -116,7 +116,8 @@ def upgrade() -> None:
     )
 
     # Existing primary workspaces gain an explicit owner from their owner membership.
-    op.execute("""
+    op.execute(
+        """
         UPDATE workspaces
         SET owner_id = (
             SELECT workspace_memberships.user_id
@@ -125,7 +126,8 @@ def upgrade() -> None:
               AND workspace_memberships.role = 'owner'
             LIMIT 1
         )
-        """)
+        """
+    )
 
 
 def downgrade() -> None:

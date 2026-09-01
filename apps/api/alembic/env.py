@@ -4,7 +4,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import Enum, String, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from meetinghq_api.core.config import get_settings
@@ -35,6 +35,20 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 target_metadata = Base.metadata
 
 
+def compare_type(
+    _context: object,
+    _inspected_column: object,
+    _metadata_column: object,
+    inspected_type: object,
+    metadata_type: object,
+) -> bool | None:
+    """Treat reflected VARCHAR and non-native SQLAlchemy enums as equivalent."""
+    if isinstance(metadata_type, Enum) and not metadata_type.native_enum:
+        if isinstance(inspected_type, String):
+            return False
+    return None
+
+
 def run_migrations_offline() -> None:
     """Run migrations without creating a database connection."""
     context.configure(
@@ -49,7 +63,11 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: object) -> None:
     """Run migrations with an existing connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=compare_type,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

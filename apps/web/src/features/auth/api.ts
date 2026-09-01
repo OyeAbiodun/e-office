@@ -283,8 +283,8 @@ async function restoreSession(): Promise<AuthUser> {
     return restorePromise
   }
   restorePromise = refreshSession()
-    .then(() => apiRequest<AuthUser>('/auth/me', {}, true))
-    .then((user) => {
+    .then((session) => {
+      const user = session.user
       authLog('current_user_succeeded', {
         userId: user.id,
         organizationId: user.organization_id,

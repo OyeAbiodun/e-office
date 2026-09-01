@@ -19,9 +19,9 @@ async def test_bootstrap_creates_owned_installation_once() -> None:
         await connection.run_sync(Base.metadata.create_all)
     settings = Settings(
         _env_file=None,
-        initial_super_admin_email="textabi12@gmail.com",
-        initial_super_admin_password="ChangeMe123!",  # noqa: S106
-        initial_super_admin_first_name="Abiodun",
+        initial_super_admin_email="bootstrap.admin@example.com",
+        initial_super_admin_password="Bootstrap-Test-Only-1!",  # noqa: S106
+        initial_super_admin_first_name="Platform",
         initial_super_admin_last_name="",
         initial_organization_name="MeetingHQ",
         initial_workspace_name="Main Workspace",

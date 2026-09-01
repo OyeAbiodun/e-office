@@ -139,7 +139,12 @@ async def refresh(
         raise AuthenticationError("Refresh token is required")
     validate_csrf(csrf_cookie, csrf_header, cookie_auth=body.refresh_token is None)
     ip_address, user_agent = request_context(request)
-    result = await service.refresh(raw_token, ip_address, user_agent)
+    result = await service.refresh(
+        raw_token,
+        ip_address,
+        user_agent,
+        allow_cookie_retry_grace=body.refresh_token is None,
+    )
     set_auth_cookies(response, result, settings)
     if settings.environment == "local":
         await logger.ainfo(

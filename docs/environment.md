@@ -15,6 +15,10 @@ production credentials.
 | `MEETINGHQ_TRUSTED_HOSTS` | Yes | JSON array | Accepted HTTP Host values; wildcards are rejected for staging/production |
 | `MEETINGHQ_WEB_APP_URL` | Yes | absolute origin | Browser origin used for password, invitation, and verification links |
 | `MEETINGHQ_DATABASE_URL` | Yes | PostgreSQL async URL | SQLAlchemy `postgresql+asyncpg` connection URL |
+| `MEETINGHQ_DATABASE_POOL_SIZE` | No | `10` | Persistent PostgreSQL pool connections per API process |
+| `MEETINGHQ_DATABASE_MAX_OVERFLOW` | No | `20` | Bounded burst connections above the base pool |
+| `MEETINGHQ_DATABASE_POOL_TIMEOUT_SECONDS` | No | `30` | Maximum wait for an available connection |
+| `MEETINGHQ_DATABASE_POOL_RECYCLE_SECONDS` | No | `1800` | Recycle aging connections before infrastructure timeouts |
 | `MEETINGHQ_REDIS_URL` | Yes | Redis URL | Cache and coordination connection |
 | `MEETINGHQ_JWT_SECRET` | Yes | local-only value | HMAC signing secret, minimum 32 characters |
 | `MEETINGHQ_JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
@@ -56,6 +60,18 @@ production credentials.
 
 Production secrets belong in the deployment platform's secret manager. Because Vite
 variables are embedded in public browser assets, never put secrets in `VITE_*`.
+
+Tenant SMTP host, security mode, credentials, sender identity, retry policy, and enabled
+state are administered through **Administration → Integration Center → Email → SMTP** and
+stored encrypted in PostgreSQL. `MEETINGHQ_SMTP_*` values are only the installation-level
+fallback for flows that cannot yet resolve a tenant; they are not the routine provider
+configuration interface.
+
+The Compose PostgreSQL service fixes both the container and session timezone to UTC. For
+an externally managed PostgreSQL deployment, configure the `meetinghq` database with
+`ALTER DATABASE meetinghq SET timezone TO 'UTC'`; application-facing timestamp columns use
+`TIMESTAMP WITH TIME ZONE`, while each user's IANA timezone is retained for display and
+scheduling semantics.
 
 The bootstrap variables are read only when the organization table is empty. Once any
 organization exists, startup does not recreate or modify installation records.

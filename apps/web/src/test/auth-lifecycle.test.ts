@@ -55,5 +55,5 @@ test('startup restoration is single-flight and resolves the current user once', 
   expect(first.id).toBe(user.id)
   expect(second.id).toBe(user.id)
   expect(refreshCalls).toBe(1)
-  expect(currentUserCalls).toBe(1)
+  expect(currentUserCalls).toBe(0)
 })

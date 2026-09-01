@@ -138,4 +138,9 @@ async def test_system_health_validates_tenant_smtp_configuration(
     assert smtp["status"] == "healthy"
     assert smtp["requirement"] == "configured"
     assert smtp["configured"] is True
-    assert smtp["details"] == {"mode": "smtp", "validated": True}
+    assert smtp["details"]["mode"] == "smtp"
+    assert smtp["details"]["validated"] is True
+    assert smtp["details"]["configured"] is True
+    assert smtp["details"]["enabled"] is True
+    assert smtp["details"]["recent_failures"] == 0
+    assert smtp["details"]["last_validation"]

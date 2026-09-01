@@ -7,6 +7,8 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  Send,
+  Server,
   Settings2,
   ShieldCheck,
   TestTube2,
@@ -18,14 +20,17 @@ import {
   type ReactNode,
   type SetStateAction,
   useMemo,
+  useEffect,
   useState,
 } from 'react'
 
 import { useAuth } from '@/features/auth/auth-store'
+import { notify } from '@/components/feedback/events'
 import { ProviderLogo } from '@/components/provider-logo'
 import {
   integrationApi,
   type IntegrationProvider,
+  type SmtpConfigurationUpdate,
 } from '@/features/integrations/api'
 
 interface FieldDefinition {
@@ -204,7 +209,8 @@ export function IntegrationCenterPage() {
     mutationFn: integrationApi.disconnect,
     onSuccess: refresh,
   })
-  if (!user?.roles.includes('Super Admin')) return <Navigate to="/forbidden" />
+  if (!user?.permissions.includes('integrations.view'))
+    return <Navigate to="/forbidden" />
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-5 sm:p-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -289,14 +295,19 @@ export function IntegrationCenterPage() {
           ))}
         </section>
       )}
-      {selected && (
+      {selected?.key === 'smtp' ? (
+        <SmtpConfigurationPanel
+          onClose={() => setSelectedKey(null)}
+          provider={selected}
+        />
+      ) : selected ? (
         <ConfigurationPanel
           disconnecting={disconnect.isPending}
           onClose={() => setSelectedKey(null)}
           onDisconnect={() => disconnect.mutate(selected.key)}
           provider={selected}
         />
-      )}
+      ) : null}
     </div>
   )
 }
@@ -338,6 +349,617 @@ function ProviderCard({
         </button>
       </div>
     </article>
+  )
+}
+
+const smtpDefaults: SmtpConfigurationUpdate = {
+  provider_display_name: 'SMTP',
+  host: '',
+  port: 587,
+  security_mode: 'starttls',
+  allow_insecure: false,
+  connection_timeout: 20,
+  authentication_enabled: true,
+  authentication_method: 'password',
+  username: '',
+  password: '',
+  from_email: '',
+  from_name: 'MeetingHQ',
+  reply_to: null,
+  return_path: null,
+  enabled: true,
+  max_retry_attempts: 3,
+  retry_delay_seconds: 1,
+  timeout_seconds: 20,
+  default_priority: 'normal',
+}
+
+function SmtpConfigurationPanel({
+  provider,
+  onClose,
+}: {
+  provider: IntegrationProvider
+  onClose: () => void
+}) {
+  const client = useQueryClient()
+  const [tab, setTab] = useState<'setup' | 'testing' | 'operations'>('setup')
+  const [form, setForm] = useState<SmtpConfigurationUpdate>(smtpDefaults)
+  const [testRecipient, setTestRecipient] = useState('')
+  const configuration = useQuery({
+    queryKey: ['smtp-configuration'],
+    queryFn: integrationApi.smtpConfiguration,
+  })
+  const audit = useQuery({
+    queryKey: ['integration-audit', 'smtp'],
+    queryFn: () => integrationApi.audit('smtp'),
+    enabled: tab === 'operations',
+  })
+  useEffect(() => {
+    if (!configuration.data) return
+    const current = configuration.data
+    setForm({
+      provider_display_name: current.provider_display_name,
+      host: current.host,
+      port: current.port,
+      security_mode: current.security_mode,
+      allow_insecure: current.allow_insecure,
+      connection_timeout: current.connection_timeout,
+      authentication_enabled: current.authentication_enabled,
+      authentication_method: 'password',
+      username: current.username,
+      password: '',
+      from_email: current.from_email,
+      from_name: current.from_name,
+      reply_to: current.reply_to,
+      return_path: current.return_path,
+      enabled: current.enabled,
+      max_retry_attempts: current.max_retry_attempts,
+      retry_delay_seconds: current.retry_delay_seconds,
+      timeout_seconds: current.timeout_seconds,
+      default_priority: current.default_priority,
+    })
+  }, [configuration.data])
+  const refresh = async () => {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ['smtp-configuration'] }),
+      client.invalidateQueries({ queryKey: ['integrations'] }),
+      client.invalidateQueries({ queryKey: ['integration-audit', 'smtp'] }),
+      client.invalidateQueries({ queryKey: ['system-health'] }),
+    ])
+  }
+  const save = useMutation({
+    mutationFn: () => integrationApi.configureSmtp(form),
+    onSuccess: async () => {
+      setForm((current) => ({ ...current, password: '' }))
+      await refresh()
+    },
+  })
+  const connectionTest = useMutation({
+    mutationFn: () => integrationApi.test('smtp'),
+    onSuccess: refresh,
+  })
+  const emailTest = useMutation({
+    mutationFn: () => integrationApi.sendSmtpTestEmail(testRecipient),
+    onSuccess: async (result) => {
+      notify({
+        tone: result.status === 'accepted' ? 'success' : 'error',
+        title:
+          result.status === 'accepted'
+            ? 'Test email accepted by SMTP provider'
+            : 'Test email failed',
+        description: result.message,
+      })
+      await refresh()
+    },
+  })
+  const state = configuration.data?.state ?? 'not_configured'
+  return (
+    <div
+      aria-label="Configure SMTP"
+      aria-modal="true"
+      className="fixed inset-0 z-[80] flex justify-end bg-black/45"
+      role="dialog"
+    >
+      <button
+        aria-label="Close SMTP configuration"
+        className="flex-1"
+        onClick={onClose}
+        type="button"
+      />
+      <aside className="flex h-full w-full max-w-5xl flex-col border-l bg-background shadow-2xl">
+        <header className="border-b p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <ProviderLogo className="size-7" provider="smtp" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-primary">
+                  Administration / Integration Center / Email
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold">SMTP delivery</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  One secure outbound path for meetings, identity,
+                  notifications, and external mail.
+                </p>
+              </div>
+            </div>
+            <button
+              aria-label="Close SMTP configuration"
+              className="rounded-lg p-2 hover:bg-muted"
+              onClick={onClose}
+              type="button"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <SmtpStateBadge state={state} />
+            <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold">
+              Revision {configuration.data?.revision ?? 0}
+            </span>
+            {configuration.data?.password_configured && (
+              <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700">
+                Credential stored securely
+              </span>
+            )}
+          </div>
+        </header>
+        <nav className="flex gap-1 overflow-x-auto border-b px-5 py-2">
+          {(['setup', 'testing', 'operations'] as const).map((item) => (
+            <button
+              aria-current={tab === item ? 'page' : undefined}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize ${
+                tab === item
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted'
+              }`}
+              key={item}
+              onClick={() => setTab(item)}
+              type="button"
+            >
+              {item === 'testing' ? 'Test & delivery' : item}
+            </button>
+          ))}
+        </nav>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
+          {configuration.isLoading ? (
+            <div className="h-96 animate-pulse rounded-2xl bg-muted" />
+          ) : configuration.isError ? (
+            <p
+              className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 text-red-700"
+              role="alert"
+            >
+              SMTP configuration could not be loaded.
+            </p>
+          ) : tab === 'setup' ? (
+            <SmtpSetupForm
+              form={form}
+              passwordConfigured={
+                configuration.data?.password_configured ?? false
+              }
+              providerEnabled={provider.enabled}
+              saving={save.isPending}
+              setForm={setForm}
+              submit={() => save.mutate()}
+            />
+          ) : tab === 'testing' ? (
+            <div className="grid gap-5 lg:grid-cols-2">
+              <section className="rounded-2xl border bg-card p-5">
+                <Server className="size-6 text-primary" />
+                <h3 className="mt-4 text-lg font-semibold">Test connection</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Validates DNS, network, TLS, authentication, and SMTP NOOP.
+                </p>
+                <button
+                  className="mt-5 h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  disabled={!provider.configured || connectionTest.isPending}
+                  onClick={() => connectionTest.mutate()}
+                  type="button"
+                >
+                  {connectionTest.isPending ? 'Testing…' : 'Test connection'}
+                </button>
+                {connectionTest.data && (
+                  <TestResult
+                    latency={connectionTest.data.latency_ms}
+                    message={connectionTest.data.message}
+                    success={connectionTest.data.status === 'healthy'}
+                  />
+                )}
+              </section>
+              <section className="rounded-2xl border bg-card p-5">
+                <Send className="size-6 text-primary" />
+                <h3 className="mt-4 text-lg font-semibold">Send test email</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Uses the exact outbound transport used by MeetingHQ. SMTP
+                  acceptance is not final mailbox-delivery proof.
+                </p>
+                <label className="mt-5 block text-sm font-medium">
+                  Recipient email
+                  <input
+                    aria-label="SMTP test recipient"
+                    className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+                    onChange={(event) => setTestRecipient(event.target.value)}
+                    placeholder="operator@example.com"
+                    type="email"
+                    value={testRecipient}
+                  />
+                </label>
+                <button
+                  className="mt-4 h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  disabled={
+                    !testRecipient || emailTest.isPending || state !== 'healthy'
+                  }
+                  onClick={() => emailTest.mutate()}
+                  type="button"
+                >
+                  {emailTest.isPending ? 'Submitting…' : 'Send test email'}
+                </button>
+                {emailTest.data && (
+                  <TestResult
+                    latency={emailTest.data.latency_ms}
+                    message={emailTest.data.message}
+                    success={emailTest.data.status === 'accepted'}
+                  />
+                )}
+              </section>
+            </div>
+          ) : (
+            <ProviderAudit
+              rows={audit.data ?? []}
+              title="SMTP operational log"
+            />
+          )}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
+function SmtpSetupForm({
+  form,
+  setForm,
+  submit,
+  saving,
+  passwordConfigured,
+  providerEnabled,
+}: {
+  form: SmtpConfigurationUpdate
+  setForm: Dispatch<SetStateAction<SmtpConfigurationUpdate>>
+  submit: () => void
+  saving: boolean
+  passwordConfigured: boolean
+  providerEnabled: boolean
+}) {
+  const set = (
+    key: keyof SmtpConfigurationUpdate,
+    value: string | number | boolean | null | undefined,
+  ) =>
+    setForm(
+      (current) => ({ ...current, [key]: value }) as SmtpConfigurationUpdate,
+    )
+  return (
+    <form
+      className="space-y-6"
+      onSubmit={(event) => {
+        event.preventDefault()
+        submit()
+      }}
+    >
+      {!providerEnabled && (
+        <p className="rounded-xl border border-amber-300 bg-amber-500/10 p-4 text-sm text-amber-800">
+          SMTP is unavailable in Platform Management. Save configuration now,
+          then enable the SMTP capability before delivery.
+        </p>
+      )}
+      <SmtpSection
+        title="Connection"
+        description="Server endpoint and encrypted transport policy."
+      >
+        <TextField
+          label="Provider display name"
+          value={form.provider_display_name}
+          onChange={(value) => set('provider_display_name', value)}
+        />
+        <TextField
+          label="SMTP host"
+          value={form.host}
+          onChange={(value) => set('host', value)}
+          placeholder="smtp.example.com"
+        />
+        <NumberField
+          label="SMTP port"
+          value={form.port}
+          min={1}
+          max={65535}
+          onChange={(value) => set('port', value)}
+        />
+        <label className="text-sm font-medium">
+          Security mode
+          <select
+            className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+            value={form.security_mode}
+            onChange={(event) =>
+              set(
+                'security_mode',
+                event.target.value as SmtpConfigurationUpdate['security_mode'],
+              )
+            }
+          >
+            <option value="starttls">STARTTLS</option>
+            <option value="ssl_tls">SSL / TLS</option>
+            <option value="none">None (insecure)</option>
+          </select>
+        </label>
+        <NumberField
+          label="Connection timeout (seconds)"
+          value={form.connection_timeout}
+          min={1}
+          max={120}
+          onChange={(value) => set('connection_timeout', value)}
+        />
+        {form.security_mode === 'none' && (
+          <CheckboxField
+            checked={form.allow_insecure}
+            label="I explicitly allow unencrypted SMTP for this tenant"
+            onChange={(value) => set('allow_insecure', value)}
+          />
+        )}
+      </SmtpSection>
+      <SmtpSection
+        title="Authentication"
+        description="The password is write-only and encrypted before persistence."
+      >
+        <CheckboxField
+          checked={form.authentication_enabled}
+          label="Authentication enabled"
+          onChange={(value) => set('authentication_enabled', value)}
+        />
+        <TextField
+          label="Username"
+          value={form.username ?? ''}
+          onChange={(value) => set('username', value)}
+          disabled={!form.authentication_enabled}
+        />
+        <TextField
+          label="Password / app password"
+          value={form.password ?? ''}
+          onChange={(value) => set('password', value)}
+          disabled={!form.authentication_enabled}
+          placeholder={
+            passwordConfigured
+              ? '•••••••••••• (leave blank to preserve)'
+              : 'Enter SMTP secret'
+          }
+          type="password"
+        />
+      </SmtpSection>
+      <SmtpSection
+        title="Sender"
+        description="Identity applied consistently to application-generated email."
+      >
+        <TextField
+          label="From email address"
+          value={form.from_email}
+          onChange={(value) => set('from_email', value)}
+          type="email"
+        />
+        <TextField
+          label="From display name"
+          value={form.from_name}
+          onChange={(value) => set('from_name', value)}
+        />
+        <TextField
+          label="Reply-To address"
+          value={form.reply_to ?? ''}
+          onChange={(value) => set('reply_to', value || null)}
+          type="email"
+        />
+        <TextField
+          label="Return path / bounce address"
+          value={form.return_path ?? ''}
+          onChange={(value) => set('return_path', value || null)}
+          type="email"
+        />
+      </SmtpSection>
+      <SmtpSection
+        title="Delivery"
+        description="Bounded retries and truthful outbound state handling."
+      >
+        <CheckboxField
+          checked={form.enabled}
+          label="Enable outbound email delivery"
+          onChange={(value) => set('enabled', value)}
+        />
+        <NumberField
+          label="Maximum retry attempts"
+          value={form.max_retry_attempts}
+          min={1}
+          max={10}
+          onChange={(value) => set('max_retry_attempts', value)}
+        />
+        <NumberField
+          label="Retry delay (seconds)"
+          value={form.retry_delay_seconds}
+          min={0}
+          max={300}
+          onChange={(value) => set('retry_delay_seconds', value)}
+        />
+        <NumberField
+          label="Send timeout (seconds)"
+          value={form.timeout_seconds}
+          min={1}
+          max={120}
+          onChange={(value) => set('timeout_seconds', value)}
+        />
+        <label className="text-sm font-medium">
+          Default priority
+          <select
+            className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+            value={form.default_priority}
+            onChange={(event) =>
+              set(
+                'default_priority',
+                event.target
+                  .value as SmtpConfigurationUpdate['default_priority'],
+              )
+            }
+          >
+            <option value="low">Low</option>
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+      </SmtpSection>
+      <div className="sticky bottom-0 flex justify-end border-t bg-background/95 py-4 backdrop-blur">
+        <button
+          className="h-11 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          disabled={
+            saving ||
+            !form.host ||
+            !form.from_email ||
+            (form.security_mode === 'none' && !form.allow_insecure)
+          }
+          type="submit"
+        >
+          {saving ? 'Saving securely…' : 'Save SMTP configuration'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function SmtpSection({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border bg-card p-5">
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  )
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  disabled = false,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  type?: string
+  disabled?: boolean
+}) {
+  return (
+    <label className="text-sm font-medium">
+      {label}
+      <input
+        aria-label={label}
+        className="mt-2 h-11 w-full rounded-xl border bg-background px-3 disabled:opacity-60"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        type={type}
+        value={value}
+      />
+    </label>
+  )
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+}) {
+  return (
+    <label className="text-sm font-medium">
+      {label}
+      <input
+        aria-label={label}
+        className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+        max={max}
+        min={min}
+        onChange={(event) => onChange(Number(event.target.value))}
+        type="number"
+        value={value}
+      />
+    </label>
+  )
+}
+
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-xl border p-3 text-sm font-medium">
+      <input
+        checked={checked}
+        className="size-4 accent-primary"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      {label}
+    </label>
+  )
+}
+
+function SmtpStateBadge({ state }: { state: string }) {
+  const healthy = state === 'healthy'
+  const failed = state === 'failed' || state === 'degraded'
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${healthy ? 'bg-emerald-500/10 text-emerald-700' : failed ? 'bg-red-500/10 text-red-700' : 'bg-amber-500/10 text-amber-800'}`}
+    >
+      {state.replaceAll('_', ' ')}
+    </span>
+  )
+}
+
+function TestResult({
+  success,
+  message,
+  latency,
+}: {
+  success: boolean
+  message: string
+  latency: number
+}) {
+  return (
+    <div
+      className={`mt-4 rounded-xl border p-4 text-sm ${success ? 'border-emerald-300 bg-emerald-500/5' : 'border-red-300 bg-red-500/5'}`}
+      role="status"
+    >
+      <p className="font-semibold">
+        {success ? 'Successful' : 'Attention required'} · {latency} ms
+      </p>
+      <p className="mt-1 text-muted-foreground">{message}</p>
+    </div>
   )
 }
 
@@ -749,7 +1371,19 @@ function ProviderAudit({
               <p className="font-medium">{row.action.replaceAll('.', ' - ')}</p>
               <p className="text-xs text-muted-foreground">
                 {new Date(row.created_at).toLocaleString()}
+                {row.latency_ms != null ? ` · ${row.latency_ms} ms` : ''}
+                {row.revision != null ? ` · revision ${row.revision}` : ''}
               </p>
+              {row.diagnostic && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {row.diagnostic}
+                </p>
+              )}
+              {row.recipient && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Test recipient: {row.recipient}
+                </p>
+              )}
             </div>
             <span className="rounded-full bg-muted px-2 py-1 text-xs capitalize">
               {row.status}

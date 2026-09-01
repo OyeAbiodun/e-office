@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -47,6 +48,9 @@ class AttendanceStatus(enum.StrEnum):
 
 class Meeting(Base):
     __tablename__ = "meetings"
+    __table_args__ = (
+        Index("ix_meetings_org_start_cursor", "organization_id", "start_datetime", "id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
@@ -74,6 +78,7 @@ class Meeting(Base):
         Enum(MeetingStatus, native_enum=False), default=MeetingStatus.DRAFT
     )
     visibility: Mapped[str] = mapped_column(String(24), default="members")
+    sequence: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

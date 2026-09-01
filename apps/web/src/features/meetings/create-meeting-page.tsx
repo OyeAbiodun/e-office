@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react'
 import { meetingApi } from '@/features/meetings/api'
 import { organizationApi } from '@/features/organizations/api'
 import { userAdminApi } from '@/features/users/api'
+import { toLocalDateTimeInput } from '@/lib/date-time'
 
 const steps = [
   'Meeting details',
@@ -46,10 +47,10 @@ export function CreateMeetingPage() {
     meeting_url: '',
     location: '',
     workspace_id: '',
-    start_datetime: tomorrow.toISOString().slice(0, 16),
-    end_datetime: new Date(tomorrow.getTime() + 3_600_000)
-      .toISOString()
-      .slice(0, 16),
+    start_datetime: toLocalDateTimeInput(tomorrow),
+    end_datetime: toLocalDateTimeInput(
+      new Date(tomorrow.getTime() + 3_600_000),
+    ),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     visibility: 'members',
     attendee_ids: [] as string[],
@@ -105,8 +106,8 @@ export function CreateMeetingPage() {
                 skip_holidays: false,
               },
         workspace_id: form.workspace_id || workspaces.data?.[0]?.id,
-        start_datetime: new Date(form.start_datetime).toISOString(),
-        end_datetime: new Date(form.end_datetime).toISOString(),
+        start_datetime: form.start_datetime,
+        end_datetime: form.end_datetime,
       })
       for (const [index, title] of form.agenda.entries()) {
         if (title.trim())

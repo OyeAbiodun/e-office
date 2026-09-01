@@ -29,6 +29,63 @@ export interface IntegrationAudit {
   status: string
   created_at: string
   actor_id: string | null
+  latency_ms: number | null
+  diagnostic: string | null
+  recipient: string | null
+  revision: number | null
+}
+
+export interface SmtpConfiguration {
+  provider_display_name: string
+  host: string
+  port: number
+  security_mode: 'starttls' | 'ssl_tls' | 'none'
+  allow_insecure: boolean
+  connection_timeout: number
+  authentication_enabled: boolean
+  authentication_method: 'password'
+  username: string | null
+  password_configured: boolean
+  password_mask: string | null
+  from_email: string
+  from_name: string
+  reply_to: string | null
+  return_path: string | null
+  enabled: boolean
+  max_retry_attempts: number
+  retry_delay_seconds: number
+  timeout_seconds: number
+  default_priority: 'low' | 'normal' | 'high'
+  state:
+    | 'not_configured'
+    | 'configured'
+    | 'testing'
+    | 'healthy'
+    | 'degraded'
+    | 'failed'
+    | 'disabled'
+  revision: number
+  updated_at: string | null
+  last_validated_at: string | null
+}
+
+export type SmtpConfigurationUpdate = Omit<
+  SmtpConfiguration,
+  | 'password_configured'
+  | 'password_mask'
+  | 'state'
+  | 'revision'
+  | 'updated_at'
+  | 'last_validated_at'
+> & { password?: string }
+
+export interface SmtpTestEmailResult {
+  status: 'accepted' | 'failed'
+  message: string
+  recipient: string
+  message_id: string | null
+  latency_ms: number
+  accepted_at: string | null
 }
 
 export const integrationApi = {
@@ -59,4 +116,19 @@ export const integrationApi = {
     ),
   audit: (key: string) =>
     apiRequest<IntegrationAudit[]>(`/integrations/${key}/audit`, {}, true),
+  smtpConfiguration: () =>
+    apiRequest<SmtpConfiguration>('/integrations/smtp/configuration', {}, true),
+  configureSmtp: (values: SmtpConfigurationUpdate) =>
+    apiRequest<SmtpConfiguration>(
+      '/integrations/smtp/configuration',
+      { method: 'PUT', body: JSON.stringify(values) },
+      true,
+    ),
+  sendSmtpTestEmail: (recipient: string) =>
+    apiRequest<SmtpTestEmailResult>(
+      '/integrations/smtp/test-email',
+      { method: 'POST', body: JSON.stringify({ recipient }) },
+      true,
+      false,
+    ),
 }

@@ -1,6 +1,10 @@
 # Production Readiness Audit
 
-Last verified: 2026-08-10
+Last verified: 2026-08-24
+
+The SMTP/PostgreSQL production-target checkpoint, including isolated PostgreSQL 17.6,
+migration head `0029`, backup/restore evidence, current quality gates, and the truthful external
+SMTP blocker, is recorded in [smtp-postgresql-readiness.md](./smtp-postgresql-readiness.md).
 
 This document is the release evidence ledger for the Profile Center completion and production-readiness pass. `Green` means the behavior has direct local automated or browser evidence. `Yellow` means the implementation works locally but still needs deployment, operational, or broader acceptance evidence. `Red` means the required external production environment has not yet been provisioned or rehearsed.
 

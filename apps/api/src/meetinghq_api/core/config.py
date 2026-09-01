@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     web_app_url: str = "http://localhost:5173"
 
     database_url: str = "postgresql+asyncpg://meetinghq:meetinghq_dev_only@localhost:5432/meetinghq"
+    database_pool_size: int = Field(default=10, ge=1, le=100)
+    database_max_overflow: int = Field(default=20, ge=0, le=200)
+    database_pool_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    database_pool_recycle_seconds: int = Field(default=1800, ge=60, le=86400)
     redis_url: str = "redis://localhost:6379/0"
 
     jwt_secret: str = Field(
@@ -41,6 +45,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_ttl_minutes: int = Field(default=15, gt=0)
     refresh_token_ttl_days: int = Field(default=30, gt=0)
+    refresh_token_cookie_retry_grace_seconds: int = Field(default=10, ge=0, le=60)
     jwt_issuer: str = "meetinghq"
     jwt_audience: str = "meetinghq-api"
     refresh_cookie_name: str = "meetinghq_refresh"

@@ -40,6 +40,18 @@ and last-updated time. The installation JWT secret is currently the root of the
 local credential-encryption key, so it must be supplied from a secret manager
 and kept stable during restore or migration.
 
+SMTP has a dedicated production workflow under **Integration Center → Email → SMTP**.
+It exposes connection, authentication, sender, and delivery settings that the backend
+actually supports. Passwords are write-only: the API returns only a masked configured
+state, and a blank password during an edit preserves the sealed value. STARTTLS and
+implicit SSL/TLS are supported; unencrypted SMTP requires an explicit insecure-transport
+acknowledgement. **Test Connection** validates the live network/TLS/authentication path,
+while **Send Test Email** submits through the same transport used by meetings, identity,
+notifications, reminders, and external Internal Mail. An `accepted` result means the SMTP
+server accepted the message; it does not claim final inbox delivery. Configuration,
+validation, test submission, secret rotation, enable/disable changes, latency, revision,
+and safe diagnostics are recorded without credentials.
+
 ## Roles and permissions
 
 Role policies are collapsed by default and expose permissions in searchable

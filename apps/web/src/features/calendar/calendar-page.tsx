@@ -28,6 +28,7 @@ import {
   type Resource,
 } from './api'
 import { organizationApi } from '@/features/organizations/api'
+import { toLocalDateTimeInput } from '@/lib/date-time'
 
 type CalendarView =
   | 'day'
@@ -66,10 +67,7 @@ const addDays = (date: Date, amount: number) => {
   value.setDate(value.getDate() + amount)
   return value
 }
-const localInput = (date: Date) => {
-  const offset = date.getTimezoneOffset()
-  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16)
-}
+const localInput = toLocalDateTimeInput
 
 function EmptyCalendar({ onCreate }: { onCreate: () => void }) {
   return (
