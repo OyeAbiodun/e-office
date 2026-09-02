@@ -396,6 +396,9 @@ function SmtpConfigurationPanel({
   const [testRecipient, setTestRecipient] = useState('')
   const [templateKey, setTemplateKey] =
     useState<TransactionalTemplateKey>('smtp.test')
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>(
+    'desktop',
+  )
   const configuration = useQuery({
     queryKey: ['smtp-configuration'],
     queryFn: integrationApi.smtpConfiguration,
@@ -779,6 +782,34 @@ function SmtpConfigurationPanel({
                     </option>
                   </select>
                 </label>
+                <fieldset className="mt-5">
+                  <legend className="text-sm font-medium">Preview width</legend>
+                  <div
+                    aria-label="Preview viewport"
+                    className="mt-2 inline-flex rounded-xl border bg-background p-1"
+                    role="group"
+                  >
+                    {(['desktop', 'mobile'] as const).map((viewport) => (
+                      <button
+                        aria-pressed={previewViewport === viewport}
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold capitalize ${
+                          previewViewport === viewport
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-muted'
+                        }`}
+                        key={viewport}
+                        onClick={() => setPreviewViewport(viewport)}
+                        type="button"
+                      >
+                        {viewport}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Changes only the safe in-app preview width. It never sends
+                    an email.
+                  </p>
+                </fieldset>
                 {preview.data && (
                   <div className="mt-5 rounded-xl border bg-muted/40 p-4 text-sm">
                     <p className="font-semibold">{preview.data.subject}</p>
@@ -807,13 +838,20 @@ function SmtpConfigurationPanel({
                     The transactional email preview could not be loaded.
                   </p>
                 ) : preview.data ? (
-                  <iframe
-                    aria-label="Transactional email preview"
-                    className="h-[640px] w-full rounded-xl border bg-white"
-                    sandbox=""
-                    srcDoc={preview.data.html}
-                    title="Transactional email preview"
-                  />
+                  <div
+                    className={`mx-auto h-[640px] max-w-full ${
+                      previewViewport === 'mobile' ? 'w-[390px]' : 'w-full'
+                    }`}
+                    data-preview-viewport={previewViewport}
+                  >
+                    <iframe
+                      aria-label="Transactional email preview"
+                      className="h-full w-full rounded-xl border bg-white"
+                      sandbox=""
+                      srcDoc={preview.data.html}
+                      title="Transactional email preview"
+                    />
+                  </div>
                 ) : null}
               </div>
             </section>

@@ -31,8 +31,8 @@ URLs; reset tokens are not placed in application logs or delivery audit metadata
 
 Super Admins can open **Administration → Integration Center → Email → SMTP → Email
 preview** and select any supported template. The preview uses representative safe sample
-data, runs in an isolated iframe, does not send a message, and never exposes SMTP
-credentials.
+data, runs in an isolated iframe, provides desktop and 390px mobile width modes, does
+not send a message, and never exposes SMTP credentials.
 
 Preview is intentionally not a general HTML-template editor. A future customization
 feature should retain typed variables, tenant isolation, preview sanitization, audit

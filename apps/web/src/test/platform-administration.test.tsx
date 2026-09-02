@@ -593,6 +593,14 @@ test('SMTP administration previews safe branded transactional email without send
     'sandbox',
     '',
   )
+  fireEvent.click(screen.getByRole('button', { name: 'mobile' }))
+  expect(screen.getByRole('button', { name: 'mobile' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  expect(
+    screen.getByTitle('Transactional email preview').parentElement,
+  ).toHaveAttribute('data-preview-viewport', 'mobile')
   expect(mocks.sendSmtpTestEmail).not.toHaveBeenCalled()
 })
 

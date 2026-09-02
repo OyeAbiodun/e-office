@@ -1,18 +1,25 @@
 """Typed application configuration."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_repository_env_file = Path(__file__).resolve().parents[5] / ".env"
+
 
 class Settings(BaseSettings):
     """Environment-backed API settings."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Local development may launch Uvicorn from either the monorepo root or
+        # ``apps/api``. Prefer the repository configuration when source is
+        # present, while preserving the current-directory fallback for packaged
+        # deployments.
+        env_file=_repository_env_file if _repository_env_file.exists() else ".env",
         env_prefix="MEETINGHQ_",
         extra="ignore",
         case_sensitive=False,
