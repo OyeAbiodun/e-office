@@ -23,6 +23,7 @@ import {
   useEffect,
   useState,
 } from 'react'
+import { z } from 'zod'
 
 import { useAuth } from '@/features/auth/auth-store'
 import { notify } from '@/components/feedback/events'
@@ -30,6 +31,8 @@ import { ProviderLogo } from '@/components/provider-logo'
 import {
   integrationApi,
   type IntegrationProvider,
+  type IntegrationTestResult,
+  type SmtpConfiguration,
   type SmtpConfigurationUpdate,
 } from '@/features/integrations/api'
 
@@ -374,6 +377,8 @@ const smtpDefaults: SmtpConfigurationUpdate = {
   default_priority: 'normal',
 }
 
+const smtpTestRecipientSchema = z.string().trim().email()
+
 function SmtpConfigurationPanel({
   provider,
   onClose,
@@ -381,6 +386,7 @@ function SmtpConfigurationPanel({
   provider: IntegrationProvider
   onClose: () => void
 }) {
+  const { user } = useAuth()
   const client = useQueryClient()
   const [tab, setTab] = useState<'setup' | 'testing' | 'operations'>('setup')
   const [form, setForm] = useState<SmtpConfigurationUpdate>(smtpDefaults)
@@ -427,19 +433,60 @@ function SmtpConfigurationPanel({
       client.invalidateQueries({ queryKey: ['system-health'] }),
     ])
   }
+  const applyValidationResult = (result: IntegrationTestResult) => {
+    const healthy = result.status === 'healthy'
+    client.setQueryData<SmtpConfiguration>(['smtp-configuration'], (current) =>
+      current
+        ? {
+            ...current,
+            state: healthy ? 'healthy' : 'failed',
+            last_validated_at: result.checked_at,
+          }
+        : current,
+    )
+    client.setQueryData<IntegrationProvider[]>(['integrations'], (current) =>
+      current?.map((item) =>
+        item.key === 'smtp'
+          ? {
+              ...item,
+              validated: healthy,
+              health: healthy ? 'healthy' : 'attention',
+              last_tested_at: result.checked_at,
+            }
+          : item,
+      ),
+    )
+  }
   const save = useMutation({
     mutationFn: () => integrationApi.configureSmtp(form),
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       setForm((current) => ({ ...current, password: '' }))
+      connectionTest.reset()
+      emailTest.reset()
+      client.setQueryData(['smtp-configuration'], saved)
       await refresh()
     },
   })
   const connectionTest = useMutation({
     mutationFn: () => integrationApi.test('smtp'),
-    onSuccess: refresh,
+    onMutate: () => {
+      client.setQueryData<SmtpConfiguration>(
+        ['smtp-configuration'],
+        (current) => (current ? { ...current, state: 'testing' } : current),
+      )
+    },
+    onSuccess: async (result) => {
+      applyValidationResult(result)
+      await refresh()
+      // Keep the completed mutation authoritative while the transaction-scoped
+      // provider status is settling in deployments with response buffering.
+      applyValidationResult(result)
+    },
+    onError: refresh,
   })
+  const normalizedRecipient = testRecipient.trim()
   const emailTest = useMutation({
-    mutationFn: () => integrationApi.sendSmtpTestEmail(testRecipient),
+    mutationFn: () => integrationApi.sendSmtpTestEmail(normalizedRecipient),
     onSuccess: async (result) => {
       notify({
         tone: result.status === 'accepted' ? 'success' : 'error',
@@ -453,6 +500,31 @@ function SmtpConfigurationPanel({
     },
   })
   const state = configuration.data?.state ?? 'not_configured'
+  const configured = state !== 'not_configured'
+  const canManage = user?.permissions.includes('integrations.manage') ?? false
+  const canTest = user?.permissions.includes('integrations.test') ?? false
+  const recipientIsValid =
+    smtpTestRecipientSchema.safeParse(normalizedRecipient).success
+  const connectionTestUnavailableReason = !canTest
+    ? 'You do not have permission to test SMTP.'
+    : !provider.enabled
+      ? 'SMTP is disabled in Platform Management.'
+      : !configured
+        ? 'Configure SMTP before testing the connection.'
+        : null
+  const emailTestUnavailableReason = !canTest
+    ? 'You do not have permission to test SMTP.'
+    : !provider.enabled
+      ? 'SMTP is disabled in Platform Management.'
+      : !configured
+        ? 'Configure SMTP before sending a test email.'
+        : !configuration.data?.enabled
+          ? 'Outbound SMTP delivery is disabled. Enable it in Setup before sending a test email.'
+          : state !== 'healthy'
+            ? 'Test the current SMTP configuration successfully before sending a test email.'
+            : !recipientIsValid
+              ? 'Enter a valid recipient email address.'
+              : null
   return (
     <div
       aria-label="Configure SMTP"
@@ -534,6 +606,7 @@ function SmtpConfigurationPanel({
             </p>
           ) : tab === 'setup' ? (
             <SmtpSetupForm
+              canManage={canManage}
               form={form}
               passwordConfigured={
                 configuration.data?.password_configured ?? false
@@ -552,13 +625,29 @@ function SmtpConfigurationPanel({
                   Validates DNS, network, TLS, authentication, and SMTP NOOP.
                 </p>
                 <button
+                  aria-describedby={
+                    connectionTestUnavailableReason
+                      ? 'smtp-connection-test-reason'
+                      : undefined
+                  }
                   className="mt-5 h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                  disabled={!provider.configured || connectionTest.isPending}
+                  disabled={
+                    Boolean(connectionTestUnavailableReason) ||
+                    connectionTest.isPending
+                  }
                   onClick={() => connectionTest.mutate()}
                   type="button"
                 >
                   {connectionTest.isPending ? 'Testing…' : 'Test connection'}
                 </button>
+                {connectionTestUnavailableReason && (
+                  <p
+                    className="mt-3 text-sm text-amber-700"
+                    id="smtp-connection-test-reason"
+                  >
+                    {connectionTestUnavailableReason}
+                  </p>
+                )}
                 {connectionTest.data && (
                   <TestResult
                     latency={connectionTest.data.latency_ms}
@@ -578,6 +667,14 @@ function SmtpConfigurationPanel({
                   Recipient email
                   <input
                     aria-label="SMTP test recipient"
+                    aria-describedby={
+                      testRecipient && !recipientIsValid
+                        ? 'smtp-recipient-error'
+                        : undefined
+                    }
+                    aria-invalid={
+                      testRecipient && !recipientIsValid ? true : undefined
+                    }
                     className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
                     onChange={(event) => setTestRecipient(event.target.value)}
                     placeholder="operator@example.com"
@@ -585,16 +682,39 @@ function SmtpConfigurationPanel({
                     value={testRecipient}
                   />
                 </label>
+                {testRecipient && !recipientIsValid && (
+                  <p
+                    className="mt-2 text-sm text-red-600"
+                    id="smtp-recipient-error"
+                    role="alert"
+                  >
+                    Enter a valid recipient email address.
+                  </p>
+                )}
                 <button
+                  aria-describedby={
+                    emailTestUnavailableReason
+                      ? 'smtp-test-email-reason'
+                      : undefined
+                  }
                   className="mt-4 h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                   disabled={
-                    !testRecipient || emailTest.isPending || state !== 'healthy'
+                    Boolean(emailTestUnavailableReason) || emailTest.isPending
                   }
                   onClick={() => emailTest.mutate()}
                   type="button"
                 >
                   {emailTest.isPending ? 'Submitting…' : 'Send test email'}
                 </button>
+                {emailTestUnavailableReason && !emailTest.isPending && (
+                  <p
+                    className="mt-3 text-sm text-amber-700"
+                    id="smtp-test-email-reason"
+                    role="status"
+                  >
+                    {emailTestUnavailableReason}
+                  </p>
+                )}
                 {emailTest.data && (
                   <TestResult
                     latency={emailTest.data.latency_ms}
@@ -617,6 +737,7 @@ function SmtpConfigurationPanel({
 }
 
 function SmtpSetupForm({
+  canManage,
   form,
   setForm,
   submit,
@@ -624,6 +745,7 @@ function SmtpSetupForm({
   passwordConfigured,
   providerEnabled,
 }: {
+  canManage: boolean
   form: SmtpConfigurationUpdate
   setForm: Dispatch<SetStateAction<SmtpConfigurationUpdate>>
   submit: () => void
@@ -650,6 +772,11 @@ function SmtpSetupForm({
         <p className="rounded-xl border border-amber-300 bg-amber-500/10 p-4 text-sm text-amber-800">
           SMTP is unavailable in Platform Management. Save configuration now,
           then enable the SMTP capability before delivery.
+        </p>
+      )}
+      {!canManage && (
+        <p className="rounded-xl border border-amber-300 bg-amber-500/10 p-4 text-sm text-amber-800">
+          You do not have permission to change SMTP configuration.
         </p>
       )}
       <SmtpSection
@@ -816,6 +943,7 @@ function SmtpSetupForm({
           className="h-11 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           disabled={
             saving ||
+            !canManage ||
             !form.host ||
             !form.from_email ||
             (form.security_mode === 'none' && !form.allow_insecure)

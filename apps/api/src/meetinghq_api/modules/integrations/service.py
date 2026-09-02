@@ -176,6 +176,16 @@ class IntegrationService:
         if configuration is None or not configuration.value:
             raise NotFoundError("Configure SMTP before sending a test email")
         values = self.vault.open(dict(configuration.value))
+        if not bool(values.get("enabled", True)):
+            raise ConflictError(
+                "Outbound SMTP delivery is disabled. Enable it before sending a test email"
+            )
+        status_entry = await self._status(organization_id, "smtp")
+        state, _ = self._smtp_state(values, status_entry)
+        if state != "healthy":
+            raise ConflictError(
+                "Validate the current SMTP configuration before sending a test email"
+            )
         sender = MeetingEmailSender(self.settings, values)
         started = time.perf_counter()
         revision = self._int_value(values.get("revision"), 1)

@@ -6,6 +6,11 @@ import { PlatformPage } from '@/features/platform/platform-page'
 import { RolesPage } from '@/features/users/roles-page'
 
 const mocks = vi.hoisted(() => ({
+  authPermissions: [
+    'integrations.view',
+    'integrations.manage',
+    'integrations.test',
+  ],
   confirm: vi.fn(async () => true),
   configure: vi.fn(),
   configureSmtp: vi.fn(),
@@ -48,11 +53,7 @@ vi.mock('@/features/auth/auth-store', () => ({
     user: {
       id: 'admin-1',
       roles: ['Super Admin'],
-      permissions: [
-        'integrations.view',
-        'integrations.manage',
-        'integrations.test',
-      ],
+      permissions: mocks.authPermissions,
     },
   }),
 }))
@@ -111,6 +112,33 @@ const provider = {
   updated_at: null,
 }
 
+const smtpConfiguration = {
+  provider_display_name: 'Transactional SMTP',
+  host: 'smtp.example.test',
+  port: 587,
+  security_mode: 'starttls',
+  allow_insecure: false,
+  connection_timeout: 20,
+  authentication_enabled: true,
+  authentication_method: 'password',
+  username: 'mailer@example.test',
+  password_configured: true,
+  password_mask: '••••••••••••',
+  from_email: 'meetings@example.test',
+  from_name: 'MeetingHQ',
+  reply_to: null,
+  return_path: null,
+  enabled: true,
+  max_retry_attempts: 3,
+  retry_delay_seconds: 1,
+  timeout_seconds: 20,
+  default_priority: 'normal',
+  state: 'healthy',
+  revision: 2,
+  updated_at: '2026-08-03T00:00:00Z',
+  last_validated_at: '2026-08-03T00:01:00Z',
+}
+
 const calendarFeature = {
   id: 'feature-1',
   key: 'calendar',
@@ -135,6 +163,13 @@ function renderWithClient(node: React.ReactNode) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.authPermissions.splice(
+    0,
+    mocks.authPermissions.length,
+    'integrations.view',
+    'integrations.manage',
+    'integrations.test',
+  )
   window.history.replaceState({}, '', '/')
   mocks.features.mockResolvedValue([calendarFeature])
   mocks.integrations.mockResolvedValue([provider])
@@ -162,33 +197,8 @@ beforeEach(() => {
   mocks.disconnect.mockResolvedValue({ key: 'gmail', configured: false })
   mocks.synchronize.mockResolvedValue({ key: 'gmail', configured: true })
   mocks.audit.mockResolvedValue([])
-  mocks.smtpConfiguration.mockResolvedValue({
-    provider_display_name: 'Transactional SMTP',
-    host: 'smtp.example.test',
-    port: 587,
-    security_mode: 'starttls',
-    allow_insecure: false,
-    connection_timeout: 20,
-    authentication_enabled: true,
-    authentication_method: 'password',
-    username: 'mailer@example.test',
-    password_configured: true,
-    password_mask: '••••••••••••',
-    from_email: 'meetings@example.test',
-    from_name: 'MeetingHQ',
-    reply_to: null,
-    return_path: null,
-    enabled: true,
-    max_retry_attempts: 3,
-    retry_delay_seconds: 1,
-    timeout_seconds: 20,
-    default_priority: 'normal',
-    state: 'healthy',
-    revision: 2,
-    updated_at: '2026-08-03T00:00:00Z',
-    last_validated_at: '2026-08-03T00:01:00Z',
-  })
-  mocks.configureSmtp.mockResolvedValue({})
+  mocks.smtpConfiguration.mockResolvedValue(smtpConfiguration)
+  mocks.configureSmtp.mockResolvedValue(smtpConfiguration)
   mocks.testIntegration.mockResolvedValue({
     key: 'smtp',
     status: 'healthy',
@@ -356,6 +366,191 @@ test('SMTP administration preserves a stored secret and tests the shared deliver
       'operator@example.test',
     ),
   )
+})
+
+test('SMTP validation immediately enables test delivery for the current revision', async () => {
+  const smtpProvider = {
+    ...provider,
+    key: 'smtp',
+    name: 'SMTP',
+    auth_type: 'smtp',
+    configured: true,
+    validated: false,
+    health: 'attention',
+  }
+  mocks.integrations.mockResolvedValue([smtpProvider])
+  mocks.smtpConfiguration.mockResolvedValue({
+    ...smtpConfiguration,
+    state: 'configured',
+    last_validated_at: null,
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['integrations'], [smtpProvider])
+  render(
+    <QueryClientProvider client={client}>
+      <IntegrationCenterPage />
+    </QueryClientProvider>,
+  )
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+  expect(await screen.findByText('Credential stored securely')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Test & delivery' }))
+  fireEvent.change(screen.getByLabelText('SMTP test recipient'), {
+    target: { value: ' operator@example.test ' },
+  })
+  const send = screen.getByRole('button', { name: 'Send test email' })
+  expect(send).toBeDisabled()
+  expect(
+    screen.getByText(/Test the current SMTP configuration successfully/),
+  ).toBeVisible()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+  await waitFor(() => expect(send).toBeEnabled())
+  fireEvent.click(send)
+  await waitFor(() =>
+    expect(mocks.sendSmtpTestEmail).toHaveBeenCalledWith(
+      'operator@example.test',
+    ),
+  )
+})
+
+test('SMTP test delivery validates recipients and explains missing permission', async () => {
+  const smtpProvider = {
+    ...provider,
+    key: 'smtp',
+    name: 'SMTP',
+    auth_type: 'smtp',
+    configured: true,
+    validated: true,
+    health: 'healthy',
+  }
+  mocks.integrations.mockResolvedValue([smtpProvider])
+  mocks.authPermissions.splice(
+    0,
+    mocks.authPermissions.length,
+    'integrations.view',
+  )
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['integrations'], [smtpProvider])
+  render(
+    <QueryClientProvider client={client}>
+      <IntegrationCenterPage />
+    </QueryClientProvider>,
+  )
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+  expect(
+    await screen.findByText(/do not have permission to change SMTP/),
+  ).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: 'Save SMTP configuration' }),
+  ).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Test & delivery' }))
+  fireEvent.change(screen.getByLabelText('SMTP test recipient'), {
+    target: { value: 'not-an-email' },
+  })
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    'Enter a valid recipient email address.',
+  )
+  expect(
+    screen.getAllByText('You do not have permission to test SMTP.'),
+  ).toHaveLength(2)
+  expect(screen.getByRole('button', { name: 'Send test email' })).toBeDisabled()
+})
+
+test('saving SMTP configuration clears validation from the previous revision', async () => {
+  const smtpProvider = {
+    ...provider,
+    key: 'smtp',
+    name: 'SMTP',
+    auth_type: 'smtp',
+    configured: true,
+    validated: true,
+    health: 'healthy',
+  }
+  const nextRevision = {
+    ...smtpConfiguration,
+    state: 'configured',
+    revision: 3,
+    last_validated_at: null,
+  }
+  mocks.integrations.mockResolvedValue([smtpProvider])
+  mocks.smtpConfiguration
+    .mockResolvedValueOnce(smtpConfiguration)
+    .mockResolvedValue(nextRevision)
+  mocks.configureSmtp.mockResolvedValue(nextRevision)
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['integrations'], [smtpProvider])
+  render(
+    <QueryClientProvider client={client}>
+      <IntegrationCenterPage />
+    </QueryClientProvider>,
+  )
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+  expect(await screen.findByText('Credential stored securely')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Test & delivery' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+  expect(await screen.findByText('SMTP connection succeeded.')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'setup' }))
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Save SMTP configuration' }),
+  )
+  await waitFor(() => expect(mocks.configureSmtp).toHaveBeenCalled())
+  fireEvent.click(screen.getByRole('button', { name: 'Test & delivery' }))
+  expect(
+    screen.queryByText('SMTP connection succeeded.'),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByText(/Test the current SMTP configuration successfully/),
+  ).toBeVisible()
+})
+
+test('SMTP test delivery renders a safe provider failure', async () => {
+  const smtpProvider = {
+    ...provider,
+    key: 'smtp',
+    name: 'SMTP',
+    auth_type: 'smtp',
+    configured: true,
+    validated: true,
+    health: 'healthy',
+  }
+  mocks.integrations.mockResolvedValue([smtpProvider])
+  mocks.sendSmtpTestEmail.mockResolvedValueOnce({
+    status: 'failed',
+    message: 'SMTP rejected the recipient address.',
+    recipient: 'operator@example.test',
+    message_id: null,
+    latency_ms: 9,
+    accepted_at: null,
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['integrations'], [smtpProvider])
+  render(
+    <QueryClientProvider client={client}>
+      <IntegrationCenterPage />
+    </QueryClientProvider>,
+  )
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+  expect(await screen.findByText('Credential stored securely')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Test & delivery' }))
+  fireEvent.change(screen.getByLabelText('SMTP test recipient'), {
+    target: { value: 'operator@example.test' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send test email' }))
+  expect(
+    await screen.findByText('SMTP rejected the recipient address.'),
+  ).toBeVisible()
 })
 
 test('Role policies are collapsed by default and save grouped permission changes', async () => {

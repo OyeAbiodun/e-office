@@ -164,6 +164,23 @@ async def test_smtp_administration_preserves_write_only_secret_and_uses_shared_t
     assert updated.json()["data"]["revision"] == 2
     assert updated.json()["data"]["password_configured"] is True
 
+    unvalidated = await meeting_client.post(
+        "/api/v1/integrations/smtp/test-email",
+        headers=headers,
+        json={"recipient": "operator@example.com"},
+    )
+    assert unvalidated.status_code == 409
+    assert unvalidated.json()["error"]["message"] == (
+        "Validate the current SMTP configuration before sending a test email"
+    )
+
+    invalid_recipient = await meeting_client.post(
+        "/api/v1/integrations/smtp/test-email",
+        headers=headers,
+        json={"recipient": "not-an-email"},
+    )
+    assert invalid_recipient.status_code == 422
+
     observed = {"password_preserved": False, "recipient": ""}
 
     async def connected(sender: MeetingEmailSender) -> None:
@@ -225,6 +242,23 @@ async def test_smtp_administration_preserves_write_only_secret_and_uses_shared_t
     )
     assert failed_state.json()["data"]["state"] == "failed"
 
+    payload["enabled"] = False
+    payload["password"] = ""
+    disabled = await meeting_client.put(
+        "/api/v1/integrations/smtp/configuration", headers=headers, json=payload
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["data"]["enabled"] is False
+    disabled_delivery = await meeting_client.post(
+        "/api/v1/integrations/smtp/test-email",
+        headers=headers,
+        json={"recipient": "operator@example.com"},
+    )
+    assert disabled_delivery.status_code == 409
+    assert disabled_delivery.json()["error"]["message"] == (
+        "Outbound SMTP delivery is disabled. Enable it before sending a test email"
+    )
+
     audit = await meeting_client.get("/api/v1/integrations/smtp/audit", headers=headers)
     actions = {item["action"] for item in audit.json()["data"]}
     assert {
@@ -235,3 +269,42 @@ async def test_smtp_administration_preserves_write_only_secret_and_uses_shared_t
         "smtp.test_email_failed",
         "integrations.connection_tested",
     } <= actions
+
+
+async def test_smtp_test_email_requires_integration_test_permission(
+    meeting_client: AsyncClient,
+    meeting_identity: tuple[dict[str, str], str],
+) -> None:
+    admin_headers, workspace_id = meeting_identity
+    roles = (await meeting_client.get("/api/v1/roles", headers=admin_headers)).json()["data"]
+    employee_role = next(role for role in roles if role["name"] == "Employee")
+    created = await meeting_client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "first_name": "SMTP",
+            "last_name": "Viewer",
+            "email": "smtp.viewer@meeting-test.example",
+            "workspace_id": workspace_id,
+            "role_ids": [employee_role["id"]],
+            "temporary_password": "ViewerPassword123!",
+            "send_welcome_email": False,
+        },
+    )
+    assert created.status_code == 201
+    login = await meeting_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "smtp.viewer@meeting-test.example",
+            "password": "ViewerPassword123!",
+        },
+    )
+    assert login.status_code == 200
+    employee_headers = {"Authorization": f"Bearer {login.json()['data']['access_token']}"}
+
+    forbidden = await meeting_client.post(
+        "/api/v1/integrations/smtp/test-email",
+        headers=employee_headers,
+        json={"recipient": "operator@example.com"},
+    )
+    assert forbidden.status_code == 403
