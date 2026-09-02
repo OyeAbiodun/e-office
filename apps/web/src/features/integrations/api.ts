@@ -33,6 +33,8 @@ export interface IntegrationAudit {
   diagnostic: string | null
   recipient: string | null
   revision: number | null
+  template_key: string | null
+  template_version: string | null
 }
 
 export interface SmtpConfiguration {
@@ -88,6 +90,25 @@ export interface SmtpTestEmailResult {
   accepted_at: string | null
 }
 
+export type TransactionalTemplateKey =
+  | 'auth.password_reset'
+  | 'auth.email_verification'
+  | 'user.invitation'
+  | 'user.temporary_password'
+  | 'meeting.invitation'
+  | 'meeting.updated'
+  | 'meeting.cancelled'
+  | 'meeting.reminder'
+  | 'smtp.test'
+
+export interface EmailTemplatePreview {
+  key: TransactionalTemplateKey
+  version: string
+  subject: string
+  text: string
+  html: string
+}
+
 export const integrationApi = {
   list: () => apiRequest<IntegrationProvider[]>('/integrations', {}, true),
   configure: (key: string, values: Record<string, unknown>) =>
@@ -130,5 +151,11 @@ export const integrationApi = {
       { method: 'POST', body: JSON.stringify({ recipient }) },
       true,
       false,
+    ),
+  smtpTemplatePreview: (key: TransactionalTemplateKey) =>
+    apiRequest<EmailTemplatePreview>(
+      `/integrations/smtp/templates/${key}/preview`,
+      {},
+      true,
     ),
 }

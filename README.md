@@ -91,6 +91,10 @@ security messages, notifications, reminders, and external Internal Mail all use 
 shared transport. Environment SMTP values are an emergency/bootstrap fallback, not the
 routine administration path. Without SMTP, local development writes RFC-compliant `.eml`
 messages to `apps/api/storage/outbox`; meeting invitations include an ICS attachment.
+Transactional messages use a centrally versioned, branded HTML template registry with
+plain-text alternatives. Administrators can review safe sample renders without sending
+mail from the SMTP drawer's **Email preview** tab. See
+[Transactional email templates](docs/email-templates.md).
 
 Internal Mail is available at `/mail`. Organization-to-organization-user messages
 are delivered directly into tenant-isolated mailboxes. External delivery is enabled

@@ -376,6 +376,8 @@ class MeetingService:
             MeetingStatus.ARCHIVED,
         }:
             raise ValidationError("This meeting can no longer be rescheduled")
+        previous_start_time = meeting.start_datetime
+        previous_end_time = meeting.end_datetime
         old_events = list(
             (
                 await self.session.scalars(
@@ -465,6 +467,8 @@ class MeetingService:
             f"Meeting rescheduled: {meeting.title}",
             f"{meeting.title} now starts at {meeting.start_datetime.isoformat()} ({meeting.timezone}).",
             calendar_method="REQUEST",
+            previous_start_time=previous_start_time,
+            previous_end_time=previous_end_time,
         )
         await self._record("MeetingRescheduled", meeting, actor_id)
         meeting.updated_at = datetime.now(UTC)

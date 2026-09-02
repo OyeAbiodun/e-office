@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   roles: vi.fn(),
   synchronize: vi.fn(),
   smtpConfiguration: vi.fn(),
+  smtpTemplatePreview: vi.fn(),
   sendSmtpTestEmail: vi.fn(),
   testIntegration: vi.fn(),
   updateFeature: vi.fn(),
@@ -68,6 +69,7 @@ vi.mock('@/features/integrations/api', () => ({
     smtpConfiguration: mocks.smtpConfiguration,
     configureSmtp: mocks.configureSmtp,
     sendSmtpTestEmail: mocks.sendSmtpTestEmail,
+    smtpTemplatePreview: mocks.smtpTemplatePreview,
     test: mocks.testIntegration,
   },
 }))
@@ -213,6 +215,13 @@ beforeEach(() => {
     message_id: '<safe-test-id@meetinghq>',
     latency_ms: 15,
     accepted_at: '2026-08-03T00:01:30Z',
+  })
+  mocks.smtpTemplatePreview.mockResolvedValue({
+    key: 'smtp.test',
+    version: '2026.09.1',
+    subject: 'MeetingHQ | SMTP test successful',
+    text: 'MeetingHQ SMTP test successful',
+    html: '<!doctype html><html><body><h1>SMTP test successful</h1></body></html>',
   })
   mocks.previewMenus.mockResolvedValue([])
   mocks.publishMenus.mockResolvedValue([])
@@ -551,6 +560,40 @@ test('SMTP test delivery renders a safe provider failure', async () => {
   expect(
     await screen.findByText('SMTP rejected the recipient address.'),
   ).toBeVisible()
+})
+
+test('SMTP administration previews safe branded transactional email without sending it', async () => {
+  const smtpProvider = {
+    ...provider,
+    key: 'smtp',
+    name: 'SMTP',
+    auth_type: 'smtp',
+    configured: true,
+    validated: true,
+    health: 'healthy',
+  }
+  mocks.integrations.mockResolvedValue([smtpProvider])
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['integrations'], [smtpProvider])
+  render(
+    <QueryClientProvider client={client}>
+      <IntegrationCenterPage />
+    </QueryClientProvider>,
+  )
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Email preview' }))
+  expect(
+    await screen.findByText('MeetingHQ | SMTP test successful'),
+  ).toBeVisible()
+  expect(mocks.smtpTemplatePreview).toHaveBeenCalledWith('smtp.test')
+  expect(screen.getByTitle('Transactional email preview')).toHaveAttribute(
+    'sandbox',
+    '',
+  )
+  expect(mocks.sendSmtpTestEmail).not.toHaveBeenCalled()
 })
 
 test('Role policies are collapsed by default and save grouped permission changes', async () => {

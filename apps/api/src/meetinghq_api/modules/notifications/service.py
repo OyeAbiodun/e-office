@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import format_datetime, formataddr
 from pathlib import Path
+from typing import Literal
 
 import structlog
 from sqlalchemy import func, or_, select
@@ -18,6 +19,12 @@ from meetinghq_api.core.secrets import SecretVault
 from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.configuration.models import ConfigurationEntry
 from meetinghq_api.modules.meetings.models import Meeting, MeetingAttendee
+from meetinghq_api.modules.notifications.email_templates import (
+    EmailBranding,
+    EmailTemplateRegistry,
+    MeetingEmailData,
+    RenderedEmail,
+)
 from meetinghq_api.modules.notifications.models import (
     MeetingInvitationDelivery,
     MeetingReminder,
@@ -25,6 +32,7 @@ from meetinghq_api.modules.notifications.models import (
     NotificationPreference,
 )
 from meetinghq_api.modules.notifications.schemas import NotificationPreferenceUpdate
+from meetinghq_api.modules.organizations.models import Organization
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.exceptions import NotFoundError, ValidationError
 from meetinghq_api.shared.pagination import decode_cursor, encode_cursor
@@ -39,9 +47,15 @@ class EmailDeliveryError(RuntimeError):
 class MeetingEmailSender:
     """SMTP delivery with a standards-compliant local outbox transport."""
 
-    def __init__(self, settings: Settings, values: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        values: dict[str, object] | None = None,
+        branding: EmailBranding | None = None,
+    ) -> None:
         self.settings = settings
         self.values = values or {}
+        self.branding = branding or EmailBranding()
 
     @classmethod
     async def for_organization(
@@ -53,6 +67,8 @@ class MeetingEmailSender:
         """Resolve the tenant SMTP provider, falling back to environment transport."""
         if organization_id is None:
             return cls(settings)
+        organization = await session.get(Organization, organization_id)
+        branding = EmailBranding.from_organization(organization)
         entry = await session.scalar(
             select(ConfigurationEntry).where(
                 ConfigurationEntry.organization_id == organization_id,
@@ -60,8 +76,12 @@ class MeetingEmailSender:
             )
         )
         if entry is None:
-            return cls(settings)
-        return cls(settings, SecretVault(settings.jwt_secret).open(dict(entry.value)))
+            return cls(settings, branding=branding)
+        return cls(
+            settings,
+            SecretVault(settings.jwt_secret).open(dict(entry.value)),
+            branding=branding,
+        )
 
     async def send(
         self,
@@ -70,6 +90,9 @@ class MeetingEmailSender:
         text: str,
         ics: str | None = None,
         message_key: str | None = None,
+        html: str | None = None,
+        template_key: str | None = None,
+        template_version: str | None = None,
     ) -> str:
         message = EmailMessage()
         from_email = self._string("from_email") or self.settings.smtp_from_email
@@ -89,6 +112,12 @@ class MeetingEmailSender:
         message_id = f"<{message_key or uuid.uuid4()}@meetinghq>"
         message["Message-ID"] = message_id
         message.set_content(text)
+        if html:
+            message.add_alternative(html, subtype="html")
+        if template_key:
+            message["X-MeetingHQ-Template"] = template_key
+        if template_version:
+            message["X-MeetingHQ-Template-Version"] = template_version
         if ics:
             method = "CANCEL" if "\r\nMETHOD:CANCEL\r\n" in ics else "REQUEST"
             message.add_attachment(
@@ -100,6 +129,39 @@ class MeetingEmailSender:
             )
         await self.send_message(message)
         return message_id
+
+    async def send_rendered(
+        self,
+        recipient: str,
+        rendered: RenderedEmail,
+        ics: str | None = None,
+        message_key: str | None = None,
+    ) -> str:
+        """Send a registry-rendered email through the existing hardened transport."""
+        await logger.ainfo(
+            "transactional_email_rendered",
+            template_key=rendered.key,
+            template_version=rendered.version,
+            recipient_domain=recipient.rpartition("@")[2].lower(),
+        )
+        try:
+            return await self.send(
+                recipient,
+                rendered.subject,
+                rendered.text,
+                ics,
+                message_key,
+                html=rendered.html,
+                template_key=rendered.key,
+                template_version=rendered.version,
+            )
+        except TypeError as error:
+            # Existing in-process delivery adapters may implement the original
+            # positional contract. Keep that test/delivery seam compatible while
+            # production sends always receive the multipart representation above.
+            if "unexpected keyword argument" not in str(error):
+                raise
+            return await self.send(recipient, rendered.subject, rendered.text, ics, message_key)
 
     async def send_message(self, message: EmailMessage) -> None:
         """Send a prepared message through the same application-wide transport."""
@@ -530,11 +592,11 @@ class NotificationService:
             await self.session.flush()
             attempted_at = datetime.now(UTC)
             try:
-                transport_id = await email.send(
+                rendered = self._meeting_email("meeting.invitation", meeting, organizer, email)
+                transport_id = await email.send_rendered(
                     participant.email,
-                    f"Invitation: {meeting.title}",
-                    self._invitation_text(meeting, organizer),
-                    ics,
+                    rendered,
+                    ics=ics,
                     message_key=f"meeting-{email_delivery.id}",
                 )
                 for delivery in (email_delivery, ics_delivery):
@@ -551,6 +613,7 @@ class NotificationService:
                     ["email", "ics"],
                     participant.email,
                     transport_id,
+                    rendered,
                 )
             except Exception as exc:
                 for delivery in (email_delivery, ics_delivery):
@@ -629,6 +692,8 @@ class NotificationService:
         body: str,
         include_organizer: bool = False,
         calendar_method: str | None = None,
+        previous_start_time: datetime | None = None,
+        previous_end_time: datetime | None = None,
     ) -> None:
         attendee_ids = set(
             (
@@ -651,6 +716,8 @@ class NotificationService:
         )
         email = await self._email(meeting.organization_id)
         organizer = await self.session.get(User, meeting.organizer_id)
+        if organizer is None:
+            raise NotFoundError("Meeting organizer not found")
         ics = (
             self.ics(
                 meeting,
@@ -659,7 +726,7 @@ class NotificationService:
                 method=calendar_method,
                 status="CANCELLED" if calendar_method == "CANCEL" else "CONFIRMED",
             )
-            if calendar_method and organizer is not None
+            if calendar_method
             else None
         )
         channel_suffix = (
@@ -708,11 +775,29 @@ class NotificationService:
                 primary_delivery = next(
                     (item for item in deliveries if item.channel.startswith("email")), None
                 )
-                transport_id = await email.send(
+                template_key: Literal[
+                    "meeting.updated", "meeting.cancelled", "meeting.invitation"
+                ] = (
+                    "meeting.cancelled"
+                    if notification_type == "meeting_cancelled"
+                    else (
+                        "meeting.updated"
+                        if notification_type == "meeting_updated"
+                        else "meeting.invitation"
+                    )
+                )
+                rendered = self._meeting_email(
+                    template_key,
+                    meeting,
+                    organizer,
+                    email,
+                    previous_start_time=previous_start_time,
+                    previous_end_time=previous_end_time,
+                )
+                transport_id = await email.send_rendered(
                     user.email,
-                    subject,
-                    body,
-                    ics,
+                    rendered,
+                    ics=ics,
                     message_key=(
                         f"meeting-{primary_delivery.id}" if primary_delivery is not None else None
                     ),
@@ -733,6 +818,7 @@ class NotificationService:
                     [item.channel for item in deliveries],
                     user.email,
                     transport_id,
+                    rendered,
                 )
             except Exception as exc:
                 for delivery in deliveries:
@@ -819,12 +905,22 @@ class NotificationService:
                     sender = await self._email(meeting.organization_id)
                     senders[meeting.organization_id] = sender
                 method = "CANCEL" if delivery.channel.endswith("cancel") else "REQUEST"
-                subject, body = self._retry_content(delivery.channel, meeting, organizer)
-                transport_id = await sender.send(
+                template_key: Literal[
+                    "meeting.invitation", "meeting.updated", "meeting.cancelled"
+                ] = (
+                    "meeting.cancelled"
+                    if delivery.channel.endswith("cancel")
+                    else (
+                        "meeting.updated"
+                        if delivery.channel.endswith("update")
+                        else "meeting.invitation"
+                    )
+                )
+                rendered = self._meeting_email(template_key, meeting, organizer, sender)
+                transport_id = await sender.send_rendered(
                     user.email,
-                    subject,
-                    body,
-                    self.ics(
+                    rendered,
+                    ics=self.ics(
                         meeting,
                         organizer,
                         [user],
@@ -849,6 +945,7 @@ class NotificationService:
                     [item.channel for item in companions],
                     user.email,
                     transport_id,
+                    rendered,
                 )
                 delivered += 1
             except Exception as exc:
@@ -905,11 +1002,17 @@ class NotificationService:
                 if sender is None:
                     sender = await self._email(meeting.organization_id)
                     senders[meeting.organization_id] = sender
-                await sender.send(
-                    user.email,
-                    f"Reminder: {meeting.title}",
-                    body,
+                organizer = await self.session.get(User, meeting.organizer_id)
+                if organizer is None:
+                    raise NotFoundError("Meeting organizer not found")
+                rendered = self._meeting_email(
+                    "meeting.reminder",
+                    meeting,
+                    organizer,
+                    sender,
+                    reminder_label=self._offset_label(reminder.offset_minutes),
                 )
+                await sender.send_rendered(user.email, rendered)
                 self.session.add(
                     Notification(
                         organization_id=meeting.organization_id,
@@ -933,6 +1036,7 @@ class NotificationService:
                     ["email", "in_app"],
                     user.email,
                     None,
+                    rendered,
                 )
                 delivered += 1
             except Exception as exc:
@@ -967,6 +1071,7 @@ class NotificationService:
         channels: list[str],
         recipient: str,
         transport_id: str | None,
+        rendered: RenderedEmail | None = None,
     ) -> None:
         self.session.add(
             AuditLog(
@@ -980,6 +1085,8 @@ class NotificationService:
                     "channels": channels,
                     "recipient_domain": self._recipient_domain(recipient),
                     "transport_id": transport_id,
+                    "template_key": rendered.key if rendered else None,
+                    "template_version": rendered.version if rendered else None,
                 },
             )
         )
@@ -988,6 +1095,46 @@ class NotificationService:
     @staticmethod
     def _recipient_domain(recipient: str) -> str:
         return recipient.rpartition("@")[2].lower()
+
+    def _meeting_email(
+        self,
+        template_key: Literal[
+            "meeting.invitation", "meeting.updated", "meeting.cancelled", "meeting.reminder"
+        ],
+        meeting: Meeting,
+        organizer: User,
+        sender: MeetingEmailSender,
+        *,
+        previous_start_time: datetime | None = None,
+        previous_end_time: datetime | None = None,
+        reminder_label: str | None = None,
+    ) -> RenderedEmail:
+        """Create the tenant-branded counterpart of a calendar delivery."""
+        location = getattr(meeting, "location", None) or meeting.meeting_url
+        data = MeetingEmailData(
+            meeting_url=f"{self.settings.web_app_url.rstrip('/')}/meetings/{meeting.id}",
+            title=meeting.title,
+            organizer_name=organizer.display_name,
+            start_time=self._display_datetime(meeting.start_datetime),
+            end_time=self._display_datetime(meeting.end_datetime),
+            timezone=meeting.timezone,
+            location=location,
+            join_url=meeting.meeting_url,
+            description=meeting.description,
+            agenda=meeting.description,
+            previous_start_time=(
+                self._display_datetime(previous_start_time) if previous_start_time else None
+            ),
+            previous_end_time=(
+                self._display_datetime(previous_end_time) if previous_end_time else None
+            ),
+            reminder_label=reminder_label,
+        )
+        return EmailTemplateRegistry.render(template_key, data, sender.branding)
+
+    @staticmethod
+    def _display_datetime(value: datetime) -> str:
+        return value.replace(tzinfo=value.tzinfo or UTC).strftime("%A, %B %d · %I:%M %p")
 
     @staticmethod
     def _retry_notification_type(channel: str) -> str:

@@ -308,3 +308,28 @@ async def test_smtp_test_email_requires_integration_test_permission(
         json={"recipient": "operator@example.com"},
     )
     assert forbidden.status_code == 403
+
+
+async def test_smtp_template_preview_uses_safe_sample_data_and_is_audited(
+    meeting_client: AsyncClient,
+    meeting_identity: tuple[dict[str, str], str],
+) -> None:
+    headers, _ = meeting_identity
+
+    response = await meeting_client.get(
+        "/api/v1/integrations/smtp/templates/meeting.invitation/preview",
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["key"] == "meeting.invitation"
+    assert data["version"]
+    assert data["subject"].startswith("MeetingHQ | Invitation:")
+    assert "<!doctype html>" in data["html"].lower()
+    assert "javascript:" not in data["html"].lower()
+    assert "Quarterly planning" in data["text"]
+
+    audit = await meeting_client.get("/api/v1/integrations/smtp/audit", headers=headers)
+    assert audit.status_code == 200
+    assert any(item["action"] == "smtp.template_previewed" for item in audit.json()["data"])

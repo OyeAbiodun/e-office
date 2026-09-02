@@ -34,6 +34,7 @@ import {
   type IntegrationTestResult,
   type SmtpConfiguration,
   type SmtpConfigurationUpdate,
+  type TransactionalTemplateKey,
 } from '@/features/integrations/api'
 
 interface FieldDefinition {
@@ -388,9 +389,13 @@ function SmtpConfigurationPanel({
 }) {
   const { user } = useAuth()
   const client = useQueryClient()
-  const [tab, setTab] = useState<'setup' | 'testing' | 'operations'>('setup')
+  const [tab, setTab] = useState<
+    'setup' | 'testing' | 'preview' | 'operations'
+  >('setup')
   const [form, setForm] = useState<SmtpConfigurationUpdate>(smtpDefaults)
   const [testRecipient, setTestRecipient] = useState('')
+  const [templateKey, setTemplateKey] =
+    useState<TransactionalTemplateKey>('smtp.test')
   const configuration = useQuery({
     queryKey: ['smtp-configuration'],
     queryFn: integrationApi.smtpConfiguration,
@@ -399,6 +404,11 @@ function SmtpConfigurationPanel({
     queryKey: ['integration-audit', 'smtp'],
     queryFn: () => integrationApi.audit('smtp'),
     enabled: tab === 'operations',
+  })
+  const preview = useQuery({
+    queryKey: ['smtp-template-preview', templateKey],
+    queryFn: () => integrationApi.smtpTemplatePreview(templateKey),
+    enabled: tab === 'preview',
   })
   useEffect(() => {
     if (!configuration.data) return
@@ -578,21 +588,27 @@ function SmtpConfigurationPanel({
           </div>
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b px-5 py-2">
-          {(['setup', 'testing', 'operations'] as const).map((item) => (
-            <button
-              aria-current={tab === item ? 'page' : undefined}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize ${
-                tab === item
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-              key={item}
-              onClick={() => setTab(item)}
-              type="button"
-            >
-              {item === 'testing' ? 'Test & delivery' : item}
-            </button>
-          ))}
+          {(['setup', 'testing', 'preview', 'operations'] as const).map(
+            (item) => (
+              <button
+                aria-current={tab === item ? 'page' : undefined}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize ${
+                  tab === item
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+                key={item}
+                onClick={() => setTab(item)}
+                type="button"
+              >
+                {item === 'testing'
+                  ? 'Test & delivery'
+                  : item === 'preview'
+                    ? 'Email preview'
+                    : item}
+              </button>
+            ),
+          )}
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
           {configuration.isLoading ? (
@@ -724,6 +740,83 @@ function SmtpConfigurationPanel({
                 )}
               </section>
             </div>
+          ) : tab === 'preview' ? (
+            <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+              <div className="rounded-2xl border bg-card p-5">
+                <ShieldCheck className="size-6 text-primary" />
+                <h3 className="mt-4 text-lg font-semibold">
+                  Transactional email preview
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Uses safe sample data and current organization branding.
+                  Previewing never sends an email or exposes credentials.
+                </p>
+                <label className="mt-5 block text-sm font-medium">
+                  Template
+                  <select
+                    className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+                    onChange={(event) =>
+                      setTemplateKey(
+                        event.target.value as TransactionalTemplateKey,
+                      )
+                    }
+                    value={templateKey}
+                  >
+                    <option value="smtp.test">SMTP test email</option>
+                    <option value="meeting.invitation">
+                      Meeting invitation
+                    </option>
+                    <option value="meeting.updated">Meeting updated</option>
+                    <option value="meeting.cancelled">Meeting cancelled</option>
+                    <option value="meeting.reminder">Meeting reminder</option>
+                    <option value="auth.password_reset">Password reset</option>
+                    <option value="auth.email_verification">
+                      Email verification
+                    </option>
+                    <option value="user.invitation">User invitation</option>
+                    <option value="user.temporary_password">
+                      Temporary password
+                    </option>
+                  </select>
+                </label>
+                {preview.data && (
+                  <div className="mt-5 rounded-xl border bg-muted/40 p-4 text-sm">
+                    <p className="font-semibold">{preview.data.subject}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Template version {preview.data.version}
+                    </p>
+                    <details className="mt-4">
+                      <summary className="cursor-pointer font-medium">
+                        Plain-text alternative
+                      </summary>
+                      <pre className="mt-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {preview.data.text}
+                      </pre>
+                    </details>
+                  </div>
+                )}
+              </div>
+              <div className="overflow-hidden rounded-2xl border bg-slate-100 p-3">
+                {preview.isLoading ? (
+                  <div className="h-[640px] animate-pulse rounded-xl bg-muted" />
+                ) : preview.isError ? (
+                  <p
+                    className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 text-sm text-red-700"
+                    role="alert"
+                  >
+                    The transactional email preview could not be loaded.
+                  </p>
+                ) : preview.data ? (
+                  <iframe
+                    aria-label="Transactional email preview"
+                    className="h-[640px] w-full rounded-xl border bg-white"
+                    sandbox=""
+                    srcDoc={preview.data.html}
+                    title="Transactional email preview"
+                  />
+                ) : null}
+              </div>
+            </section>
           ) : (
             <ProviderAudit
               rows={audit.data ?? []}

@@ -9,6 +9,7 @@ from meetinghq_api.infrastructure.database import get_database_session
 from meetinghq_api.modules.auth.domain.permissions import Permissions
 from meetinghq_api.modules.auth.presentation.dependencies import require_permission
 from meetinghq_api.modules.integrations.schemas import (
+    EmailTemplatePreviewResponse,
     IntegrationAuditResponse,
     IntegrationConfigurationUpdate,
     IntegrationOperationResponse,
@@ -20,6 +21,7 @@ from meetinghq_api.modules.integrations.schemas import (
     SmtpTestEmailResponse,
 )
 from meetinghq_api.modules.integrations.service import IntegrationService
+from meetinghq_api.modules.notifications.email_templates import TemplateKey
 from meetinghq_api.modules.users.models import User
 
 router = APIRouter(prefix="/integrations", tags=["integration-center"])
@@ -64,6 +66,15 @@ async def send_smtp_test_email(
     return await IntegrationService(session).send_smtp_test_email(
         user.organization_id, str(body.recipient), user
     )
+
+
+@router.get("/smtp/templates/{key}/preview", response_model=EmailTemplatePreviewResponse)
+async def smtp_template_preview(
+    key: TemplateKey,
+    session: Session,
+    user: IntegrationReader,
+) -> EmailTemplatePreviewResponse:
+    return await IntegrationService(session).email_template_preview(user.organization_id, key, user)
 
 
 @router.put("/{key}", response_model=IntegrationResponse)
@@ -128,6 +139,17 @@ async def integration_audit(
                 else None
             ),
             revision=_audit_int(row.audit_metadata, "revision"),
+            template_key=(
+                str(row.audit_metadata["template_key"])
+                if isinstance(row.audit_metadata, dict) and row.audit_metadata.get("template_key")
+                else None
+            ),
+            template_version=(
+                str(row.audit_metadata["template_version"])
+                if isinstance(row.audit_metadata, dict)
+                and row.audit_metadata.get("template_version")
+                else None
+            ),
         )
         for row in rows
     ]

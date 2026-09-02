@@ -52,6 +52,8 @@ class IntegrationAuditResponse(BaseModel):
     diagnostic: str | None = None
     recipient: str | None = None
     revision: int | None = None
+    template_key: str | None = None
+    template_version: str | None = None
 
 
 class SmtpConfigurationUpdate(BaseModel):
@@ -124,3 +126,13 @@ class SmtpTestEmailResponse(BaseModel):
     message_id: str | None
     latency_ms: int
     accepted_at: datetime | None
+
+
+class EmailTemplatePreviewResponse(BaseModel):
+    """Safe sample rendering for Administration; never contains tenant secrets."""
+
+    key: str
+    version: str
+    subject: str
+    text: str
+    html: str

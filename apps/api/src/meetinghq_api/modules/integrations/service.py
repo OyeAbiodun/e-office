@@ -26,6 +26,7 @@ from meetinghq_api.modules.integrations.registry import (
     ProviderDefinition,
 )
 from meetinghq_api.modules.integrations.schemas import (
+    EmailTemplatePreviewResponse,
     IntegrationResponse,
     IntegrationTestResponse,
     SmtpConfigurationResponse,
@@ -34,7 +35,14 @@ from meetinghq_api.modules.integrations.schemas import (
     SmtpState,
     SmtpTestEmailResponse,
 )
+from meetinghq_api.modules.notifications.email_templates import (
+    EmailBranding,
+    EmailTemplateRegistry,
+    SmtpTestEmailData,
+    TemplateKey,
+)
 from meetinghq_api.modules.notifications.service import EmailDeliveryError, MeetingEmailSender
+from meetinghq_api.modules.organizations.models import Organization
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
@@ -186,7 +194,9 @@ class IntegrationService:
             raise ConflictError(
                 "Validate the current SMTP configuration before sending a test email"
             )
-        sender = MeetingEmailSender(self.settings, values)
+        sender = await MeetingEmailSender.for_organization(
+            self.session, self.settings, organization_id
+        )
         started = time.perf_counter()
         revision = self._int_value(values.get("revision"), 1)
         self._audit(
@@ -196,13 +206,16 @@ class IntegrationService:
             "smtp",
             {"status": "requested", "recipient": recipient, "revision": revision},
         )
+        rendered = EmailTemplateRegistry.render(
+            "smtp.test",
+            SmtpTestEmailData(
+                accepted_at=datetime.now(UTC).strftime("%B %d, %Y · %H:%M UTC"),
+                environment=self.settings.environment,
+            ),
+            sender.branding,
+        )
         try:
-            message_id = await sender.send(
-                recipient,
-                "MeetingHQ SMTP delivery test",
-                "MeetingHQ submitted this message through the configured outbound email path. "
-                "SMTP acceptance does not by itself prove final mailbox delivery.",
-            )
+            message_id = await sender.send_rendered(recipient, rendered)
         except EmailDeliveryError as error:
             latency = max(1, round((time.perf_counter() - started) * 1000))
             diagnostic = self._safe_smtp_error(error)
@@ -226,6 +239,8 @@ class IntegrationService:
                     "diagnostic": diagnostic,
                     "recipient": recipient,
                     "revision": revision,
+                    "template_key": rendered.key,
+                    "template_version": rendered.version,
                 },
             )
             return SmtpTestEmailResponse(
@@ -256,6 +271,8 @@ class IntegrationService:
                 "latency_ms": latency,
                 "recipient": recipient,
                 "revision": revision,
+                "template_key": rendered.key,
+                "template_version": rendered.version,
             },
         )
         return SmtpTestEmailResponse(
@@ -268,6 +285,27 @@ class IntegrationService:
             message_id=message_id,
             latency_ms=latency,
             accepted_at=accepted_at,
+        )
+
+    async def email_template_preview(
+        self, organization_id: uuid.UUID, key: TemplateKey, actor: User
+    ) -> EmailTemplatePreviewResponse:
+        """Return a safe, non-deliverable branded example for a supported template."""
+        organization = await self.session.get(Organization, organization_id)
+        rendered = EmailTemplateRegistry.preview(key, EmailBranding.from_organization(organization))
+        self._audit(
+            organization_id,
+            actor.id,
+            "smtp.template_previewed",
+            "smtp",
+            {"template_key": rendered.key, "template_version": rendered.version},
+        )
+        return EmailTemplatePreviewResponse(
+            key=rendered.key,
+            version=rendered.version,
+            subject=rendered.subject,
+            text=rendered.text,
+            html=rendered.html,
         )
 
     async def list(self, organization_id: uuid.UUID) -> list[IntegrationResponse]:

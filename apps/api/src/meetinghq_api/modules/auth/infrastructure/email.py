@@ -7,6 +7,13 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
+from meetinghq_api.modules.notifications.email_templates import (
+    EmailTemplateRegistry,
+    PasswordResetEmailData,
+    TemporaryPasswordEmailData,
+    UserInvitationEmailData,
+    VerificationEmailData,
+)
 from meetinghq_api.modules.notifications.service import MeetingEmailSender
 
 logger = structlog.get_logger(__name__)
@@ -38,24 +45,26 @@ class IdentityEmailSender:
         self, email: str, token: str, organization_id: uuid.UUID | None = None
     ) -> None:
         """Deliver a one-time password reset link."""
-        await (await self._transport(organization_id)).send(
-            email,
-            "Reset your MeetingHQ password",
-            "Use this secure link to reset your password:\n"
-            f"{self._application_link('/reset-password', token=token)}\n\n"
-            "If you did not request this, you can ignore this email.",
+        transport = await self._transport(organization_id)
+        rendered = EmailTemplateRegistry.render(
+            "auth.password_reset",
+            PasswordResetEmailData(self._application_link("/reset-password", token=token)),
+            transport.branding,
         )
+        await transport.send_rendered(email, rendered)
         await logger.ainfo("password_reset_requested", recipient_domain=email.rpartition("@")[2])
 
     async def send_verification(
         self, email: str, token: str, organization_id: uuid.UUID | None = None
     ) -> None:
         """Record verification delivery without logging the secret."""
-        await (await self._transport(organization_id)).send(
-            email,
-            "Verify your MeetingHQ email",
-            f"Verify your email:\n{self._application_link('/verify-email', token=token)}",
+        transport = await self._transport(organization_id)
+        rendered = EmailTemplateRegistry.render(
+            "auth.email_verification",
+            VerificationEmailData(self._application_link("/verify-email", token=token)),
+            transport.branding,
         )
+        await transport.send_rendered(email, rendered)
         await logger.ainfo(
             "email_verification_requested", recipient_domain=email.rpartition("@")[2]
         )
@@ -64,12 +73,16 @@ class IdentityEmailSender:
         self, email: str, token: str, organization_id: uuid.UUID | None = None
     ) -> None:
         """Record invitation delivery without logging the secret."""
-        await (await self._transport(organization_id)).send(
-            email,
-            "You are invited to MeetingHQ",
-            "Accept your invitation:\n"
-            f"{self._application_link('/invitations/accept', token=token)}",
+        transport = await self._transport(organization_id)
+        rendered = EmailTemplateRegistry.render(
+            "user.invitation",
+            UserInvitationEmailData(
+                self._application_link("/invitations/accept", token=token),
+                transport.branding.organization_name,
+            ),
+            transport.branding,
         )
+        await transport.send_rendered(email, rendered)
         await logger.ainfo(
             "organization_invitation_requested",
             recipient_domain=email.rpartition("@")[2],
@@ -82,12 +95,13 @@ class IdentityEmailSender:
         organization_id: uuid.UUID | None = None,
     ) -> None:
         """Deliver an administrator-issued temporary credential."""
-        await (await self._transport(organization_id)).send(
-            email,
-            "Your MeetingHQ account is ready",
-            f"Sign in at {self._application_link('/login')} using this temporary password:\n"
-            f"{temporary_password}\n\nYou will be required to choose a new password.",
+        transport = await self._transport(organization_id)
+        rendered = EmailTemplateRegistry.render(
+            "user.temporary_password",
+            TemporaryPasswordEmailData(self._application_link("/login"), temporary_password),
+            transport.branding,
         )
+        await transport.send_rendered(email, rendered)
         await logger.ainfo(
             "temporary_password_issued",
             recipient_domain=email.rpartition("@")[2],
