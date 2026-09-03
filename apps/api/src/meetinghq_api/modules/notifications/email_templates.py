@@ -79,7 +79,7 @@ class RenderedEmail:
 @dataclass(frozen=True, slots=True)
 class PasswordResetEmailData:
     reset_url: str
-    expires_in: str = "60 minutes"
+    expires_in: str = "20 minutes"
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,7 +239,7 @@ class EmailTemplateRegistry:
                 _paragraph("We received a request to reset your MeetingHQ password."),
                 _button(url, "Reset password", brand),
                 _paragraph(
-                    f"This link expires in {_safe_text(data.expires_in, '60 minutes', 80)}."
+                    f"This link expires in {_safe_text(data.expires_in, '20 minutes', 80)}."
                 ),
                 _notice(
                     "If you did not request this, you can safely ignore this email. Your password will not change."

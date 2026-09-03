@@ -3,10 +3,12 @@ import { Link, useSearch } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 
 import { authApi, ApiError } from '@/features/auth/api'
+import { strongPasswordError } from '@/features/auth/auth-schema'
 import { FormField } from '@/features/auth/form-field'
 
 interface Values {
   new_password: string
+  confirm_password: string
 }
 
 export function ResetPasswordPage() {
@@ -14,6 +16,7 @@ export function ResetPasswordPage() {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<Values>()
   const [message, setMessage] = useState<string | null>(null)
@@ -22,8 +25,12 @@ export function ResetPasswordPage() {
     if (!search.token) return setError('Reset token is missing')
     try {
       setMessage(
-        (await authApi.resetPassword({ token: search.token, ...values }))
-          .message,
+        (
+          await authApi.resetPassword({
+            token: search.token,
+            new_password: values.new_password,
+          })
+        ).message,
       )
     } catch (caught) {
       setError(
@@ -40,7 +47,7 @@ export function ResetPasswordPage() {
       </h2>
       <p className="mt-2 text-muted-foreground">
         Use at least 12 characters with uppercase, lowercase, number, and
-        symbol.
+        symbol. Reset links expire after 20 minutes and can only be used once.
       </p>
       <form className="mt-8 space-y-5" onSubmit={submit}>
         {message && (
@@ -63,10 +70,23 @@ export function ResetPasswordPage() {
           id="new_password"
           label="New password"
           type="password"
+          autoComplete="new-password"
           error={errors.new_password?.message}
           {...register('new_password', {
             required: 'Password is required',
-            minLength: { value: 12, message: 'Use at least 12 characters' },
+            validate: strongPasswordError,
+          })}
+        />
+        <FormField
+          id="confirm_password"
+          label="Confirm new password"
+          type="password"
+          autoComplete="new-password"
+          error={errors.confirm_password?.message}
+          {...register('confirm_password', {
+            required: 'Please confirm your password',
+            validate: (value) =>
+              value === getValues('new_password') || 'Passwords do not match',
           })}
         />
         <button

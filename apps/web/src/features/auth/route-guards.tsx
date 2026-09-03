@@ -2,6 +2,7 @@ import { Navigate, Outlet, useRouterState } from '@tanstack/react-router'
 import { LoaderCircle } from 'lucide-react'
 
 import { useAuth } from '@/features/auth/auth-store'
+import { allowsAuthenticatedPublicAccess } from '@/features/auth/public-route-policy'
 
 function LoadingIdentity() {
   return (
@@ -36,8 +37,11 @@ export function ProtectedRoute() {
 
 export function PublicRoute() {
   const { user, loading } = useAuth()
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
   if (loading) return <LoadingIdentity />
-  if (user) {
+  if (user && !allowsAuthenticatedPublicAccess(pathname)) {
     if (import.meta.env.DEV)
       console.info('[MeetingHQ auth] route_guard_redirect', {
         to: user.force_password_change ? '/change-password' : '/',

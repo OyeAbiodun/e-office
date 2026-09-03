@@ -57,3 +57,31 @@ test('startup restoration is single-flight and resolves the current user once', 
   expect(refreshCalls).toBe(1)
   expect(currentUserCalls).toBe(0)
 })
+
+test('surfaces a safe field-level validation message instead of a generic mutation error', async () => {
+  vi.resetModules()
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json(
+      {
+        success: false,
+        error: {
+          message: 'The request could not be completed.',
+          details: {
+            detail: [
+              {
+                loc: ['body', 'new_password'],
+                msg: 'Field required',
+              },
+            ],
+          },
+        },
+      },
+      { status: 422 },
+    ),
+  )
+
+  const { authApi, ApiError } = await import('@/features/auth/api')
+  await expect(
+    authApi.resetPassword({ token: 'safe-test-token' }),
+  ).rejects.toEqual(new ApiError('new_password: Field required', 422))
+})

@@ -29,7 +29,7 @@ production credentials.
 | `MEETINGHQ_REFRESH_COOKIE_NAME` | No | `meetinghq_refresh` | HttpOnly refresh cookie name |
 | `MEETINGHQ_CSRF_COOKIE_NAME` | No | `meetinghq_csrf` | Double-submit CSRF cookie name |
 | `MEETINGHQ_SECURE_COOKIES` | Yes | `false` locally | Must be `true` behind production HTTPS |
-| `MEETINGHQ_PASSWORD_RESET_TTL_MINUTES` | No | `30` | Password reset token lifetime |
+| `MEETINGHQ_PASSWORD_RESET_TTL_MINUTES` | No | `20` | Password reset token lifetime (maximum: 20 minutes) |
 | `MEETINGHQ_EMAIL_VERIFICATION_TTL_HOURS` | No | `24` | Verification token lifetime |
 | `MEETINGHQ_LOGIN_MAX_FAILURES` | No | `5` | Failures before temporary lock |
 | `MEETINGHQ_LOGIN_LOCK_MINUTES` | No | `15` | Temporary account lock duration |

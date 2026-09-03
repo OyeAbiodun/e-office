@@ -48,7 +48,10 @@ class IdentityEmailSender:
         transport = await self._transport(organization_id)
         rendered = EmailTemplateRegistry.render(
             "auth.password_reset",
-            PasswordResetEmailData(self._application_link("/reset-password", token=token)),
+            PasswordResetEmailData(
+                self._application_link("/reset-password", token=token),
+                expires_in=f"{self.settings.password_reset_ttl_minutes} minutes",
+            ),
             transport.branding,
         )
         await transport.send_rendered(email, rendered)

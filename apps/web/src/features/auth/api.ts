@@ -81,13 +81,33 @@ function csrfToken(): string | undefined {
   return activeCsrfToken ?? (cookie ? decodeURIComponent(cookie) : undefined)
 }
 
+function validationMessage(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null
+  const entries = (details as { detail?: unknown }).detail
+  if (!Array.isArray(entries) || entries.length === 0) return null
+  const first = entries[0]
+  if (!first || typeof first !== 'object') return null
+  const issue = first as { loc?: unknown; msg?: unknown }
+  const location = Array.isArray(issue.loc)
+    ? issue.loc.filter((part) => part !== 'body').join(' ')
+    : ''
+  const message = typeof issue.msg === 'string' ? issue.msg : null
+  if (!message) return null
+  return location ? `${location}: ${message}` : message
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
-      error?: { message?: string }
+      error?: { message?: string; details?: unknown }
     } | null
+    const genericMessage = 'The request could not be completed.'
+    const apiError = payload?.error
+    const message = apiError?.message
     throw new ApiError(
-      payload?.error?.message ?? 'Request failed',
+      message === genericMessage
+        ? (validationMessage(apiError?.details) ?? message)
+        : (message ?? 'Request failed'),
       response.status,
     )
   }

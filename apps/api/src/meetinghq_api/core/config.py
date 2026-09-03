@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     refresh_cookie_name: str = "meetinghq_refresh"
     csrf_cookie_name: str = "meetinghq_csrf"
     secure_cookies: bool = False
-    password_reset_ttl_minutes: int = Field(default=30, gt=0)
+    password_reset_ttl_minutes: int = Field(default=20, gt=0, le=20)
     email_verification_ttl_hours: int = Field(default=24, gt=0)
     login_max_failures: int = Field(default=5, gt=0)
     login_lock_minutes: int = Field(default=15, gt=0)

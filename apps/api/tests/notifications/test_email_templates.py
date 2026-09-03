@@ -111,6 +111,7 @@ def test_password_reset_includes_security_guidance_without_displaying_a_raw_toke
 
     assert "token:" not in rendered.text.lower()
     assert token in rendered.text  # It is part of the required fallback URL only.
+    assert "20 minutes" in rendered.text
     assert "If you did not request this" in rendered.text
 
 
