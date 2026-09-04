@@ -1,4 +1,4 @@
-import { apiRequest, currentAccessToken } from '@/features/auth/api'
+import { apiBaseUrl, apiRequest, currentAccessToken } from '@/features/auth/api'
 
 export interface Conversation {
   id: string
@@ -57,6 +57,11 @@ export interface MessageDraft {
   id: string
   body: string
   updated_at: string
+}
+
+export function chatSocketUrl(conversationId: string, token: string) {
+  const socketBaseUrl = apiBaseUrl.replace(/^http/, 'ws')
+  return `${socketBaseUrl}/chat/ws/${conversationId}?token=${encodeURIComponent(token)}`
 }
 
 export const chatApi = {
@@ -147,9 +152,6 @@ export const chatApi = {
   socket: (conversationId: string) => {
     const token = currentAccessToken()
     if (!token) return null
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return new WebSocket(
-      `${protocol}//${window.location.hostname}:8000/api/v1/chat/ws/${conversationId}?token=${encodeURIComponent(token)}`,
-    )
+    return new WebSocket(chatSocketUrl(conversationId, token))
   },
 }
