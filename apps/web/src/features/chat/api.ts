@@ -35,6 +35,7 @@ export interface ChatMessage {
   attachments: Array<Record<string, unknown>>
   thread: { id: string; reply_count: number } | null
   delivery_status: string
+  optimistic_state?: 'sending' | 'failed'
 }
 
 export interface ChatDashboard {
@@ -73,6 +74,7 @@ export const chatApi = {
       '/conversations',
       { method: 'POST', body: JSON.stringify(body) },
       true,
+      false,
     ),
   get: (id: string) =>
     apiRequest<Conversation>(`/conversations/${id}`, {}, true),
@@ -94,23 +96,26 @@ export const chatApi = {
       `/conversations/${id}/messages`,
       { method: 'POST', body: JSON.stringify(body) },
       true,
+      false,
     ),
   edit: (id: string, body: string) =>
     apiRequest<ChatMessage>(
       `/messages/${id}`,
       { method: 'PATCH', body: JSON.stringify({ body }) },
       true,
+      false,
     ),
   remove: (id: string) =>
-    apiRequest(`/messages/${id}`, { method: 'DELETE' }, true),
+    apiRequest(`/messages/${id}`, { method: 'DELETE' }, true, false),
   react: (id: string, emoji: string) =>
     apiRequest(
       `/messages/${id}/reactions`,
       { method: 'POST', body: JSON.stringify({ emoji }) },
       true,
+      false,
     ),
   pin: (id: string) =>
-    apiRequest(`/messages/${id}/pin`, { method: 'POST' }, true),
+    apiRequest(`/messages/${id}/pin`, { method: 'POST' }, true, false),
   pins: (id: string) =>
     apiRequest<Array<Record<string, unknown>>>(
       `/conversations/${id}/pins`,
@@ -126,12 +131,14 @@ export const chatApi = {
       `/conversations/${id}/draft`,
       { method: 'PUT', body: JSON.stringify({ body }) },
       true,
+      false,
     ),
   saveMessage: (id: string, note?: string) =>
     apiRequest(
       `/messages/${id}/save`,
       { method: 'POST', body: JSON.stringify({ note: note ?? null }) },
       true,
+      false,
     ),
   savedMessages: () =>
     apiRequest<Array<Record<string, unknown>>>('/saved-messages', {}, true),
@@ -140,6 +147,7 @@ export const chatApi = {
       `/conversations/${id}/read`,
       { method: 'PUT', body: JSON.stringify({ message_id: messageId }) },
       true,
+      false,
     ),
   presence: () =>
     apiRequest<Array<Record<string, unknown>>>('/presence', {}, true),
@@ -148,6 +156,7 @@ export const chatApi = {
       '/presence',
       { method: 'PUT', body: JSON.stringify({ status }) },
       true,
+      false,
     ),
   socket: (conversationId: string) => {
     const token = currentAccessToken()

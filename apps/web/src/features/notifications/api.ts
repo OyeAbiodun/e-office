@@ -42,6 +42,14 @@ export interface NotificationPreferences {
   updated_at: string
 }
 
+export interface PushSubscriptionRecord {
+  id: string
+  endpoint: string
+  enabled: boolean
+  created_at: string
+  last_used_at: string | null
+}
+
 export const notificationApi = {
   list: () => apiRequest<NotificationSummary>('/notifications', {}, true),
   listFiltered: (query: string) =>
@@ -89,4 +97,19 @@ export const notificationApi = {
       { method: 'PUT', body: JSON.stringify(body) },
       true,
     ),
+  pushSubscriptions: () =>
+    apiRequest<PushSubscriptionRecord[]>('/notifications/push-subscriptions', {}, true),
+  savePushSubscription: (body: {
+    endpoint: string
+    p256dh: string
+    auth: string
+    user_agent?: string
+  }) =>
+    apiRequest<PushSubscriptionRecord>(
+      '/notifications/push-subscriptions',
+      { method: 'PUT', body: JSON.stringify(body) },
+      true,
+    ),
+  revokePushSubscription: (id: string) =>
+    apiRequest<void>(`/notifications/push-subscriptions/${id}`, { method: 'DELETE' }, true),
 }

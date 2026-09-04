@@ -68,6 +68,8 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const typingTimer = useRef<number | null>(null)
   const draftTimer = useRef<number | null>(null)
+  const lastTypingSentAt = useRef(0)
+  const messageKey = ['messages', conversationId, messageId] as const
 
   useEffect(() => {
     if (!draft.isSuccess || draftReady) return
@@ -112,26 +114,99 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
     return () => socket.close()
   }, [conversationId, queryClient])
 
-  const send = async () => {
-    if (!body.trim() || sending) return
+  const replaceOptimistic = (localId: string, message: ChatMessage) => {
+    queryClient.setQueryData<{
+      items: ChatMessage[]
+      next_cursor: string | null
+      has_more: boolean
+    }>(messageKey, (current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) =>
+              item.id === localId
+                ? {
+                    ...item,
+                    ...message,
+                    body: message.body ?? item.body,
+                    sender_name: message.sender_name ?? item.sender_name,
+                    reactions: message.reactions ?? item.reactions,
+                    attachments: message.attachments ?? item.attachments,
+                  }
+                : item,
+            ),
+          }
+        : current,
+    )
+  }
+  const send = async (retry?: ChatMessage) => {
+    if ((!retry && !body.trim()) || sending) return
+    const content = retry?.body ?? body.trim()
+    const clientMessageId = retry?.id.startsWith('optimistic-')
+      ? retry.id.replace('optimistic-', '')
+      : crypto.randomUUID()
+    const localId = retry?.id ?? `optimistic-${clientMessageId}`
     const payload = {
-      body: body.trim(),
+      body: content,
       parent_message_id: thread ? messageId : null,
       message_type: 'rich_text',
+      client_message_id: clientMessageId,
     }
+    if (!retry) {
+      const optimistic: ChatMessage = {
+        id: localId,
+        conversation_id: conversationId,
+        sender_id: 'current-user',
+        sender_name: 'You',
+        parent_message_id: thread ? messageId ?? null : null,
+        message_type: 'rich_text',
+        body: content,
+        edited: false,
+        edited_at: null,
+        deleted_at: null,
+        created_at: new Date().toISOString(),
+        reactions: [],
+        attachments: [],
+        thread: null,
+        delivery_status: 'sending',
+        optimistic_state: 'sending',
+      }
+      queryClient.setQueryData<{
+        items: ChatMessage[]
+        next_cursor: string | null
+        has_more: boolean
+      }>(messageKey, (current) =>
+        current ? { ...current, items: [...current.items, optimistic] } : current,
+      )
+    }
+    if (!retry) setBody('')
     setSending(true)
     try {
-      if (socketRef.current?.readyState === WebSocket.OPEN)
-        socketRef.current.send(
-          JSON.stringify({ type: 'message.send', data: payload }),
-        )
-      else await chatApi.send(conversationId, payload)
-      setBody('')
+      // The REST endpoint is the authoritative idempotent write path. The
+      // WebSocket remains a receive/typing transport, avoiding API+socket
+      // duplicate sends and allowing retry to reuse the same client id.
+      const authoritative = await chatApi.send(conversationId, payload)
+      replaceOptimistic(localId, authoritative)
       queryClient.setQueryData(['message-draft', conversationId], null)
       setDraftReady(true)
-      await queryClient.invalidateQueries({
-        queryKey: ['messages', conversationId, messageId],
-      })
+      await queryClient.invalidateQueries({ queryKey: ['chat-dashboard'] })
+    } catch {
+      queryClient.setQueryData<{
+        items: ChatMessage[]
+        next_cursor: string | null
+        has_more: boolean
+      }>(messageKey, (current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((item) =>
+                item.id === localId
+                  ? { ...item, delivery_status: 'failed', optimistic_state: 'failed' }
+                  : item,
+              ),
+            }
+          : current,
+      )
     } finally {
       setSending(false)
     }
@@ -142,16 +217,20 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
     draftTimer.current = window.setTimeout(() => {
       void chatApi.saveDraft(conversationId, value)
     }, 600)
-    socketRef.current?.send(
-      JSON.stringify({ type: 'typing', data: { active: true } }),
-    )
+    const now = Date.now()
+    if (now - lastTypingSentAt.current > 900) {
+      socketRef.current?.send(
+        JSON.stringify({ type: 'typing', data: { active: true } }),
+      )
+      lastTypingSentAt.current = now
+    }
     if (typingTimer.current) window.clearTimeout(typingTimer.current)
     typingTimer.current = window.setTimeout(
       () =>
         socketRef.current?.send(
           JSON.stringify({ type: 'typing', data: { active: false } }),
         ),
-      1200,
+      1500,
     )
   }
   const insert = (prefix: string, suffix = prefix) => {
@@ -360,6 +439,11 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
                   queryKey: ['conversation-pins', conversationId],
                 })
               }}
+              onRetry={
+                message.optimistic_state === 'failed'
+                  ? () => void send(message)
+                  : undefined
+              }
             />
           ))}
           {typingUsers.length > 0 && (
@@ -367,7 +451,9 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
               className="px-12 py-2 text-xs text-muted-foreground"
               role="status"
             >
-              Someone is typing…
+              {typingUsers.length === 1
+                ? '1 person is typing…'
+                : `${typingUsers.length} people are typing…`}
             </p>
           )}
         </section>
@@ -578,10 +664,12 @@ function MessageRow({
   message,
   conversationId,
   onChanged,
+  onRetry,
 }: {
   message: ChatMessage
   conversationId: string
   onChanged: () => Promise<void>
+  onRetry?: () => void
 }) {
   const [menu, setMenu] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -595,17 +683,29 @@ function MessageRow({
   return (
     <article className="group relative flex gap-3 rounded-xl px-2 py-3 hover:bg-muted/50">
       <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">
-        {message.sender_name.charAt(0)}
+        {(message.sender_name || 'You').charAt(0)}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <p className="text-sm font-semibold">{message.sender_name}</p>
+          <p className="text-sm font-semibold">{message.sender_name || 'You'}</p>
           <time className="text-xs text-muted-foreground">
             {new Date(message.created_at).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
             })}
           </time>
+          {message.optimistic_state === 'sending' && (
+            <span className="text-xs text-muted-foreground">Sending…</span>
+          )}
+          {message.optimistic_state === 'failed' && (
+            <button
+              className="text-xs font-semibold text-destructive underline"
+              onClick={onRetry}
+              type="button"
+            >
+              Not sent · Retry
+            </button>
+          )}
           {message.edited && (
             <span className="text-xs text-muted-foreground">(edited)</span>
           )}
@@ -644,7 +744,7 @@ function MessageRow({
           />
         )}
         <div className="mt-2 flex flex-wrap gap-1">
-          {message.reactions.map((reaction) => (
+          {(message.reactions ?? []).map((reaction) => (
             <span
               className="rounded-full border bg-background px-2 py-0.5 text-xs"
               key={reaction.id}

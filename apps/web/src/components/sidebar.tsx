@@ -93,10 +93,11 @@ export function Sidebar({
   const workspace = workspaces.data?.[0]
   const allItems = navigation.data ?? []
   const dynamicBadge = (item: MenuDefinition) => {
+    const displayCount = (count: number) => (count > 99 ? '99+' : String(count))
     if (item.key === 'notifications' && notificationSummary.data?.unread)
-      return String(notificationSummary.data.unread)
+      return displayCount(notificationSummary.data.unread)
     if (item.key === 'mail' && mailSummary.data?.unread)
-      return String(mailSummary.data.unread)
+      return displayCount(mailSummary.data.unread)
     return item.badge
   }
   const renderNavigation = (
@@ -186,11 +187,16 @@ export function Sidebar({
       })}
     </div>
   )
+  const sectionOrder = ['work', 'administration', 'support']
   const sections = [
     ...new Set(
       allItems.filter((item) => !item.parent_key).map((item) => item.section),
     ),
-  ]
+  ].sort((left, right) => {
+    const leftIndex = sectionOrder.indexOf(left)
+    const rightIndex = sectionOrder.indexOf(right)
+    return (leftIndex < 0 ? 99 : leftIndex) - (rightIndex < 0 ? 99 : rightIndex)
+  })
 
   return (
     <>

@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     email_outbox_path: str = "./storage/outbox"
     reminder_poll_seconds: int = Field(default=30, ge=5, le=300)
     embedded_reminder_worker: bool = True
+    web_push_vapid_public_key: str | None = None
+    web_push_vapid_private_key: str | None = Field(default=None, repr=False)
+    web_push_vapid_subject: str | None = None
     storage_warning_free_percent: float = Field(default=10, ge=0, le=100)
     storage_critical_free_percent: float = Field(default=5, ge=0, le=100)
     disk_warning_used_percent: float = Field(default=90, ge=0, le=100)

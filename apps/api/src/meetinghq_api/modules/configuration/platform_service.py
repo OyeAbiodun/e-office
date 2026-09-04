@@ -92,8 +92,8 @@ PROVIDER_NAVIGATION_ALIASES = {
 
 DEFAULT_MENUS = (
     ("dashboard", "Dashboard", "/", "layout-dashboard", "dashboard.view", None, "work"),
-    ("calendar", "Calendar", "/calendar", "calendar-days", "calendar.view", "calendar", "work"),
     ("meetings", "Meetings", "/meetings", "video", "meetings.view", "meetings", "work"),
+    ("calendar", "Calendar", "/calendar", "calendar-days", "calendar.view", "calendar", "work"),
     ("chat", "Chat", "/chat", "messages", "chat.view", "chat", "work"),
     ("mail", "Mail", "/mail", "mail", "mail.view", "mail", "work"),
     (
@@ -485,3 +485,19 @@ class PlatformService:
             raise ValidationError("Menu parent must reference an existing menu item")
         if any(item.parent_key == item.key for item in overlays.values()):
             raise ValidationError("A menu item cannot be its own parent")
+        effective_parents: dict[str, str | None] = {}
+        for row in rows:
+            overlay = overlays.get(row.key)
+            effective_parents[row.key] = (
+                overlay.parent_key
+                if overlay is not None and overlay.parent_key is not None
+                else row.parent_key
+            )
+        for key in effective_parents:
+            seen: set[str] = set()
+            current: str | None = key
+            while current is not None:
+                if current in seen:
+                    raise ValidationError("Menu hierarchy cannot contain a cycle")
+                seen.add(current)
+                current = effective_parents.get(current)

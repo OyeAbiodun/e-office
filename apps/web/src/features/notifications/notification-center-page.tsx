@@ -17,6 +17,11 @@ import {
   notificationApi,
   type NotificationPreferences,
 } from '@/features/notifications/api'
+import {
+  browserPushConfigured,
+  browserPushSupported,
+  enableBrowserPush,
+} from '@/features/notifications/web-push'
 
 export function NotificationCenterPage() {
   const [category, setCategory] = useState('all')
@@ -69,20 +74,6 @@ export function NotificationCenterPage() {
     setPage(1)
     setSelected(new Set())
   }, [category, unreadOnly, search])
-
-  useEffect(() => {
-    const latest = notifications.data?.notifications.find(
-      (item) => !item.read_at,
-    )
-    if (
-      latest &&
-      preferences.data?.browser_enabled &&
-      'Notification' in window &&
-      Notification.permission === 'granted'
-    ) {
-      new Notification(latest.title, { body: latest.body, tag: latest.id })
-    }
-  }, [notifications.data, preferences.data?.browser_enabled])
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
@@ -142,6 +133,15 @@ export function NotificationCenterPage() {
           value={notifications.data?.approvals ?? 0}
         />
       </section>
+      {preferences.data && !preferences.data.browser_enabled && (
+        <BrowserPushPrompt
+          onEnabled={() =>
+            void queryClient.invalidateQueries({
+              queryKey: ['notification-preferences'],
+            })
+          }
+        />
+      )}
       {settingsOpen && preferences.data && (
         <Preferences
           preferences={preferences.data}
@@ -371,17 +371,22 @@ function Preferences({
   onSaved: () => void
 }) {
   const [form, setForm] = useState(preferences)
+  const [browserError, setBrowserError] = useState('')
   const save = useMutation({
     mutationFn: () => notificationApi.updatePreferences(form),
     onSuccess: onSaved,
   })
   const requestBrowser = async () => {
-    if ('Notification' in window) {
-      const result = await Notification.requestPermission()
-      setForm((current) => ({
-        ...current,
-        browser_enabled: result === 'granted',
-      }))
+    setBrowserError('')
+    try {
+      await enableBrowserPush()
+      setForm((current) => ({ ...current, browser_enabled: true }))
+    } catch (reason) {
+      setBrowserError(
+        reason instanceof Error
+          ? reason.message
+          : 'Browser notifications could not be enabled.',
+      )
     }
   }
   return (
@@ -451,7 +456,7 @@ function Preferences({
           onClick={() => void requestBrowser()}
           type="button"
         >
-          Request browser permission
+          Enable browser notifications
         </button>
         <button
           className="ml-auto rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
@@ -462,6 +467,66 @@ function Preferences({
           Save preferences
         </button>
       </div>
+      {browserError && (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {browserError}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function BrowserPushPrompt({ onEnabled }: { onEnabled: () => void }) {
+  const [dismissed, setDismissed] = useState(
+    () => window.localStorage.getItem('meetinghq-push-prompt-dismissed') === '1',
+  )
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  if (dismissed || !browserPushSupported()) return null
+  const enable = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await enableBrowserPush()
+      onEnabled()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Browser notifications could not be enabled.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <section className="mt-6 flex flex-wrap items-center gap-4 rounded-2xl border border-primary/25 bg-primary/5 p-5">
+      <MonitorUp className="size-6 text-primary" />
+      <div className="min-w-[16rem] flex-1">
+        <h2 className="font-semibold">Stay updated when you’re away from MeetingHQ</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Enable alerts for direct messages, mentions, meeting invitations, reminders, and important account updates.
+        </p>
+        {error && <p className="mt-2 text-sm text-destructive" role="alert">{error}</p>}
+      </div>
+      {browserPushConfigured() ? (
+        <button
+          className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          disabled={saving}
+          onClick={() => void enable()}
+          type="button"
+        >
+          {saving ? 'Enabling…' : 'Enable notifications'}
+        </button>
+      ) : (
+        <p className="text-sm text-muted-foreground">Browser delivery is not configured yet.</p>
+      )}
+      <button
+        className="rounded-xl border px-4 py-2 text-sm font-semibold hover:bg-muted"
+        onClick={() => {
+          window.localStorage.setItem('meetinghq-push-prompt-dismissed', '1')
+          setDismissed(true)
+        }}
+        type="button"
+      >
+        Not now
+      </button>
     </section>
   )
 }

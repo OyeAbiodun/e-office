@@ -103,6 +103,22 @@ credentials are encrypted before persistence, never returned by the API, and can
 validated with the provider's Test Connection workflow. See
 [Internal Mail](docs/internal-mail.md).
 
+## Chat and browser notifications
+
+Chat uses an optimistic, idempotent send path: routine draft saves, typing activity,
+delivery/read states, and successful sends remain inside the conversation rather than
+creating global toasts. Direct-message creation is tenant-scoped and reuses the existing
+one-to-one conversation, including under concurrent requests.
+
+Browser push is opt-in from **Notifications → Delivery preferences**. MeetingHQ first
+explains what will be delivered; it only invokes the browser permission prompt after the
+user selects **Enable notifications**. Each approved browser/device is stored as a
+tenant-bound Push API subscription and notifications are sent through a durable, retryable
+worker outbox. A production deployment must provide a VAPID key pair through
+environment/secret management; `VITE_WEB_PUSH_PUBLIC_KEY` is public, but the VAPID private
+key must never be exposed to the browser or committed. See
+[Environment variables](docs/environment.md).
+
 ## Developer commands
 
 ```bash

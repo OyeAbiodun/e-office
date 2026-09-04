@@ -74,6 +74,63 @@ async def test_chat_requires_permission(chat_client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
+async def test_message_client_id_makes_retries_idempotent(
+    chat_client: AsyncClient, chat_identity: tuple[dict[str, str], str]
+) -> None:
+    headers, workspace_id = chat_identity
+    conversation = await chat_client.post(
+        "/api/v1/conversations",
+        headers=headers,
+        json={"workspace_id": workspace_id, "type": "workspace", "name": "Idempotent"},
+    )
+    conversation_id = conversation.json()["data"]["id"]
+    client_message_id = str(uuid.uuid4())
+    first = await chat_client.post(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        headers=headers,
+        json={"body": "Only once", "client_message_id": client_message_id},
+    )
+    repeated = await chat_client.post(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        headers=headers,
+        json={"body": "Only once", "client_message_id": client_message_id},
+    )
+    assert first.status_code == repeated.status_code == 201
+    assert first.json()["data"]["id"] == repeated.json()["data"]["id"]
+
+
+async def test_direct_message_reuses_the_existing_tenant_conversation(
+    chat_client: AsyncClient, chat_identity: tuple[dict[str, str], str]
+) -> None:
+    headers, workspace_id = chat_identity
+    roles = (await chat_client.get("/api/v1/roles", headers=headers)).json()["data"]
+    employee_role = next(item for item in roles if item["name"] == "Employee")
+    colleague = await chat_client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "first_name": "Chat",
+            "last_name": "Colleague",
+            "email": "colleague@chat.example",
+            "workspace_id": workspace_id,
+            "role_ids": [employee_role["id"]],
+            "temporary_password": "Colleague123!",
+            "send_welcome_email": False,
+        },
+    )
+    assert colleague.status_code == 201, colleague.text
+    request = {
+        "workspace_id": workspace_id,
+        "type": "direct",
+        "member_ids": [colleague.json()["data"]["id"]],
+    }
+    first = await chat_client.post("/api/v1/conversations", headers=headers, json=request)
+    second = await chat_client.post("/api/v1/conversations", headers=headers, json=request)
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["data"]["id"] == second.json()["data"]["id"]
+
+
 async def test_team_channel_tabs_drafts_and_saved_messages(
     chat_client: AsyncClient, chat_identity: tuple[dict[str, str], str]
 ) -> None:

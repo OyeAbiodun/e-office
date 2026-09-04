@@ -42,3 +42,32 @@ async def test_notification_preferences_and_inbox_filters(
     read_all = await meeting_client.post("/api/v1/notifications/read-all", headers=headers)
     assert read_all.status_code == 200
     assert read_all.json()["data"]["updated"] == 0
+
+
+async def test_push_subscription_is_user_and_tenant_scoped(
+    meeting_client: AsyncClient,
+    meeting_identity: tuple[dict[str, str], str],
+) -> None:
+    headers, _ = meeting_identity
+    subscription = await meeting_client.put(
+        "/api/v1/notifications/push-subscriptions",
+        headers=headers,
+        json={
+            "endpoint": "https://push.example/subscription-1",
+            "p256dh": "public-key-material",
+            "auth": "auth-material",
+            "user_agent": "MeetingHQ test browser",
+        },
+    )
+    assert subscription.status_code == 200, subscription.text
+    listed = await meeting_client.get("/api/v1/notifications/push-subscriptions", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()["data"]) == 1
+    revoked = await meeting_client.delete(
+        f"/api/v1/notifications/push-subscriptions/{subscription.json()['data']['id']}",
+        headers=headers,
+    )
+    assert revoked.status_code == 204
+    assert (await meeting_client.get("/api/v1/notifications/push-subscriptions", headers=headers)).json()[
+        "data"
+    ][0]["enabled"] is False

@@ -42,12 +42,21 @@ class PresenceStatus(enum.StrEnum):
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "direct_member_key", name="uq_conversations_direct_members"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), index=True)
     team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id"), index=True)
     type: Mapped[ConversationType] = mapped_column(Enum(ConversationType, native_enum=False))
+    # Only direct conversations populate this value.  It is the stable sorted
+    # pair of member IDs and lets the database, not just the UI, prevent a
+    # duplicate DM being created by concurrent requests.
+    direct_member_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
     name: Mapped[str | None] = mapped_column(String(160))
     description: Mapped[str | None] = mapped_column(Text)
     visibility: Mapped[str] = mapped_column(String(24), default="members")
@@ -82,10 +91,17 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         Index("ix_messages_conversation_cursor", "conversation_id", "created_at", "id"),
+        UniqueConstraint(
+            "conversation_id",
+            "sender_id",
+            "client_message_id",
+            name="uq_messages_conversation_sender_client",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), index=True)
+    client_message_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     sender_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     parent_message_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("messages.id"), index=True

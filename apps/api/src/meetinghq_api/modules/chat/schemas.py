@@ -34,6 +34,7 @@ class MessageInput(BaseModel):
     body: str = Field(min_length=1, max_length=100000)
     message_type: str = "rich_text"
     parent_message_id: uuid.UUID | None = None
+    client_message_id: uuid.UUID | None = None
     attachments: list[dict[str, object]] = Field(default_factory=list)
 
 

@@ -95,6 +95,63 @@ class NotificationPreference(Base):
     )
 
 
+class PushSubscription(Base):
+    """A tenant-bound browser/device subscription for standards-based Web Push."""
+
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "endpoint", name="uq_push_subscription_endpoint"),
+        Index("ix_push_subscriptions_user_enabled", "organization_id", "user_id", "enabled"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    endpoint: Mapped[str] = mapped_column(String(2048))
+    p256dh: Mapped[str] = mapped_column(String(512))
+    auth: Mapped[str] = mapped_column(String(512))
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BrowserPushDelivery(Base):
+    """Durable, retryable browser-push delivery for one device notification."""
+
+    __tablename__ = "browser_push_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "notification_id",
+            "subscription_id",
+            name="uq_browser_push_delivery_notification_subscription",
+        ),
+        Index("ix_browser_push_deliveries_pending", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    notification_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("notifications.id", ondelete="CASCADE"), index=True
+    )
+    subscription_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("push_subscriptions.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class MeetingInvitationDelivery(Base):
     __tablename__ = "meeting_invitation_deliveries"
     __table_args__ = (UniqueConstraint("meeting_id", "user_id", "channel"),)

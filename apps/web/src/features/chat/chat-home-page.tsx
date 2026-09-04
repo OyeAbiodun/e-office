@@ -43,24 +43,17 @@ export function ChatHomePage({
     queryFn: organizationApi.members,
   })
   const [name, setName] = useState('')
-  const [type, setType] = useState('workspace')
-  const [channelKind, setChannelKind] = useState<
-    'standard' | 'private' | 'shared'
-  >('standard')
-  const [teamId, setTeamId] = useState('')
+  const [type, setType] = useState('direct')
   const [selected, setSelected] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [peopleSearch, setPeopleSearch] = useState('')
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const create = async () => {
     const workspaceId = workspaces.data?.[0]?.id
     if (!workspaceId) return setError('Create or join a workspace first.')
-    if (type !== 'direct' && !name.trim())
-      return setError('Enter a conversation name.')
     if (type === 'direct' && selected.length !== 1)
       return setError('Choose one person for a direct message.')
-    if (type.includes('team') && !teamId)
-      return setError('Choose the team this channel belongs to.')
     setCreating(true)
     setError('')
     try {
@@ -69,9 +62,9 @@ export function ChatHomePage({
         type,
         name: name || null,
         member_ids: selected,
-        visibility: type.includes('private') ? 'private' : 'members',
-        channel_kind: channelKind,
-        team_id: type.includes('team') ? teamId || null : null,
+        visibility: 'members',
+        channel_kind: 'standard',
+        team_id: null,
       })
       await queryClient.invalidateQueries({ queryKey: ['chat-dashboard'] })
       await navigate({
@@ -136,18 +129,24 @@ export function ChatHomePage({
       </div>
     )
 
+  const matchingPeople = (members.data ?? []).filter((member) =>
+    `${member.display_name} ${member.email} ${member.username}`
+      .toLowerCase()
+      .includes(peopleSearch.toLowerCase()),
+  )
+
   if (view === 'new')
     return (
-      <div className="mx-auto max-w-4xl p-5 sm:p-8">
+      <div className="mx-auto max-w-5xl p-5 sm:p-8">
         <header>
           <Link className="text-sm font-semibold text-primary" to="/chat">
             ← Back to Chat
           </Link>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight">
-            Start a conversation
+            New chat
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Choose the right space, then add the people who should participate.
+            Start a direct conversation or bring a small group together. Existing direct messages are always reused.
           </p>
         </header>
         <section className="mt-7 space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
@@ -162,11 +161,7 @@ export function ChatHomePage({
               value={type}
             >
               <option value="direct">Direct message</option>
-              <option value="private_group">Group conversation</option>
-              <option value="public_team">Public team channel</option>
-              <option value="private_team">Private team channel</option>
-              <option value="workspace">Workspace channel</option>
-              <option value="announcement">Organization announcements</option>
+              <option value="private_group">Group chat</option>
             </select>
           </label>
           {type !== 'direct' && (
@@ -180,48 +175,37 @@ export function ChatHomePage({
                   value={name}
                 />
               </label>
-              {type.includes('team') && (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-medium">
-                    Team
-                    <select
-                      className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
-                      onChange={(event) => setTeamId(event.target.value)}
-                      value={teamId}
-                    >
-                      <option value="">Choose a team</option>
-                      {teams.data?.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Channel access
-                    <select
-                      className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
-                      onChange={(event) =>
-                        setChannelKind(
-                          event.target.value as
-                            'standard' | 'private' | 'shared',
-                        )
-                      }
-                      value={channelKind}
-                    >
-                      <option value="standard">Standard</option>
-                      <option value="private">Private</option>
-                      <option value="shared">Shared</option>
-                    </select>
-                  </label>
-                </div>
-              )}
             </>
           )}
           <fieldset>
-            <legend className="text-sm font-medium">Members</legend>
+            <legend className="text-sm font-medium">To: Search people</legend>
+            <input
+              aria-label="Search people"
+              className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+              onChange={(event) => setPeopleSearch(event.target.value)}
+              placeholder="Name, email, job title, department, or team"
+              role="combobox"
+              value={peopleSearch}
+            />
+            {selected.length > 0 && (
+              <div aria-label="Selected people" className="mt-3 flex flex-wrap gap-2">
+                {selected.map((id) => {
+                  const member = members.data?.find((item) => item.id === id)
+                  return (
+                    <button
+                      className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
+                      key={id}
+                      onClick={() => setSelected((current) => current.filter((item) => item !== id))}
+                      type="button"
+                    >
+                      {member?.display_name ?? 'Selected person'} ×
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div className="mt-2 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
-              {members.data?.map((member) => {
+              {matchingPeople.map((member) => {
                 const active = selected.includes(member.id)
                 return (
                   <button
@@ -261,7 +245,7 @@ export function ChatHomePage({
             onClick={() => void create()}
             type="button"
           >
-            {creating ? 'Creating…' : 'Create conversation'}
+            {creating ? 'Starting…' : type === 'direct' ? 'Start direct message' : 'Start group chat'}
           </button>
         </section>
       </div>
@@ -275,7 +259,7 @@ export function ChatHomePage({
           to="/chat/new"
         >
           <Plus className="size-4" />
-          New message
+          New chat
         </Link>
         <nav className="mt-5 space-y-1" aria-label="Chat navigation">
           <Link

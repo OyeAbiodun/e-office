@@ -42,6 +42,7 @@ async def reminder_worker(stop: asyncio.Event) -> None:
                 service = NotificationService(session, settings)
                 delivered = await service.process_due_invitations()
                 delivered += await service.process_due_reminders()
+                delivered += await service.process_due_browser_pushes()
                 delivered += await MailService(session, settings).process_due_deliveries()
                 await session.commit()
             if delivered:

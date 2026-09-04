@@ -66,3 +66,20 @@ class NotificationPreferenceUpdate(BaseModel):
     timezone: str = Field(default="UTC", max_length=64)
     category_rules: dict[str, object] = Field(default_factory=dict)
     delivery_rules: dict[str, object] = Field(default_factory=dict)
+
+
+class PushSubscriptionInput(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)
+    p256dh: str = Field(min_length=1, max_length=512)
+    auth: str = Field(min_length=1, max_length=512)
+    user_agent: str | None = Field(default=None, max_length=512)
+
+
+class PushSubscriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    endpoint: str
+    enabled: bool
+    created_at: datetime
+    last_used_at: datetime | None

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.infrastructure.events import TransactionalDomainEventPublisher
@@ -91,13 +92,25 @@ class ChatService:
             existing = await self._existing_direct(organization_id, member_ids)
             if existing:
                 return existing
+        values = body.model_dump(exclude={"member_ids"})
+        if body.type == ConversationType.DIRECT:
+            values["direct_member_key"] = self._direct_member_key(member_ids)
         conversation = Conversation(
             organization_id=organization_id,
             created_by=actor_id,
-            **body.model_dump(exclude={"member_ids"}),
+            **values,
         )
         self.session.add(conversation)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            if body.type != ConversationType.DIRECT:
+                raise
+            await self.session.rollback()
+            existing = await self._existing_direct(organization_id, member_ids)
+            if existing is not None:
+                return existing
+            raise
         for user_id in member_ids:
             self.session.add(
                 ConversationMember(
@@ -219,6 +232,16 @@ class ChatService:
         sender_id: uuid.UUID,
     ) -> Message:
         conversation = await self._require_member(organization_id, conversation_id, sender_id)
+        if body.client_message_id:
+            existing = await self.session.scalar(
+                select(Message).where(
+                    Message.conversation_id == conversation_id,
+                    Message.sender_id == sender_id,
+                    Message.client_message_id == body.client_message_id,
+                )
+            )
+            if existing is not None:
+                return existing
         if conversation.archived_at:
             raise ConflictError("Archived conversations are read only")
         if conversation.type == ConversationType.ANNOUNCEMENT:
@@ -679,6 +702,16 @@ class ChatService:
     async def _existing_direct(
         self, organization_id: uuid.UUID, member_ids: set[uuid.UUID]
     ) -> Conversation | None:
+        direct_member_key = self._direct_member_key(member_ids)
+        indexed = await self.session.scalar(
+            select(Conversation).where(
+                Conversation.organization_id == organization_id,
+                Conversation.direct_member_key == direct_member_key,
+                Conversation.archived_at.is_(None),
+            )
+        )
+        if indexed is not None:
+            return indexed
         candidates = (
             await self.session.scalars(
                 select(Conversation).where(
@@ -701,6 +734,10 @@ class ChatService:
             if members == member_ids:
                 return conversation
         return None
+
+    @staticmethod
+    def _direct_member_key(member_ids: set[uuid.UUID]) -> str:
+        return ":".join(sorted(str(user_id) for user_id in member_ids))
 
     async def _record(
         self,

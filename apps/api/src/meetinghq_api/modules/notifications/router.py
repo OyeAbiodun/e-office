@@ -21,6 +21,8 @@ from meetinghq_api.modules.notifications.schemas import (
     NotificationPreferenceUpdate,
     NotificationResponse,
     NotificationSummary,
+    PushSubscriptionInput,
+    PushSubscriptionResponse,
 )
 from meetinghq_api.modules.notifications.service import NotificationService
 
@@ -199,4 +201,42 @@ async def update_notification_preferences(
         await NotificationService(session, settings).update_preferences(
             user.organization_id, user.id, body
         )
+    )
+
+
+@router.get("/push-subscriptions", response_model=list[PushSubscriptionResponse])
+async def push_subscriptions(
+    session: Session, settings: AppSettings, user: CurrentUser
+) -> list[PushSubscriptionResponse]:
+    return [
+        PushSubscriptionResponse.model_validate(item)
+        for item in await NotificationService(session, settings).list_push_subscriptions(
+            user.organization_id, user.id
+        )
+    ]
+
+
+@router.put("/push-subscriptions", response_model=PushSubscriptionResponse)
+async def upsert_push_subscription(
+    body: PushSubscriptionInput,
+    session: Session,
+    settings: AppSettings,
+    user: CurrentUser,
+) -> PushSubscriptionResponse:
+    return PushSubscriptionResponse.model_validate(
+        await NotificationService(session, settings).upsert_push_subscription(
+            user.organization_id, user.id, body
+        )
+    )
+
+
+@router.delete("/push-subscriptions/{subscription_id}", status_code=204)
+async def revoke_push_subscription(
+    subscription_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: CurrentUser,
+) -> None:
+    await NotificationService(session, settings).revoke_push_subscription(
+        user.organization_id, user.id, subscription_id
     )

@@ -1,6 +1,8 @@
 """Meeting invitation delivery and reminder orchestration."""
 
 import asyncio
+import importlib
+import json
 import smtplib
 import ssl
 import uuid
@@ -8,7 +10,8 @@ from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import format_datetime, formataddr
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import structlog
 from sqlalchemy import func, or_, select
@@ -26,12 +29,17 @@ from meetinghq_api.modules.notifications.email_templates import (
     RenderedEmail,
 )
 from meetinghq_api.modules.notifications.models import (
+    BrowserPushDelivery,
     MeetingInvitationDelivery,
     MeetingReminder,
     Notification,
     NotificationPreference,
+    PushSubscription,
 )
-from meetinghq_api.modules.notifications.schemas import NotificationPreferenceUpdate
+from meetinghq_api.modules.notifications.schemas import (
+    NotificationPreferenceUpdate,
+    PushSubscriptionInput,
+)
 from meetinghq_api.modules.organizations.models import Organization
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.exceptions import NotFoundError, ValidationError
@@ -321,6 +329,43 @@ class NotificationService:
             self.session, self.settings, organization_id
         )
 
+    async def create_notification(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        notification_type: str,
+        title: str,
+        body: str,
+        action_url: str | None = None,
+        meeting_id: uuid.UUID | None = None,
+        category: str = "general",
+        priority: str = "normal",
+        metadata: dict[str, object] | None = None,
+    ) -> Notification:
+        """Persist an in-app notification and queue eligible device delivery.
+
+        The browser push outbox is transactionally created with its in-app
+        notification. A worker sends only committed rows, so an HTTP request
+        never has to remain open while an external push provider is contacted.
+        """
+        notification = Notification(
+            organization_id=organization_id,
+            user_id=user_id,
+            meeting_id=meeting_id,
+            notification_type=notification_type,
+            category=category,
+            priority=priority,
+            title=title,
+            body=body,
+            action_url=action_url,
+            notification_metadata=metadata or {},
+        )
+        self.session.add(notification)
+        await self.session.flush()
+        await self._enqueue_browser_push(notification)
+        return notification
+
     async def list_for_user(
         self,
         organization_id: uuid.UUID,
@@ -523,6 +568,287 @@ class NotificationService:
         await self.session.flush()
         return item
 
+    async def upsert_push_subscription(
+        self,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        body: PushSubscriptionInput,
+    ) -> PushSubscription:
+        """Register or refresh one browser without exposing it to another tenant."""
+        item = await self.session.scalar(
+            select(PushSubscription).where(
+                PushSubscription.organization_id == organization_id,
+                PushSubscription.endpoint == body.endpoint,
+            )
+        )
+        if item is None:
+            item = PushSubscription(
+                organization_id=organization_id,
+                user_id=user_id,
+                endpoint=body.endpoint,
+                p256dh=body.p256dh,
+                auth=body.auth,
+                user_agent=body.user_agent,
+                enabled=True,
+                last_used_at=datetime.now(UTC),
+            )
+            self.session.add(item)
+        else:
+            # An endpoint can only ever belong to one user in this tenant. A
+            # browser refresh may rotate keys, but cannot claim another user's
+            # device subscription.
+            if item.user_id != user_id:
+                raise ValidationError("Push subscription is already registered")
+            item.p256dh = body.p256dh
+            item.auth = body.auth
+            item.user_agent = body.user_agent
+            item.enabled = True
+            item.last_used_at = datetime.now(UTC)
+        await self.session.flush()
+        self.session.add(
+            AuditLog(
+                organization_id=organization_id,
+                user_id=user_id,
+                action="notifications.push_subscription_upserted",
+                resource="push_subscription",
+                resource_id=item.id,
+                audit_metadata={},
+            )
+        )
+        return item
+
+    async def list_push_subscriptions(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> list[PushSubscription]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(PushSubscription)
+                    .where(
+                        PushSubscription.organization_id == organization_id,
+                        PushSubscription.user_id == user_id,
+                    )
+                    .order_by(PushSubscription.last_used_at.desc().nullslast())
+                )
+            ).all()
+        )
+
+    async def revoke_push_subscription(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID, subscription_id: uuid.UUID
+    ) -> None:
+        item = await self.session.scalar(
+            select(PushSubscription).where(
+                PushSubscription.id == subscription_id,
+                PushSubscription.organization_id == organization_id,
+                PushSubscription.user_id == user_id,
+            )
+        )
+        if item is None:
+            raise NotFoundError("Push subscription not found")
+        item.enabled = False
+        item.last_used_at = datetime.now(UTC)
+        self.session.add(
+            AuditLog(
+                organization_id=organization_id,
+                user_id=user_id,
+                action="notifications.push_subscription_revoked",
+                resource="push_subscription",
+                resource_id=item.id,
+                audit_metadata={},
+            )
+        )
+        await self.session.flush()
+
+    async def _enqueue_browser_push(self, notification: Notification) -> None:
+        """Create a delivery row only for configured, opted-in browser devices."""
+        if not self._web_push_configured():
+            return
+        preference = await self.session.scalar(
+            select(NotificationPreference).where(
+                NotificationPreference.organization_id == notification.organization_id,
+                NotificationPreference.user_id == notification.user_id,
+            )
+        )
+        if preference is None or not self._browser_delivery_allowed(preference, notification):
+            return
+        subscriptions = list(
+            (
+                await self.session.scalars(
+                    select(PushSubscription).where(
+                        PushSubscription.organization_id == notification.organization_id,
+                        PushSubscription.user_id == notification.user_id,
+                        PushSubscription.enabled.is_(True),
+                    )
+                )
+            ).all()
+        )
+        for subscription in subscriptions:
+            self.session.add(
+                BrowserPushDelivery(
+                    organization_id=notification.organization_id,
+                    notification_id=notification.id,
+                    subscription_id=subscription.id,
+                )
+            )
+
+    async def process_due_browser_pushes(self) -> int:
+        """Deliver a bounded batch of committed Web Push outbox records."""
+        if not self._web_push_configured():
+            return 0
+        now = datetime.now(UTC)
+        deliveries = list(
+            (
+                await self.session.scalars(
+                    select(BrowserPushDelivery)
+                    .where(
+                        or_(
+                            BrowserPushDelivery.status == "pending",
+                            (
+                                (BrowserPushDelivery.status == "failed")
+                                & (BrowserPushDelivery.next_attempt_at <= now)
+                            ),
+                        ),
+                        BrowserPushDelivery.attempt_count < self.settings.delivery_max_attempts,
+                    )
+                    .order_by(BrowserPushDelivery.created_at)
+                    .limit(100)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+        )
+        delivered = 0
+        for delivery in deliveries:
+            notification = await self.session.get(Notification, delivery.notification_id)
+            subscription = await self.session.get(PushSubscription, delivery.subscription_id)
+            if (
+                notification is None
+                or subscription is None
+                or not subscription.enabled
+                or notification.organization_id != delivery.organization_id
+                or subscription.organization_id != delivery.organization_id
+                or subscription.user_id != notification.user_id
+            ):
+                delivery.status = "cancelled"
+                delivery.next_attempt_at = None
+                continue
+            preference = await self.session.scalar(
+                select(NotificationPreference).where(
+                    NotificationPreference.organization_id == notification.organization_id,
+                    NotificationPreference.user_id == notification.user_id,
+                )
+            )
+            if preference is None or not self._browser_delivery_allowed(preference, notification):
+                delivery.status = "cancelled"
+                delivery.next_attempt_at = None
+                continue
+            delivery.attempt_count += 1
+            delivery.last_attempt_at = now
+            try:
+                await asyncio.to_thread(self._send_web_push, subscription, notification)
+                delivery.status = "sent"
+                delivery.delivered_at = now
+                delivery.error = None
+                delivery.next_attempt_at = None
+                subscription.last_used_at = now
+                delivered += 1
+            except Exception as exc:
+                status_code = self._push_status_code(exc)
+                if status_code in {404, 410}:
+                    subscription.enabled = False
+                    delivery.status = "cancelled"
+                    delivery.next_attempt_at = None
+                else:
+                    delivery.status = "failed"
+                    delivery.next_attempt_at = self._next_attempt_at(delivery.attempt_count, now)
+                delivery.error = self._safe_push_error(exc)
+                self.session.add(
+                    AuditLog(
+                        organization_id=delivery.organization_id,
+                        user_id=notification.user_id,
+                        action="notifications.browser_push_failed",
+                        resource="browser_push_delivery",
+                        resource_id=delivery.id,
+                        audit_metadata={
+                            "notification_type": notification.notification_type,
+                            "status_code": status_code,
+                            "attempt": delivery.attempt_count,
+                        },
+                    )
+                )
+        return delivered
+
+    def _web_push_configured(self) -> bool:
+        return bool(
+            self.settings.web_push_vapid_private_key
+            and self.settings.web_push_vapid_public_key
+            and self.settings.web_push_vapid_subject
+        )
+
+    def _browser_delivery_allowed(
+        self, preference: NotificationPreference, notification: Notification
+    ) -> bool:
+        if not preference.browser_enabled or self._in_quiet_hours(preference):
+            return False
+        category_rule = preference.category_rules.get(notification.category)
+        if isinstance(category_rule, dict) and category_rule.get("browser") is False:
+            return False
+        return True
+
+    @staticmethod
+    def _in_quiet_hours(preference: NotificationPreference) -> bool:
+        if (
+            not preference.quiet_hours_enabled
+            or not preference.quiet_hours_start
+            or not preference.quiet_hours_end
+        ):
+            return False
+        try:
+            zone = ZoneInfo(preference.timezone)
+            now = datetime.now(zone).time()
+            start = datetime.strptime(preference.quiet_hours_start, "%H:%M").time()
+            end = datetime.strptime(preference.quiet_hours_end, "%H:%M").time()
+        except (ValueError, ZoneInfoNotFoundError):
+            return False
+        return start <= now < end if start <= end else now >= start or now < end
+
+    def _send_web_push(self, subscription: PushSubscription, notification: Notification) -> None:
+        """Call the standards-based provider without recording endpoint details."""
+        try:
+            provider: Any = importlib.import_module("pywebpush")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("Web Push delivery provider is unavailable") from exc
+        payload = json.dumps(
+            {
+                "title": notification.title,
+                "body": notification.body,
+                "url": notification.action_url or "/notifications",
+                "tag": f"notification-{notification.id}",
+                "data": {"notification_id": str(notification.id)},
+            }
+        )
+        provider.webpush(
+            subscription_info={
+                "endpoint": subscription.endpoint,
+                "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
+            },
+            data=payload,
+            vapid_private_key=self.settings.web_push_vapid_private_key,
+            vapid_claims={"sub": self.settings.web_push_vapid_subject},
+        )
+
+    @staticmethod
+    def _push_status_code(error: Exception) -> int | None:
+        response = getattr(error, "response", None)
+        status_code = getattr(response, "status_code", None)
+        return status_code if isinstance(status_code, int) else None
+
+    @staticmethod
+    def _safe_push_error(error: Exception) -> str:
+        status_code = NotificationService._push_status_code(error)
+        if status_code is not None:
+            return f"Web Push provider returned HTTP {status_code}"
+        return f"Web Push delivery failed ({type(error).__name__})"
+
     async def _owned_notification(
         self, organization_id: uuid.UUID, user_id: uuid.UUID, notification_id: uuid.UUID
     ) -> Notification:
@@ -555,7 +881,7 @@ class NotificationService:
         ics = self.ics(meeting, organizer, participants)
         email = await self._email(meeting.organization_id)
         for participant in participants:
-            notification = Notification(
+            await self.create_notification(
                 organization_id=meeting.organization_id,
                 user_id=participant.id,
                 meeting_id=meeting.id,
@@ -563,8 +889,8 @@ class NotificationService:
                 title=f"Meeting invitation: {meeting.title}",
                 body=self._invitation_text(meeting, organizer),
                 action_url=f"/meetings/{meeting.id}",
+                category="meetings",
             )
-            self.session.add(notification)
             in_app = MeetingInvitationDelivery(
                 organization_id=meeting.organization_id,
                 meeting_id=meeting.id,
@@ -672,16 +998,15 @@ class NotificationService:
         title: str,
         body: str,
     ) -> None:
-        self.session.add(
-            Notification(
-                organization_id=meeting.organization_id,
-                user_id=meeting.organizer_id,
-                meeting_id=meeting.id,
-                notification_type=notification_type,
-                title=title,
-                body=body,
-                action_url=f"/meetings/{meeting.id}",
-            )
+        await self.create_notification(
+            organization_id=meeting.organization_id,
+            user_id=meeting.organizer_id,
+            meeting_id=meeting.id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            action_url=f"/meetings/{meeting.id}",
+            category="meetings",
         )
 
     async def notify_participants(
@@ -735,16 +1060,15 @@ class NotificationService:
             else "update" if calendar_method == "REQUEST" else None
         )
         for user in users:
-            self.session.add(
-                Notification(
-                    organization_id=meeting.organization_id,
-                    user_id=user.id,
-                    meeting_id=meeting.id,
-                    notification_type=notification_type,
-                    title=subject,
-                    body=body,
-                    action_url=f"/meetings/{meeting.id}",
-                )
+            await self.create_notification(
+                organization_id=meeting.organization_id,
+                user_id=user.id,
+                meeting_id=meeting.id,
+                notification_type=notification_type,
+                title=subject,
+                body=body,
+                action_url=f"/meetings/{meeting.id}",
+                category="meetings",
             )
             deliveries: list[MeetingInvitationDelivery] = []
             if channel_suffix:
@@ -1013,16 +1337,15 @@ class NotificationService:
                     reminder_label=self._offset_label(reminder.offset_minutes),
                 )
                 await sender.send_rendered(user.email, rendered)
-                self.session.add(
-                    Notification(
-                        organization_id=meeting.organization_id,
-                        user_id=user.id,
-                        meeting_id=meeting.id,
-                        notification_type="meeting_reminder",
-                        title=f"Upcoming: {meeting.title}",
-                        body=body,
-                        action_url=f"/meetings/{meeting.id}",
-                    )
+                await self.create_notification(
+                    organization_id=meeting.organization_id,
+                    user_id=user.id,
+                    meeting_id=meeting.id,
+                    notification_type="meeting_reminder",
+                    title=f"Upcoming: {meeting.title}",
+                    body=body,
+                    action_url=f"/meetings/{meeting.id}",
+                    category="meetings",
                 )
                 reminder.status = "sent"
                 reminder.delivered_at = datetime.now(UTC)

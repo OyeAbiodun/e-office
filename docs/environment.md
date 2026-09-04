@@ -57,6 +57,10 @@ production credentials.
 | `MEETINGHQ_PUBLIC_STORAGE_URL` | Local storage only | `/api/v1/storage` | Stable object URL prefix |
 | `MEETINGHQ_INVITATION_TTL_DAYS` | No | `7` | Invitation validity window |
 | `MEETINGHQ_EMBEDDED_REMINDER_WORKER` | Yes | `true` locally | Run reminders inside the API. Set `false` when production uses the dedicated `python -m meetinghq_api.worker` job. |
+| `MEETINGHQ_WEB_PUSH_VAPID_PUBLIC_KEY` | Browser push | none | VAPID public key used to validate browser subscriptions |
+| `MEETINGHQ_WEB_PUSH_VAPID_PRIVATE_KEY` | Browser push | none | Secret VAPID private key; store only in deployment secret management |
+| `MEETINGHQ_WEB_PUSH_VAPID_SUBJECT` | Browser push | `mailto:security@example.com` | Contact subject asserted to the push service |
+| `VITE_WEB_PUSH_PUBLIC_KEY` | Browser push | none | Same public VAPID key embedded in the web bundle; never place private keys in `VITE_*` variables |
 
 Production secrets belong in the deployment platform's secret manager. Because Vite
 variables are embedded in public browser assets, never put secrets in `VITE_*`.
@@ -66,6 +70,13 @@ state are administered through **Administration → Integration Center → Email
 stored encrypted in PostgreSQL. `MEETINGHQ_SMTP_*` values are only the installation-level
 fallback for flows that cannot yet resolve a tenant; they are not the routine provider
 configuration interface.
+
+Browser push is opt-in. MeetingHQ stores a per-browser Push API endpoint and encryption
+key material tenant-bound to the authenticated user; it does not request browser permission
+on login. A VAPID key pair is required before an administrator can enable browser push in a
+production environment. Eligible notifications are written to a durable worker outbox, with
+bounded retries and automatic deactivation of expired browser endpoints. The public key may
+be supplied to `VITE_WEB_PUSH_PUBLIC_KEY`; the private key must remain server-side.
 
 The Compose PostgreSQL service fixes both the container and session timezone to UTC. For
 an externally managed PostgreSQL deployment, configure the `meetinghq` database with
