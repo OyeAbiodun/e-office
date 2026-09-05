@@ -211,6 +211,11 @@ const IntegrationCenterPage = lazy(() =>
     default: module.IntegrationCenterPage,
   })),
 )
+const TasksPage = lazy(() =>
+  import('@/features/tasks/tasks-page').then((module) => ({
+    default: module.TasksPage,
+  })),
+)
 
 const rootRoute = createRootRoute({ component: RouteOutlet })
 const protectedRoute = createRoute({
@@ -229,6 +234,11 @@ const protectedPages = [
     getParentRoute: () => appShellRoute,
     path: '/',
     component: DashboardPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/tasks',
+    component: TasksPage,
   }),
   createRoute({
     getParentRoute: () => appShellRoute,

@@ -54,6 +54,23 @@ class Permissions:
     INTEGRATIONS_READ = "integrations.view"
     INTEGRATIONS_MANAGE = "integrations.manage"
     INTEGRATIONS_TEST = "integrations.test"
+    TASKS_VIEW_OWN = "tasks.view_own"
+    TASKS_CREATE_OWN = "tasks.create_own"
+    TASKS_EDIT_OWN = "tasks.edit_own"
+    TASKS_ASSIGN = "tasks.assign"
+    TASKS_VIEW_TEAM = "tasks.view_team"
+    TASKS_VIEW_DEPARTMENT = "tasks.view_department"
+    TASKS_MANAGE = "tasks.manage"
+    TASKS_COMMENT = "tasks.comment"
+    TASKS_COMPLETE = "tasks.complete"
+    TASKS_REOPEN = "tasks.reopen"
+    TASKS_EXPORT = "tasks.export"
+    ACTIVITY_CREATE_OWN = "activity.create_own"
+    ACTIVITY_VIEW_OWN = "activity.view_own"
+    ACTIVITY_EDIT_OWN = "activity.edit_own"
+    ACTIVITY_VIEW_TEAM = "activity.view_team"
+    ACTIVITY_VIEW_DEPARTMENT = "activity.view_department"
+    ACTIVITY_MANAGE = "activity.manage"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -102,6 +119,28 @@ _LEGACY_PERMISSION_CATALOG = tuple(
             "Manage integration settings",
         ),
         (Permissions.INTEGRATIONS_TEST, "integrations", "test", "Test integration delivery"),
+        (Permissions.TASKS_VIEW_OWN, "tasks", "view_own", "View own tasks"),
+        (Permissions.TASKS_CREATE_OWN, "tasks", "create_own", "Create own tasks"),
+        (Permissions.TASKS_EDIT_OWN, "tasks", "edit_own", "Edit own tasks"),
+        (Permissions.TASKS_ASSIGN, "tasks", "assign", "Assign tasks to authorized employees"),
+        (Permissions.TASKS_VIEW_TEAM, "tasks", "view_team", "View direct-report tasks"),
+        (Permissions.TASKS_VIEW_DEPARTMENT, "tasks", "view_department", "View department tasks"),
+        (Permissions.TASKS_MANAGE, "tasks", "manage", "Manage all organization tasks"),
+        (Permissions.TASKS_COMMENT, "tasks", "comment", "Comment on visible tasks"),
+        (Permissions.TASKS_COMPLETE, "tasks", "complete", "Complete tasks"),
+        (Permissions.TASKS_REOPEN, "tasks", "reopen", "Reopen tasks"),
+        (Permissions.TASKS_EXPORT, "tasks", "export", "Export authorized task lists"),
+        (Permissions.ACTIVITY_CREATE_OWN, "activity", "create_own", "Record own daily activity"),
+        (Permissions.ACTIVITY_VIEW_OWN, "activity", "view_own", "View own daily activity"),
+        (Permissions.ACTIVITY_EDIT_OWN, "activity", "edit_own", "Edit own daily activity"),
+        (Permissions.ACTIVITY_VIEW_TEAM, "activity", "view_team", "View direct-report activity"),
+        (
+            Permissions.ACTIVITY_VIEW_DEPARTMENT,
+            "activity",
+            "view_department",
+            "View department activity",
+        ),
+        (Permissions.ACTIVITY_MANAGE, "activity", "manage", "Manage organization activity records"),
     )
 )
 
@@ -140,6 +179,28 @@ def _matrix(resources: set[str], actions: set[str] | None = None) -> frozenset[s
 
 
 _legacy_admin = frozenset(item.name for item in _LEGACY_PERMISSION_CATALOG)
+_task_employee = frozenset(
+    {
+        Permissions.TASKS_VIEW_OWN,
+        Permissions.TASKS_CREATE_OWN,
+        Permissions.TASKS_EDIT_OWN,
+        Permissions.TASKS_COMMENT,
+        Permissions.TASKS_COMPLETE,
+        Permissions.TASKS_REOPEN,
+        Permissions.ACTIVITY_CREATE_OWN,
+        Permissions.ACTIVITY_VIEW_OWN,
+        Permissions.ACTIVITY_EDIT_OWN,
+    }
+)
+_task_manager = _task_employee | frozenset(
+    {
+        Permissions.TASKS_ASSIGN,
+        Permissions.TASKS_VIEW_TEAM,
+        Permissions.TASKS_VIEW_DEPARTMENT,
+        Permissions.ACTIVITY_VIEW_TEAM,
+        Permissions.ACTIVITY_VIEW_DEPARTMENT,
+    }
+)
 _meeting_operator = frozenset(
     {
         Permissions.MEETINGS_CREATE,
@@ -197,6 +258,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             Permissions.CHAT_EDIT,
         }
     )
+    | _task_employee
     | _matrix({"dashboard", "calendar", "meetings", "chat", "members"}, {"view"})
     | _matrix({"calendar", "meetings", "chat", "mail"}, {"create", "edit"})
     | _matrix({"mail"}, {"view"}),
@@ -216,3 +278,5 @@ ROLE_PERMISSIONS["Team Manager"] |= (
     | _matrix({"calendar", "meetings", "chat", "mail", "members"})
     | _matrix({"users", "reports", "settings"}, {"view"})
 )
+ROLE_PERMISSIONS["Team Manager"] |= _task_manager
+ROLE_PERMISSIONS["Meeting Organizer"] |= _task_manager

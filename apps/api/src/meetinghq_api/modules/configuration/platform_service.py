@@ -25,6 +25,7 @@ FEATURES = (
     "chat",
     "mail",
     "notifications",
+    "tasks",
     "help-center",
     "reports",
     "teams",
@@ -75,6 +76,7 @@ IMPLEMENTED_CAPABILITIES: dict[str, str] = {
     "resources": "/calendar/resources",
     "rooms": "/calendar/resources",
     "external-calendar": "/calendar/settings",
+    "tasks": "/tasks",
 }
 COMING_SOON_CAPABILITIES = {
     "reports": ("4.0", "Sprint 4", ["search", "files"]),
@@ -92,6 +94,7 @@ PROVIDER_NAVIGATION_ALIASES = {
 
 DEFAULT_MENUS = (
     ("dashboard", "Dashboard", "/", "layout-dashboard", "dashboard.view", None, "work"),
+    ("tasks", "My Work", "/tasks", "check-square", "tasks.view_own", "tasks", "work"),
     ("meetings", "Meetings", "/meetings", "video", "meetings.view", "meetings", "work"),
     ("calendar", "Calendar", "/calendar", "calendar-days", "calendar.view", "calendar", "work"),
     ("chat", "Chat", "/chat", "messages", "chat.view", "chat", "work"),
