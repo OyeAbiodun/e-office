@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Building2,
   CheckCircle2,
+  History,
   KeyRound,
   Plus,
   Search,
@@ -11,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { useConfirmation } from '@/components/feedback/confirmation'
 import { organizationApi } from '@/features/organizations/api'
 import { teamsApi } from '@/features/teams/api'
 import {
@@ -24,8 +27,16 @@ const emptyForm: UserInput = {
   last_name: '',
   email: '',
   phone: '',
+  alternative_phone: '',
   job_title: '',
   department: '',
+  department_id: null,
+  manager_id: null,
+  employee_number: '',
+  employment_status: 'active',
+  employment_type: 'permanent',
+  employment_start_date: null,
+  employment_confirmation_date: null,
   workspace_id: null,
   team_id: null,
   role_ids: [],
@@ -34,9 +45,12 @@ const emptyForm: UserInput = {
 
 export function UserManagementPage() {
   const client = useQueryClient()
+  const confirm = useConfirmation()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [roleId, setRoleId] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [employmentStatus, setEmploymentStatus] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [editing, setEditing] = useState<ManagedUser | 'new' | null>(null)
   const [form, setForm] = useState<UserInput>(emptyForm)
@@ -44,13 +58,23 @@ export function UserManagementPage() {
     null,
   )
   const users = useQuery({
-    queryKey: ['admin-users', search, status, roleId],
+    queryKey: [
+      'admin-users',
+      search,
+      status,
+      roleId,
+      departmentId,
+      employmentStatus,
+    ],
     queryFn: () =>
-      userAdminApi.list({
+      userAdminApi.employees({
         search,
         status,
         role_id: roleId,
-        include_removed: true,
+        department_id: departmentId,
+        employment_status: employmentStatus,
+        page: 1,
+        page_size: 100,
       }),
   })
   const roles = useQuery({
@@ -65,6 +89,15 @@ export function UserManagementPage() {
     queryKey: ['teams', 'user-admin'],
     queryFn: () => teamsApi.list({ archived: false }),
   })
+  const units = useQuery({
+    queryKey: ['organization-units'],
+    queryFn: organizationApi.organizationUnits,
+  })
+  const history = useQuery({
+    queryKey: ['employment-history', editing === 'new' ? null : editing?.id],
+    queryFn: () => userAdminApi.employmentHistory((editing as ManagedUser).id),
+    enabled: Boolean(editing && editing !== 'new'),
+  })
   const save = useMutation({
     mutationFn: () =>
       editing === 'new'
@@ -76,15 +109,16 @@ export function UserManagementPage() {
       await client.invalidateQueries({ queryKey: ['admin-users'] })
     },
   })
+  const userRows = useMemo(() => users.data?.items ?? [], [users.data])
   const stats = useMemo(() => {
-    const rows = users.data ?? []
+    const rows = userRows
     return {
       total: rows.length,
       active: rows.filter((item) => item.status === 'active').length,
       disabled: rows.filter((item) => item.status === 'suspended').length,
       reset: rows.filter((item) => item.force_password_change).length,
     }
-  }, [users.data])
+  }, [userRows])
 
   function open(user?: ManagedUser) {
     setTemporaryPassword(null)
@@ -96,8 +130,17 @@ export function UserManagementPage() {
             last_name: user.last_name,
             email: user.email,
             phone: user.phone ?? '',
+            alternative_phone: user.alternative_phone ?? '',
             job_title: user.job_title ?? '',
             department: user.department ?? '',
+            department_id: user.department_id,
+            manager_id: user.manager_id,
+            employee_number: user.employee_number ?? '',
+            employment_status: user.employment_status,
+            employment_type: user.employment_type,
+            employment_start_date: user.employment_start_date,
+            employment_confirmation_date: user.employment_confirmation_date,
+            employment_end_date: user.employment_end_date,
             workspace_id: user.workspace_id,
             team_id: user.team_id,
             role_ids: user.roles.map((role) => role.id),
@@ -115,6 +158,24 @@ export function UserManagementPage() {
       const response = await userAdminApi.resetPassword(user.id)
       setTemporaryPassword(response.temporary_password)
     }
+    if (action === 'terminate') {
+      const approved = await confirm({
+        title: `Terminate ${user.display_name}?`,
+        description:
+          'This suspends the account and records an effective-dated employment history entry. It can be reversed by rehiring the employee.',
+        confirmLabel: 'Terminate employee',
+        tone: 'danger',
+      })
+      if (!approved) return
+      await userAdminApi.terminate(user.id, {
+        effective_date: new Date().toISOString().slice(0, 10),
+        disable_account: true,
+      })
+    }
+    if (action === 'rehire')
+      await userAdminApi.rehire(user.id, {
+        effective_date: new Date().toISOString().slice(0, 10),
+      })
     await client.invalidateQueries({ queryKey: ['admin-users'] })
   }
 
@@ -204,6 +265,34 @@ export function UserManagementPage() {
               </option>
             ))}
           </select>
+          <select
+            aria-label="Filter employee department"
+            className="h-10 rounded-xl border bg-background px-3"
+            onChange={(event) => setDepartmentId(event.target.value)}
+            value={departmentId}
+          >
+            <option value="">All departments</option>
+            {units.data
+              ?.filter((unit) => unit.unit_type === 'department')
+              .map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
+                </option>
+              ))}
+          </select>
+          <select
+            aria-label="Filter employment status"
+            className="h-10 rounded-xl border bg-background px-3"
+            onChange={(event) => setEmploymentStatus(event.target.value)}
+            value={employmentStatus}
+          >
+            <option value="">All employment states</option>
+            <option value="active">Active</option>
+            <option value="probation">Probation</option>
+            <option value="on_leave">On leave</option>
+            <option value="suspended">Suspended</option>
+            <option value="terminated">Terminated</option>
+          </select>
         </div>
         {selected.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 border-b bg-primary/5 px-4 py-3 text-sm">
@@ -221,7 +310,7 @@ export function UserManagementPage() {
           </div>
         )}
         <div className="divide-y">
-          {users.data?.map((user) => (
+          {userRows.map((user) => (
             <article
               className="grid gap-3 p-4 md:grid-cols-[auto_1fr_1fr_auto] md:items-center"
               key={user.id}
@@ -251,8 +340,8 @@ export function UserManagementPage() {
               <div className="text-sm">
                 <p>{user.job_title || 'No job title'}</p>
                 <p className="text-muted-foreground">
-                  {user.department || 'No department'} ·{' '}
-                  {user.roles.map((role) => role.name).join(', ')}
+                  {user.department || 'No department'} · {user.employment_type}{' '}
+                  · {user.roles.map((role) => role.name).join(', ')}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -263,7 +352,11 @@ export function UserManagementPage() {
                       : 'bg-amber-500/10 text-amber-700'
                   }`}
                 >
-                  {user.status === 'suspended' ? 'disabled' : user.status}
+                  {user.employment_status === 'terminated'
+                    ? 'terminated'
+                    : user.status === 'suspended'
+                      ? 'disabled'
+                      : user.employment_status}
                 </span>
                 <select
                   aria-label={`Actions for ${user.display_name}`}
@@ -282,13 +375,18 @@ export function UserManagementPage() {
                   ) : (
                     <option value="activate">Activate</option>
                   )}
+                  {user.employment_status === 'terminated' ? (
+                    <option value="rehire">Rehire employee</option>
+                  ) : (
+                    <option value="terminate">Terminate employment</option>
+                  )}
                   <option value="delete">Delete</option>
                   <option value="restore">Restore</option>
                 </select>
               </div>
             </article>
           ))}
-          {!users.isLoading && !users.data?.length && (
+          {!users.isLoading && !userRows.length && (
             <div className="p-12 text-center">
               <Users className="mx-auto size-8 text-muted-foreground" />
               <h2 className="mt-3 font-semibold">
@@ -330,8 +428,8 @@ export function UserManagementPage() {
                   ['Last name', 'last_name'],
                   ['Email', 'email'],
                   ['Phone', 'phone'],
+                  ['Alternative phone', 'alternative_phone'],
                   ['Job title', 'job_title'],
-                  ['Department', 'department'],
                 ] as Array<[string, keyof UserInput]>
               ).map(([label, key]) => (
                 <label className="space-y-1.5 text-sm" key={key}>
@@ -346,6 +444,134 @@ export function UserManagementPage() {
                   />
                 </label>
               ))}
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Department</span>
+                <select
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) => {
+                    const unit = units.data?.find(
+                      (item) => item.id === event.target.value,
+                    )
+                    setForm({
+                      ...form,
+                      department_id: event.target.value || null,
+                      department: unit?.name ?? '',
+                    })
+                  }}
+                  value={form.department_id ?? ''}
+                >
+                  <option value="">No department</option>
+                  {units.data
+                    ?.filter((unit) => unit.unit_type === 'department')
+                    .map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Manager</span>
+                <select
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setForm({ ...form, manager_id: event.target.value || null })
+                  }
+                  value={form.manager_id ?? ''}
+                >
+                  <option value="">No manager assigned</option>
+                  {userRows
+                    .filter(
+                      (candidate) =>
+                        candidate.id !==
+                        (editing === 'new' ? null : editing?.id),
+                    )
+                    .map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.display_name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Employee number</span>
+                <input
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setForm({ ...form, employee_number: event.target.value })
+                  }
+                  placeholder="EMP-0001"
+                  value={form.employee_number ?? ''}
+                />
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Employment status</span>
+                <select
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      employment_status: event.target
+                        .value as UserInput['employment_status'],
+                    })
+                  }
+                  value={form.employment_status ?? 'active'}
+                >
+                  <option value="active">Active</option>
+                  <option value="probation">Probation</option>
+                  <option value="on_leave">On leave</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Employment type</span>
+                <select
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      employment_type: event.target
+                        .value as UserInput['employment_type'],
+                    })
+                  }
+                  value={form.employment_type ?? 'permanent'}
+                >
+                  <option value="permanent">Permanent</option>
+                  <option value="contract">Contract</option>
+                  <option value="temporary">Temporary</option>
+                  <option value="intern">Intern</option>
+                  <option value="consultant">Consultant</option>
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Start date</span>
+                <input
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      employment_start_date: event.target.value || null,
+                    })
+                  }
+                  type="date"
+                  value={form.employment_start_date ?? ''}
+                />
+              </label>
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium">Confirmation date</span>
+                <input
+                  className="h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      employment_confirmation_date: event.target.value || null,
+                    })
+                  }
+                  type="date"
+                  value={form.employment_confirmation_date ?? ''}
+                />
+              </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium">Workspace</span>
                 <select
@@ -409,6 +635,40 @@ export function UserManagementPage() {
                   ))}
                 </div>
               </fieldset>
+              {editing !== 'new' && (
+                <section className="rounded-2xl border bg-muted/30 p-4 sm:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <History className="size-4 text-primary" />
+                    <h3 className="font-semibold">Employment history</h3>
+                  </div>
+                  {history.isLoading ? (
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      Loading history…
+                    </p>
+                  ) : history.data?.items.length ? (
+                    <ol className="mt-3 space-y-3">
+                      {history.data.items.slice(0, 5).map((entry) => (
+                        <li className="flex gap-3 text-sm" key={entry.id}>
+                          <Building2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                          <div>
+                            <p className="font-medium capitalize">
+                              {entry.change_type.replaceAll('_', ' ')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Effective {entry.effective_date}
+                              {entry.reason ? ` · ${entry.reason}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      Employment changes will be recorded here.
+                    </p>
+                  )}
+                </section>
+              )}
             </div>
             <footer className="flex justify-end gap-3 border-t p-5">
               <button

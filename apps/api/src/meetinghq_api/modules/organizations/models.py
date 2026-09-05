@@ -72,6 +72,10 @@ class OrganizationUnit(SoftDeleteMixin, Base):
     name: Mapped[str] = mapped_column(String(160))
     code: Mapped[str | None] = mapped_column(String(40))
     description: Mapped[str | None] = mapped_column(String(1000))
+    manager_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="active", index=True)
     address: Mapped[dict[str, object]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), default=dict
     )

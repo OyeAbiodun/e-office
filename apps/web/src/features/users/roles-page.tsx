@@ -1,15 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check,
+  Copy,
   ChevronDown,
   ChevronsDown,
   ChevronsUp,
   CircleAlert,
   KeyRound,
   LockKeyhole,
+  Plus,
   Search,
   ShieldCheck,
+  Trash2,
   Users,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -31,6 +35,9 @@ export function RolesPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [drafts, setDrafts] = useState<Record<string, string[]>>({})
   const [search, setSearch] = useState('')
+  const [roleDialog, setRoleDialog] = useState<Role | 'new' | null>(null)
+  const [roleName, setRoleName] = useState('')
+  const [roleDescription, setRoleDescription] = useState('')
   useEffect(() => {
     if (!roles.data) return
     setDrafts((current) => {
@@ -62,6 +69,45 @@ export function RolesPage() {
       }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['roles'] }),
   })
+  const createRole = useMutation({
+    mutationFn: () =>
+      roleDialog === 'new'
+        ? userAdminApi.createRole({
+            name: roleName,
+            description: roleDescription || undefined,
+            permission_ids: [],
+          })
+        : userAdminApi.cloneRole(roleDialog!.id, {
+            name: roleName,
+            description: roleDescription || undefined,
+          }),
+    onSuccess: async () => {
+      setRoleDialog(null)
+      setRoleName('')
+      setRoleDescription('')
+      await client.invalidateQueries({ queryKey: ['roles'] })
+    },
+  })
+  const deleteRole = useMutation({
+    mutationFn: (id: string) => userAdminApi.deleteRole(id),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['roles'] }),
+  })
+
+  const openRoleDialog = (source?: Role) => {
+    setRoleDialog(source ?? 'new')
+    setRoleName(source ? `${source.name} copy` : '')
+    setRoleDescription(source?.description ?? '')
+  }
+  const removeRole = async (role: Role) => {
+    const approved = await confirm({
+      title: `Delete ${roleDisplayName(role.name)}?`,
+      description:
+        'This permanently removes the custom role policy. Roles with assigned members must be reassigned first.',
+      confirmLabel: 'Delete role',
+      tone: 'danger',
+    })
+    if (approved) deleteRole.mutate(role.id)
+  }
 
   const toggleRole = (roleId: string) =>
     setExpandedRoles((current) => {
@@ -135,7 +181,7 @@ export function RolesPage() {
     setExpandedGroups(new Set())
   }
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Access control</p>
@@ -148,6 +194,13 @@ export function RolesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            className="flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+            onClick={() => openRoleDialog()}
+            type="button"
+          >
+            <Plus className="size-4" /> Create role
+          </button>
           <button
             className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm font-semibold"
             onClick={expandAll}
@@ -241,7 +294,8 @@ export function RolesPage() {
                     </span>
                     <span className="mt-1 block text-xs text-muted-foreground">
                       {selected.length} of {permissions.data?.length ?? 0}{' '}
-                      permissions enabled
+                      permissions enabled · {role.member_count} member
+                      {role.member_count === 1 ? '' : 's'} assigned
                     </span>
                   </span>
                   {changed && (
@@ -285,6 +339,13 @@ export function RolesPage() {
                           Disable all
                         </button>
                         <button
+                          className="inline-flex items-center gap-1 rounded-lg border bg-background px-3 py-2 text-xs font-semibold"
+                          onClick={() => openRoleDialog(role)}
+                          type="button"
+                        >
+                          <Copy className="size-3.5" /> Duplicate
+                        </button>
+                        <button
                           className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
                           disabled={!changed || updateRole.isPending}
                           onClick={() => void save(role)}
@@ -295,6 +356,16 @@ export function RolesPage() {
                             ? 'Saving…'
                             : 'Save changes'}
                         </button>
+                        {!role.system_role && (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-500/5"
+                            disabled={deleteRole.isPending}
+                            onClick={() => void removeRole(role)}
+                            type="button"
+                          >
+                            <Trash2 className="size-3.5" /> Delete role
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="mt-4 space-y-3">
@@ -392,6 +463,83 @@ export function RolesPage() {
             )
           })}
         </section>
+      )}
+      {roleDialog && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
+          <section
+            aria-label={
+              roleDialog === 'new' ? 'Create custom role' : 'Duplicate role'
+            }
+            className="w-full max-w-lg rounded-2xl border bg-background shadow-2xl"
+            role="dialog"
+          >
+            <header className="flex items-start justify-between border-b p-5">
+              <div>
+                <h2 className="text-xl font-semibold">
+                  {roleDialog === 'new'
+                    ? 'Create custom role'
+                    : 'Duplicate role'}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {roleDialog === 'new'
+                    ? 'Create a least-privilege role, then configure its permissions by module.'
+                    : `Copies ${roleDialog.permissions.length} permission${roleDialog.permissions.length === 1 ? '' : 's'} from ${roleDisplayName(roleDialog.name)}.`}
+                </p>
+              </div>
+              <button
+                aria-label="Close role dialog"
+                onClick={() => setRoleDialog(null)}
+                type="button"
+              >
+                <X className="size-5" />
+              </button>
+            </header>
+            <div className="space-y-4 p-5">
+              <label className="block text-sm font-medium">
+                Role name
+                <input
+                  className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+                  onChange={(event) => setRoleName(event.target.value)}
+                  placeholder="Project coordinator"
+                  value={roleName}
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Description{' '}
+                <span className="font-normal text-muted-foreground">
+                  (optional)
+                </span>
+                <textarea
+                  className="mt-2 min-h-24 w-full rounded-xl border bg-background p-3"
+                  onChange={(event) => setRoleDescription(event.target.value)}
+                  placeholder="Explain when this role should be assigned."
+                  value={roleDescription}
+                />
+              </label>
+            </div>
+            <footer className="flex justify-end gap-3 border-t p-5">
+              <button
+                className="h-11 rounded-xl border px-4"
+                onClick={() => setRoleDialog(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="h-11 rounded-xl bg-primary px-5 font-semibold text-primary-foreground disabled:opacity-50"
+                disabled={!roleName.trim() || createRole.isPending}
+                onClick={() => createRole.mutate()}
+                type="button"
+              >
+                {createRole.isPending
+                  ? 'Saving…'
+                  : roleDialog === 'new'
+                    ? 'Create role'
+                    : 'Duplicate role'}
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
     </div>
   )

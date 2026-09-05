@@ -15,6 +15,9 @@ from meetinghq_api.modules.users.schemas import (
     ApiTokenCreate,
     ApiTokenCreated,
     ApiTokenResponse,
+    EmployeeDirectoryResponse,
+    EmployeeLifecycleRequest,
+    EmploymentHistoryResponse,
     MfaDisableRequest,
     MfaRecoveryCodesResponse,
     MfaRecoveryRegenerateRequest,
@@ -23,6 +26,7 @@ from meetinghq_api.modules.users.schemas import (
     PermissionResponse,
     ProfileCenterResponse,
     ProfileCenterUpdate,
+    RoleClone,
     RoleCreate,
     RoleResponse,
     RoleUpdate,
@@ -57,11 +61,11 @@ async def list_users(
         UserResponse.model_validate(item)
         for item in await UserService(session, settings).list_users(
             user.organization_id,
-            search,
-            status,
-            role_id,
-            department,
-            include_removed,
+            search=search,
+            status=status,
+            role_id=role_id,
+            department=department,
+            include_removed=include_removed,
         )
     ]
 
@@ -158,7 +162,7 @@ async def create_role(
     user: Annotated[User, require_permission(Permissions.ADMIN_MANAGE)],
 ) -> RoleResponse:
     return RoleResponse.model_validate(
-        await UserService(session, settings).create_role(user.organization_id, body)
+        await UserService(session, settings).create_role(user.organization_id, body, user.id)
     )
 
 
@@ -171,7 +175,9 @@ async def update_role(
     user: Annotated[User, require_permission(Permissions.ADMIN_MANAGE)],
 ) -> RoleResponse:
     return RoleResponse.model_validate(
-        await UserService(session, settings).update_role(user.organization_id, role_id, body)
+        await UserService(session, settings).update_role(
+            user.organization_id, role_id, body, user.id
+        )
     )
 
 
@@ -182,8 +188,117 @@ async def delete_role(
     settings: AppSettings,
     user: Annotated[User, require_permission(Permissions.ADMIN_MANAGE)],
 ) -> OperationResponse:
-    await UserService(session, settings).delete_role(user.organization_id, role_id)
+    await UserService(session, settings).delete_role(user.organization_id, role_id, user.id)
     return OperationResponse(message="Role deleted")
+
+
+@router.post("/roles/{role_id}/clone", response_model=RoleResponse, status_code=201)
+async def clone_role(
+    role_id: uuid.UUID,
+    body: RoleClone,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission(Permissions.ADMIN_MANAGE)],
+) -> RoleResponse:
+    return RoleResponse.model_validate(
+        await UserService(session, settings).clone_role(
+            user.organization_id, role_id, body, user.id
+        )
+    )
+
+
+@router.get("/employees", response_model=EmployeeDirectoryResponse)
+async def employee_directory(
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission(Permissions.USERS_READ)],
+    search: str | None = Query(default=None, max_length=160),
+    role_id: uuid.UUID | None = None,
+    department_id: uuid.UUID | None = None,
+    manager_id: uuid.UUID | None = None,
+    employment_status: str | None = Query(default=None, max_length=32),
+    employment_type: str | None = Query(default=None, max_length=32),
+    location: str | None = Query(default=None, max_length=160),
+    account_status: UserStatus | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+) -> EmployeeDirectoryResponse:
+    rows, total = await UserService(session, settings).list_employees(
+        user.organization_id,
+        search=search,
+        role_id=role_id,
+        department_id=department_id,
+        manager_id=manager_id,
+        employment_status=employment_status,
+        employment_type=employment_type,
+        location=location,
+        account_status=account_status,
+        page=page,
+        page_size=page_size,
+    )
+    return EmployeeDirectoryResponse(
+        items=[UserResponse.model_validate(item) for item in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=max(1, (total + page_size - 1) // page_size),
+    )
+
+
+@router.get("/employees/{user_id}/history")
+async def employee_history(
+    user_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission(Permissions.USERS_READ)],
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+) -> dict[str, object]:
+    rows, total = await UserService(session, settings).employment_history(
+        user.organization_id, user_id, page=page, page_size=page_size
+    )
+    return {
+        "items": [EmploymentHistoryResponse.model_validate(item).model_dump() for item in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@router.post("/employees/{user_id}/terminate", response_model=UserResponse)
+async def terminate_employee(
+    user_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission(Permissions.USERS_WRITE)],
+    payload: EmployeeLifecycleRequest,
+) -> UserResponse:
+    return UserResponse.model_validate(
+        await UserService(session, settings).terminate(
+            user.organization_id,
+            user_id,
+            user.id,
+            payload.effective_date,
+            payload.reason,
+            payload.disable_account,
+        )
+    )
+
+
+@router.post("/employees/{user_id}/rehire", response_model=UserResponse)
+async def rehire_employee(
+    user_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission(Permissions.USERS_WRITE)],
+    payload: EmployeeLifecycleRequest,
+) -> UserResponse:
+    return UserResponse.model_validate(
+        await UserService(session, settings).rehire(
+            user.organization_id, user_id, user.id, payload.effective_date, payload.reason
+        )
+    )
 
 
 @router.get("/permissions", response_model=list[PermissionResponse])

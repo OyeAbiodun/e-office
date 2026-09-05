@@ -98,7 +98,11 @@ export const notificationApi = {
       true,
     ),
   pushSubscriptions: () =>
-    apiRequest<PushSubscriptionRecord[]>('/notifications/push-subscriptions', {}, true),
+    apiRequest<PushSubscriptionRecord[]>(
+      '/notifications/push-subscriptions',
+      {},
+      true,
+    ),
   savePushSubscription: (body: {
     endpoint: string
     p256dh: string
@@ -111,5 +115,9 @@ export const notificationApi = {
       true,
     ),
   revokePushSubscription: (id: string) =>
-    apiRequest<void>(`/notifications/push-subscriptions/${id}`, { method: 'DELETE' }, true),
+    apiRequest<void>(
+      `/notifications/push-subscriptions/${id}`,
+      { method: 'DELETE' },
+      true,
+    ),
 }

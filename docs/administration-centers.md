@@ -62,6 +62,12 @@ save a role only after confirming the tenant-wide access change.
 The same permission policy drives both API authorization and dynamic menu
 visibility.
 
+Custom roles can be created with no permissions (least privilege) or duplicated
+from an existing role, then tailored through the same grouped permission editor.
+Each role exposes its assigned member count. Default system roles cannot be deleted;
+roles with members must be reassigned before deletion. Create, update, clone, and
+delete actions are tenant-scoped and recorded in the Audit Center.
+
 ## System Health
 
 `GET /api/v1/system-health` returns a bounded live snapshot of:

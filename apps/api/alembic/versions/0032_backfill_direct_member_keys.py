@@ -20,7 +20,8 @@ def upgrade() -> None:
         UPDATE conversations AS conversation
         SET direct_member_key = members.member_key
         FROM (
-            SELECT conversation_id, string_agg(user_id::text, ':' ORDER BY user_id::text) AS member_key
+            SELECT conversation_id,
+                   string_agg(user_id::text, ':' ORDER BY user_id::text) AS member_key
             FROM conversation_members
             GROUP BY conversation_id
         ) AS members
@@ -32,6 +33,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "UPDATE conversations SET direct_member_key = NULL WHERE type = 'direct'"
-    )
+    op.execute("UPDATE conversations SET direct_member_key = NULL WHERE type = 'direct'")

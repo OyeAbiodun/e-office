@@ -146,7 +146,8 @@ export function ChatHomePage({
             New chat
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Start a direct conversation or bring a small group together. Existing direct messages are always reused.
+            Start a direct conversation or bring a small group together.
+            Existing direct messages are always reused.
           </p>
         </header>
         <section className="mt-7 space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
@@ -188,14 +189,21 @@ export function ChatHomePage({
               value={peopleSearch}
             />
             {selected.length > 0 && (
-              <div aria-label="Selected people" className="mt-3 flex flex-wrap gap-2">
+              <div
+                aria-label="Selected people"
+                className="mt-3 flex flex-wrap gap-2"
+              >
                 {selected.map((id) => {
                   const member = members.data?.find((item) => item.id === id)
                   return (
                     <button
                       className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
                       key={id}
-                      onClick={() => setSelected((current) => current.filter((item) => item !== id))}
+                      onClick={() =>
+                        setSelected((current) =>
+                          current.filter((item) => item !== id),
+                        )
+                      }
                       type="button"
                     >
                       {member?.display_name ?? 'Selected person'} ×
@@ -245,7 +253,11 @@ export function ChatHomePage({
             onClick={() => void create()}
             type="button"
           >
-            {creating ? 'Starting…' : type === 'direct' ? 'Start direct message' : 'Start group chat'}
+            {creating
+              ? 'Starting…'
+              : type === 'direct'
+                ? 'Start direct message'
+                : 'Start group chat'}
           </button>
         </section>
       </div>

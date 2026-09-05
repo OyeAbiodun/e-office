@@ -478,7 +478,8 @@ function Preferences({
 
 function BrowserPushPrompt({ onEnabled }: { onEnabled: () => void }) {
   const [dismissed, setDismissed] = useState(
-    () => window.localStorage.getItem('meetinghq-push-prompt-dismissed') === '1',
+    () =>
+      window.localStorage.getItem('meetinghq-push-prompt-dismissed') === '1',
   )
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -490,7 +491,11 @@ function BrowserPushPrompt({ onEnabled }: { onEnabled: () => void }) {
       await enableBrowserPush()
       onEnabled()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Browser notifications could not be enabled.')
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Browser notifications could not be enabled.',
+      )
     } finally {
       setSaving(false)
     }
@@ -499,11 +504,18 @@ function BrowserPushPrompt({ onEnabled }: { onEnabled: () => void }) {
     <section className="mt-6 flex flex-wrap items-center gap-4 rounded-2xl border border-primary/25 bg-primary/5 p-5">
       <MonitorUp className="size-6 text-primary" />
       <div className="min-w-[16rem] flex-1">
-        <h2 className="font-semibold">Stay updated when you’re away from MeetingHQ</h2>
+        <h2 className="font-semibold">
+          Stay updated when you’re away from MeetingHQ
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Enable alerts for direct messages, mentions, meeting invitations, reminders, and important account updates.
+          Enable alerts for direct messages, mentions, meeting invitations,
+          reminders, and important account updates.
         </p>
-        {error && <p className="mt-2 text-sm text-destructive" role="alert">{error}</p>}
+        {error && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
       </div>
       {browserPushConfigured() ? (
         <button
@@ -515,7 +527,9 @@ function BrowserPushPrompt({ onEnabled }: { onEnabled: () => void }) {
           {saving ? 'Enabling…' : 'Enable notifications'}
         </button>
       ) : (
-        <p className="text-sm text-muted-foreground">Browser delivery is not configured yet.</p>
+        <p className="text-sm text-muted-foreground">
+          Browser delivery is not configured yet.
+        </p>
       )}
       <button
         className="rounded-xl border px-4 py-2 text-sm font-semibold hover:bg-muted"

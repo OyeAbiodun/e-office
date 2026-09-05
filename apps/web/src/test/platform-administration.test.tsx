@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 
 import { IntegrationCenterPage } from '@/features/integrations/integration-center-page'
 import { PlatformPage } from '@/features/platform/platform-page'
@@ -37,6 +43,9 @@ const mocks = vi.hoisted(() => ({
   importMenus: vi.fn(),
   setConfiguration: vi.fn(),
   updateRole: vi.fn(),
+  createRole: vi.fn(),
+  cloneRole: vi.fn(),
+  deleteRole: vi.fn(),
   navigate: vi.fn(),
 }))
 
@@ -99,6 +108,9 @@ vi.mock('@/features/users/api', () => ({
     roles: mocks.roles,
     permissions: mocks.permissions,
     updateRole: mocks.updateRole,
+    createRole: mocks.createRole,
+    cloneRole: mocks.cloneRole,
+    deleteRole: mocks.deleteRole,
   },
 }))
 
@@ -251,6 +263,7 @@ beforeEach(() => {
       name: 'Admin',
       description: 'Tenant administration',
       system_role: true,
+      member_count: 3,
       permissions: [
         {
           id: 'permission-view',
@@ -263,6 +276,8 @@ beforeEach(() => {
     },
   ])
   mocks.updateRole.mockResolvedValue({})
+  mocks.createRole.mockResolvedValue({})
+  mocks.cloneRole.mockResolvedValue({})
 })
 
 test('Platform Management governs provider availability without exposing credentials', async () => {
@@ -623,6 +638,47 @@ test('Role policies are collapsed by default and save grouped permission changes
   await waitFor(() =>
     expect(mocks.updateRole).toHaveBeenCalledWith('role-admin', {
       permission_ids: ['permission-view', 'permission-manage'],
+    }),
+  )
+})
+
+test('custom roles can be created and duplicated with clear member impact', async () => {
+  renderWithClient(<RolesPage />)
+  expect(await screen.findByText(/3 members assigned/)).toBeVisible()
+
+  fireEvent.click(screen.getByRole('button', { name: /create role/i }))
+  fireEvent.change(screen.getByLabelText('Role name'), {
+    target: { value: 'Project coordinator' },
+  })
+  fireEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', {
+      name: 'Create role',
+    }),
+  )
+  await waitFor(() =>
+    expect(mocks.createRole).toHaveBeenCalledWith({
+      name: 'Project coordinator',
+      description: undefined,
+      permission_ids: [],
+    }),
+  )
+
+  fireEvent.click(
+    await screen.findByRole('button', { name: /Organization Admin/ }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: /Duplicate/ }))
+  fireEvent.change(screen.getByLabelText('Role name'), {
+    target: { value: 'Project reviewer' },
+  })
+  fireEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', {
+      name: 'Duplicate role',
+    }),
+  )
+  await waitFor(() =>
+    expect(mocks.cloneRole).toHaveBeenCalledWith('role-admin', {
+      name: 'Project reviewer',
+      description: 'Tenant administration',
     }),
   )
 })

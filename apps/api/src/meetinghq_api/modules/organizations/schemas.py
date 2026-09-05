@@ -69,6 +69,8 @@ class OrganizationUnitInput(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     code: str | None = Field(default=None, max_length=40)
     description: str | None = Field(default=None, max_length=1000)
+    manager_id: uuid.UUID | None = None
+    status: str = Field(default="active", pattern=r"^(active|inactive)$")
     address: dict[str, object] = Field(default_factory=dict)
     timezone: str | None = Field(default=None, max_length=64)
     working_hours: dict[str, object] = Field(default_factory=dict)
@@ -81,6 +83,13 @@ class OrganizationUnitResponse(OrganizationUnitInput):
     organization_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+
+class DepartmentDetailResponse(OrganizationUnitResponse):
+    employee_count: int
+    team_count: int
+    manager_name: str | None = None
+    recent_activity: list[dict[str, object]] = Field(default_factory=list)
 
 
 class OrganizationPolicyUpdate(BaseModel):

@@ -268,7 +268,13 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [type, setType] = useState<OrganizationUnit['unit_type']>('department')
+  const [managerId, setManagerId] = useState('')
+  const [unitStatus, setUnitStatus] = useState<'active' | 'inactive'>('active')
   const [saving, setSaving] = useState(false)
+  const members = useQuery({
+    queryKey: ['organization-members'],
+    queryFn: organizationApi.members,
+  })
   const create = async () => {
     if (!name.trim()) return
     setSaving(true)
@@ -277,11 +283,15 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
         name: name.trim(),
         code: code.trim() || null,
         unit_type: type,
+        manager_id: managerId || null,
+        status: unitStatus,
         address: {},
         working_hours: {},
       })
       setName('')
       setCode('')
+      setManagerId('')
+      setUnitStatus('active')
       await Promise.all([
         client.invalidateQueries({ queryKey: ['organization-units'] }),
         client.invalidateQueries({ queryKey: ['organization-overview'] }),
@@ -330,6 +340,34 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
               value={code}
             />
           </label>
+          <label className="block text-sm font-medium">
+            Department manager
+            <select
+              className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+              onChange={(event) => setManagerId(event.target.value)}
+              value={managerId}
+            >
+              <option value="">Assign later</option>
+              {members.data?.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-medium">
+            Lifecycle state
+            <select
+              className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+              onChange={(event) =>
+                setUnitStatus(event.target.value as 'active' | 'inactive')
+              }
+              value={unitStatus}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </label>
           <button
             className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground disabled:opacity-50"
             disabled={saving || !name.trim()}
@@ -367,7 +405,24 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
                   {unit.code ? ` · ${unit.code}` : ''}
                   {unit.timezone ? ` · ${unit.timezone}` : ''}
                 </p>
+                {unit.manager_id && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Manager:{' '}
+                    {members.data?.find(
+                      (member) => member.id === unit.manager_id,
+                    )?.display_name ?? 'Assigned member'}
+                  </p>
+                )}
               </div>
+              <span
+                className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                  unit.status === 'active'
+                    ? 'bg-emerald-500/10 text-emerald-700'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {unit.status}
+              </span>
               <button
                 aria-label={`Archive ${unit.name}`}
                 className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500"

@@ -5,12 +5,12 @@ import io
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from urllib.parse import unquote, urlparse
 
 import qrcode  # type: ignore[import-untyped]
 import qrcode.image.svg  # type: ignore[import-untyped]
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,9 +25,11 @@ from meetinghq_api.modules.auth.infrastructure.totp import (
     provisioning_uri,
     verify_totp,
 )
+from meetinghq_api.modules.organizations.models import OrganizationUnit, OrganizationUnitType
 from meetinghq_api.modules.storage.local import LocalStorageProvider
 from meetinghq_api.modules.teams.models import Team
 from meetinghq_api.modules.users.models import (
+    EmploymentHistory,
     Permission,
     Role,
     User,
@@ -38,6 +40,7 @@ from meetinghq_api.modules.users.models import (
 from meetinghq_api.modules.users.schemas import (
     ApiTokenCreate,
     ProfileCenterUpdate,
+    RoleClone,
     RoleCreate,
     RoleUpdate,
     UserCreate,
@@ -108,6 +111,12 @@ class UserService:
             raise ConflictError("Email is already assigned to a MeetingHQ account")
         roles = await self._roles(organization_id, body.role_ids)
         await self._validate_context(organization_id, body.workspace_id, body.team_id)
+        await self._validate_employment_context(
+            organization_id, body.department_id, body.manager_id
+        )
+        employee_number = self._employee_number(body.employee_number)
+        if employee_number and await self._employee_number_exists(organization_id, employee_number):
+            raise ConflictError("Employee number is already assigned in this organization")
         temporary_password = body.temporary_password or self._temporary_password()
         username_base = re.sub(r"[^a-z0-9_.-]", "-", email.split("@", 1)[0])
         username = username_base[:56] or f"user-{uuid.uuid4().hex[:8]}"
@@ -126,8 +135,16 @@ class UserService:
             last_name=body.last_name,
             display_name=f"{body.first_name} {body.last_name}".strip(),
             phone=body.phone,
+            alternative_phone=body.alternative_phone,
             job_title=body.job_title,
             department=body.department,
+            department_id=body.department_id,
+            manager_id=body.manager_id,
+            employee_number=employee_number,
+            employment_status=body.employment_status,
+            employment_type=body.employment_type,
+            employment_start_date=body.employment_start_date or date.today(),
+            employment_confirmation_date=body.employment_confirmation_date,
             location=body.location,
             workspace_id=body.workspace_id,
             team_id=body.team_id,
@@ -139,6 +156,16 @@ class UserService:
         )
         self.session.add(user)
         await self.session.flush()
+        await self._record_employment_history(
+            user,
+            actor_id,
+            "hired",
+            {},
+            self._employment_values(user),
+            user.employment_start_date or date.today(),
+            None,
+        )
+        self._audit(organization_id, actor_id, "employee.created", user.id, {})
         await self.activity.publish(
             Activity(
                 organization_id=organization_id,
@@ -160,7 +187,10 @@ class UserService:
         actor_id: uuid.UUID,
     ) -> User:
         user = await self.get(organization_id, user_id)
-        values = body.model_dump(exclude_unset=True, exclude={"role_ids"})
+        values = body.model_dump(
+            exclude_unset=True,
+            exclude={"role_ids", "effective_date", "employment_change_reason"},
+        )
         if "email" in values:
             email = str(values["email"]).lower()
             duplicate = await self.session.scalar(
@@ -174,12 +204,47 @@ class UserService:
             values.get("workspace_id", user.workspace_id),
             values.get("team_id", user.team_id),
         )
+        await self._validate_employment_context(
+            organization_id,
+            values.get("department_id", user.department_id),
+            values.get("manager_id", user.manager_id),
+            user.id,
+        )
+        if "employee_number" in values:
+            values["employee_number"] = self._employee_number(values["employee_number"])
+            if values["employee_number"] and await self._employee_number_exists(
+                organization_id, values["employee_number"], user.id
+            ):
+                raise ConflictError("Employee number is already assigned in this organization")
+        before = self._employment_values(user)
         for field, value in values.items():
             setattr(user, field, value)
         if body.first_name is not None or body.last_name is not None:
             user.display_name = f"{user.first_name} {user.last_name}".strip()
         if body.role_ids is not None:
             user.roles = await self._roles(organization_id, body.role_ids)
+            self._audit(organization_id, actor_id, "employee.roles_updated", user.id, {})
+        after = self._employment_values(user)
+        changed = {key: value for key, value in after.items() if before.get(key) != value}
+        if changed:
+            await self._record_employment_history(
+                user,
+                actor_id,
+                self._employment_change_type(changed),
+                {key: before[key] for key in changed},
+                changed,
+                body.effective_date or date.today(),
+                body.employment_change_reason,
+            )
+            self._audit(
+                organization_id,
+                actor_id,
+                "employee.employment_updated",
+                user.id,
+                {
+                    "fields": sorted(changed),
+                },
+            )
         await self.activity.publish(
             Activity(
                 organization_id=organization_id,
@@ -233,7 +298,9 @@ class UserService:
             ).all()
         )
 
-    async def create_role(self, organization_id: uuid.UUID, body: RoleCreate) -> Role:
+    async def create_role(
+        self, organization_id: uuid.UUID, body: RoleCreate, actor_id: uuid.UUID
+    ) -> Role:
         if await self.session.scalar(
             select(Role.id).where(Role.organization_id == organization_id, Role.name == body.name)
         ):
@@ -246,10 +313,11 @@ class UserService:
         )
         self.session.add(role)
         await self.session.flush()
+        self._audit(organization_id, actor_id, "role.created", role.id, {}, resource="role")
         return role
 
     async def update_role(
-        self, organization_id: uuid.UUID, role_id: uuid.UUID, body: RoleUpdate
+        self, organization_id: uuid.UUID, role_id: uuid.UUID, body: RoleUpdate, actor_id: uuid.UUID
     ) -> Role:
         role = await self._role(organization_id, role_id)
         if body.name is not None:
@@ -267,12 +335,38 @@ class UserService:
             role.description = body.description
         if body.permission_ids is not None:
             role.permissions = await self._permissions(body.permission_ids)
+        self._audit(organization_id, actor_id, "role.updated", role.id, {}, resource="role")
         return role
 
-    async def delete_role(self, organization_id: uuid.UUID, role_id: uuid.UUID) -> None:
+    async def clone_role(
+        self,
+        organization_id: uuid.UUID,
+        role_id: uuid.UUID,
+        body: RoleClone,
+        actor_id: uuid.UUID,
+    ) -> Role:
+        source = await self._role(organization_id, role_id)
+        return await self.create_role(
+            organization_id,
+            RoleCreate(
+                name=body.name,
+                description=(
+                    body.description if body.description is not None else source.description
+                ),
+                permission_ids=[permission.id for permission in source.permissions],
+            ),
+            actor_id,
+        )
+
+    async def delete_role(
+        self, organization_id: uuid.UUID, role_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> None:
         role = await self._role(organization_id, role_id)
         if role.system_role:
             raise ConflictError("Default roles cannot be deleted")
+        if role.members:
+            raise ConflictError("Reassign members before deleting this role")
+        self._audit(organization_id, actor_id, "role.deleted", role.id, {}, resource="role")
         await self.session.delete(role)
 
     async def update_profile(self, user: User, body: UserProfileUpdate) -> User:
@@ -599,6 +693,288 @@ class UserService:
             )
         )
         return user
+
+    async def list_employees(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        search: str | None = None,
+        role_id: uuid.UUID | None = None,
+        department_id: uuid.UUID | None = None,
+        manager_id: uuid.UUID | None = None,
+        employment_status: str | None = None,
+        employment_type: str | None = None,
+        location: str | None = None,
+        account_status: UserStatus | None = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> tuple[list[User], int]:
+        statement = (
+            select(User)
+            .where(User.organization_id == organization_id, User.removed_at.is_(None))
+            .options(selectinload(User.roles).selectinload(Role.permissions))
+        )
+        if search:
+            term = f"%{search.strip()}%"
+            statement = statement.where(
+                or_(
+                    User.display_name.ilike(term),
+                    User.email.ilike(term),
+                    User.employee_number.ilike(term),
+                    User.job_title.ilike(term),
+                )
+            )
+        if department_id:
+            statement = statement.where(User.department_id == department_id)
+        if role_id:
+            statement = statement.join(User.roles).where(Role.id == role_id)
+        if manager_id:
+            statement = statement.where(User.manager_id == manager_id)
+        if employment_status:
+            statement = statement.where(User.employment_status == employment_status)
+        if employment_type:
+            statement = statement.where(User.employment_type == employment_type)
+        if location:
+            statement = statement.where(User.location == location)
+        if account_status:
+            statement = statement.where(User.status == account_status)
+        total = int(
+            await self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        )
+        rows = list(
+            (
+                await self.session.scalars(
+                    statement.order_by(User.display_name, User.id)
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).all()
+        )
+        return rows, total
+
+    async def employment_history(
+        self,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> tuple[list[EmploymentHistory], int]:
+        await self.get(organization_id, user_id)
+        statement = select(EmploymentHistory).where(
+            EmploymentHistory.organization_id == organization_id,
+            EmploymentHistory.user_id == user_id,
+        )
+        total = int(
+            await self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        )
+        rows = list(
+            (
+                await self.session.scalars(
+                    statement.order_by(
+                        EmploymentHistory.effective_date.desc(),
+                        EmploymentHistory.created_at.desc(),
+                    )
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).all()
+        )
+        return rows, total
+
+    async def terminate(
+        self,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        effective_date: date,
+        reason: str | None,
+        disable_account: bool,
+    ) -> User:
+        user = await self.get(organization_id, user_id)
+        before = self._employment_values(user)
+        user.employment_status = "terminated"
+        user.employment_end_date = effective_date
+        if disable_account:
+            if user.id == actor_id:
+                raise ConflictError("You cannot disable your own account")
+            user.status = UserStatus.SUSPENDED
+        after = self._employment_values(user)
+        await self._record_employment_history(
+            user, actor_id, "terminated", before, after, effective_date, reason
+        )
+        self._audit(
+            organization_id,
+            actor_id,
+            "employee.terminated",
+            user.id,
+            {"account_disabled": disable_account},
+        )
+        return user
+
+    async def rehire(
+        self,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        effective_date: date,
+        reason: str | None,
+    ) -> User:
+        user = await self.get(organization_id, user_id)
+        before = self._employment_values(user)
+        user.employment_status = "active"
+        user.employment_start_date = effective_date
+        user.employment_end_date = None
+        if user.status != UserStatus.ACTIVE:
+            user.status = UserStatus.ACTIVE
+        after = self._employment_values(user)
+        await self._record_employment_history(
+            user, actor_id, "rehired", before, after, effective_date, reason
+        )
+        self._audit(organization_id, actor_id, "employee.rehired", user.id, {})
+        return user
+
+    async def _validate_employment_context(
+        self,
+        organization_id: uuid.UUID,
+        department_id: uuid.UUID | None,
+        manager_id: uuid.UUID | None,
+        user_id: uuid.UUID | None = None,
+    ) -> None:
+        if department_id is not None:
+            department = await self.session.scalar(
+                select(OrganizationUnit).where(
+                    OrganizationUnit.id == department_id,
+                    OrganizationUnit.organization_id == organization_id,
+                    OrganizationUnit.unit_type == OrganizationUnitType.DEPARTMENT,
+                    OrganizationUnit.deleted_at.is_(None),
+                )
+            )
+            if department is None:
+                raise NotFoundError("Department not found")
+        if manager_id is None:
+            return
+        if user_id is not None and manager_id == user_id:
+            raise ConflictError("An employee cannot manage themselves")
+        manager = await self.session.scalar(
+            select(User).where(
+                User.id == manager_id,
+                User.organization_id == organization_id,
+                User.removed_at.is_(None),
+            )
+        )
+        if manager is None:
+            raise NotFoundError("Manager not found in this organization")
+        if user_id is None:
+            return
+        ancestor_id = manager.manager_id
+        seen = {user_id, manager_id}
+        while ancestor_id is not None:
+            if ancestor_id in seen:
+                raise ConflictError("Manager assignment would create a reporting cycle")
+            seen.add(ancestor_id)
+            ancestor_id = await self.session.scalar(
+                select(User.manager_id).where(
+                    User.id == ancestor_id,
+                    User.organization_id == organization_id,
+                )
+            )
+
+    async def _employee_number_exists(
+        self,
+        organization_id: uuid.UUID,
+        employee_number: str,
+        exclude_user_id: uuid.UUID | None = None,
+    ) -> bool:
+        statement = select(User.id).where(
+            User.organization_id == organization_id,
+            User.employee_number == employee_number,
+        )
+        if exclude_user_id is not None:
+            statement = statement.where(User.id != exclude_user_id)
+        return await self.session.scalar(statement) is not None
+
+    async def _record_employment_history(
+        self,
+        user: User,
+        actor_id: uuid.UUID,
+        change_type: str,
+        old_values: dict[str, object],
+        new_values: dict[str, object],
+        effective_date: date,
+        reason: str | None,
+    ) -> None:
+        self.session.add(
+            EmploymentHistory(
+                organization_id=user.organization_id,
+                user_id=user.id,
+                changed_by=actor_id,
+                change_type=change_type,
+                old_values=old_values,
+                new_values=new_values,
+                effective_date=effective_date,
+                reason=reason,
+            )
+        )
+
+    def _audit(
+        self,
+        organization_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        action: str,
+        resource_id: uuid.UUID,
+        metadata: dict[str, object],
+        resource: str = "employee",
+    ) -> None:
+        self.session.add(
+            AuditLog(
+                organization_id=organization_id,
+                user_id=actor_id,
+                action=action,
+                resource=resource,
+                resource_id=resource_id,
+                audit_metadata=metadata,
+            )
+        )
+
+    @staticmethod
+    def _employee_number(value: str | None) -> str | None:
+        return value.strip().upper() if value and value.strip() else None
+
+    @staticmethod
+    def _employment_values(user: User) -> dict[str, object]:
+        return {
+            "employee_number": user.employee_number,
+            "job_title": user.job_title,
+            "department_id": str(user.department_id) if user.department_id else None,
+            "manager_id": str(user.manager_id) if user.manager_id else None,
+            "employment_status": user.employment_status,
+            "employment_type": user.employment_type,
+            "employment_start_date": (
+                user.employment_start_date.isoformat() if user.employment_start_date else None
+            ),
+            "employment_confirmation_date": (
+                user.employment_confirmation_date.isoformat()
+                if user.employment_confirmation_date
+                else None
+            ),
+            "employment_end_date": (
+                user.employment_end_date.isoformat() if user.employment_end_date else None
+            ),
+            "location": user.location,
+        }
+
+    @staticmethod
+    def _employment_change_type(changed: dict[str, object]) -> str:
+        if "employment_status" in changed:
+            return "status_changed"
+        if "department_id" in changed:
+            return "department_transferred"
+        if "manager_id" in changed:
+            return "manager_changed"
+        if "job_title" in changed:
+            return "job_changed"
+        return "employment_updated"
 
     async def _roles(self, organization_id: uuid.UUID, role_ids: list[uuid.UUID]) -> list[Role]:
         roles = list(

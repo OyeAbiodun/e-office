@@ -12,6 +12,7 @@ from meetinghq_api.modules.auth.domain.permissions import Permissions
 from meetinghq_api.modules.auth.presentation.dependencies import require_permission
 from meetinghq_api.modules.organizations.models import OrganizationUnitType
 from meetinghq_api.modules.organizations.schemas import (
+    DepartmentDetailResponse,
     OrganizationCreate,
     OrganizationOverview,
     OrganizationPolicyUpdate,
@@ -68,6 +69,27 @@ async def create_organization_unit(
     return OrganizationUnitResponse.model_validate(
         await OrganizationService(session).create_unit(user.organization_id, body, user.id)
     )
+
+
+@router.put("/current/units/{unit_id}", response_model=OrganizationUnitResponse)
+async def update_organization_unit(
+    unit_id: uuid.UUID,
+    body: OrganizationUnitInput,
+    session: Session,
+    user: Annotated[User, require_permission(Permissions.ORGANIZATIONS_WRITE)],
+) -> OrganizationUnitResponse:
+    return OrganizationUnitResponse.model_validate(
+        await OrganizationService(session).update_unit(user.organization_id, unit_id, body, user.id)
+    )
+
+
+@router.get("/current/departments/{unit_id}", response_model=DepartmentDetailResponse)
+async def department_detail(
+    unit_id: uuid.UUID,
+    session: Session,
+    user: Annotated[User, require_permission(Permissions.ORGANIZATIONS_READ)],
+) -> DepartmentDetailResponse:
+    return await OrganizationService(session).department_detail(user.organization_id, unit_id)
 
 
 @router.delete("/current/units/{unit_id}", response_model=OperationResponse)

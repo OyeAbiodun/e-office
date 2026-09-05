@@ -22,7 +22,8 @@ def upgrade() -> None:
         UPDATE conversations AS conversation
         SET direct_member_key = members.member_key
         FROM (
-            SELECT conversation_id, string_agg(user_id::text, ':' ORDER BY user_id::text) AS member_key
+            SELECT conversation_id,
+                   string_agg(user_id::text, ':' ORDER BY user_id::text) AS member_key
             FROM conversation_members
             GROUP BY conversation_id
         ) AS members
@@ -44,18 +45,29 @@ def upgrade() -> None:
     op.create_table(
         "push_subscriptions",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("organization_id", sa.Uuid(), sa.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "organization_id",
+            sa.Uuid(),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("endpoint", sa.String(2048), nullable=False),
         sa.Column("p256dh", sa.String(512), nullable=False),
         sa.Column("auth", sa.String(512), nullable=False),
         sa.Column("user_agent", sa.String(512)),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("last_used_at", sa.DateTime(timezone=True)),
         sa.UniqueConstraint("organization_id", "endpoint", name="uq_push_subscription_endpoint"),
     )
-    op.create_index("ix_push_subscriptions_organization_id", "push_subscriptions", ["organization_id"])
+    op.create_index(
+        "ix_push_subscriptions_organization_id", "push_subscriptions", ["organization_id"]
+    )
     op.create_index("ix_push_subscriptions_user_id", "push_subscriptions", ["user_id"])
     op.create_index(
         "ix_push_subscriptions_user_enabled",

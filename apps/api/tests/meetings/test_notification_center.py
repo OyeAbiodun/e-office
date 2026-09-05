@@ -68,6 +68,6 @@ async def test_push_subscription_is_user_and_tenant_scoped(
         headers=headers,
     )
     assert revoked.status_code == 204
-    assert (await meeting_client.get("/api/v1/notifications/push-subscriptions", headers=headers)).json()[
-        "data"
-    ][0]["enabled"] is False
+    assert (
+        await meeting_client.get("/api/v1/notifications/push-subscriptions", headers=headers)
+    ).json()["data"][0]["enabled"] is False

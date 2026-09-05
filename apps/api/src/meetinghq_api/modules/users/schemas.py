@@ -1,7 +1,7 @@
 """User management and profile contracts."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -122,8 +122,20 @@ class UserCreate(BaseModel):
     last_name: str = Field(default="", max_length=80)
     email: EmailStr
     phone: str | None = Field(default=None, max_length=40)
+    alternative_phone: str | None = Field(default=None, max_length=40)
     job_title: str | None = Field(default=None, max_length=120)
     department: str | None = Field(default=None, max_length=120)
+    department_id: uuid.UUID | None = None
+    manager_id: uuid.UUID | None = None
+    employee_number: str | None = Field(default=None, min_length=1, max_length=64)
+    employment_status: str = Field(
+        default="active", pattern=r"^(active|probation|on_leave|suspended|inactive|terminated)$"
+    )
+    employment_type: str = Field(
+        default="permanent", pattern=r"^(permanent|contract|temporary|intern|consultant)$"
+    )
+    employment_start_date: date | None = None
+    employment_confirmation_date: date | None = None
     location: str | None = Field(default=None, max_length=160)
     workspace_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None
@@ -146,12 +158,33 @@ class UserUpdate(BaseModel):
     last_name: str | None = Field(default=None, max_length=80)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=40)
+    alternative_phone: str | None = Field(default=None, max_length=40)
     job_title: str | None = Field(default=None, max_length=120)
     department: str | None = Field(default=None, max_length=120)
+    department_id: uuid.UUID | None = None
+    manager_id: uuid.UUID | None = None
+    employee_number: str | None = Field(default=None, min_length=1, max_length=64)
+    employment_status: str | None = Field(
+        default=None, pattern=r"^(active|probation|on_leave|suspended|inactive|terminated)$"
+    )
+    employment_type: str | None = Field(
+        default=None, pattern=r"^(permanent|contract|temporary|intern|consultant)$"
+    )
+    employment_start_date: date | None = None
+    employment_confirmation_date: date | None = None
+    employment_end_date: date | None = None
+    effective_date: date | None = None
+    employment_change_reason: str | None = Field(default=None, max_length=1000)
     location: str | None = Field(default=None, max_length=160)
     workspace_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None
     role_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
+
+
+class EmployeeLifecycleRequest(BaseModel):
+    effective_date: date
+    reason: str | None = Field(default=None, max_length=1000)
+    disable_account: bool = True
 
 
 class UserBulkAction(BaseModel):
@@ -180,6 +213,11 @@ class RoleUpdate(BaseModel):
     permission_ids: list[uuid.UUID] | None = None
 
 
+class RoleClone(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+
+
 class PermissionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -198,6 +236,7 @@ class RoleResponse(BaseModel):
     name: str
     description: str | None
     system_role: bool
+    member_count: int = 0
     permissions: list[PermissionResponse]
 
 
@@ -215,8 +254,17 @@ class UserResponse(BaseModel):
     display_name: str
     avatar_url: str | None
     phone: str | None
+    alternative_phone: str | None
     job_title: str | None
     department: str | None
+    department_id: uuid.UUID | None
+    manager_id: uuid.UUID | None
+    employee_number: str | None
+    employment_status: str
+    employment_type: str
+    employment_start_date: date | None
+    employment_confirmation_date: date | None
+    employment_end_date: date | None
     location: str | None
     workspace_id: uuid.UUID | None
     team_id: uuid.UUID | None
@@ -228,3 +276,25 @@ class UserResponse(BaseModel):
     language: str
     notification_preferences: dict[str, object]
     roles: list[RoleResponse]
+
+
+class EmploymentHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    changed_by: uuid.UUID | None
+    change_type: str
+    old_values: dict[str, object]
+    new_values: dict[str, object]
+    effective_date: date
+    reason: str | None
+    created_at: datetime
+
+
+class EmployeeDirectoryResponse(BaseModel):
+    items: list[UserResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

@@ -158,7 +158,7 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
         conversation_id: conversationId,
         sender_id: 'current-user',
         sender_name: 'You',
-        parent_message_id: thread ? messageId ?? null : null,
+        parent_message_id: thread ? (messageId ?? null) : null,
         message_type: 'rich_text',
         body: content,
         edited: false,
@@ -176,7 +176,9 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
         next_cursor: string | null
         has_more: boolean
       }>(messageKey, (current) =>
-        current ? { ...current, items: [...current.items, optimistic] } : current,
+        current
+          ? { ...current, items: [...current.items, optimistic] }
+          : current,
       )
     }
     if (!retry) setBody('')
@@ -201,7 +203,11 @@ export function ConversationPage({ thread = false }: { thread?: boolean }) {
               ...current,
               items: current.items.map((item) =>
                 item.id === localId
-                  ? { ...item, delivery_status: 'failed', optimistic_state: 'failed' }
+                  ? {
+                      ...item,
+                      delivery_status: 'failed',
+                      optimistic_state: 'failed',
+                    }
                   : item,
               ),
             }
@@ -687,7 +693,9 @@ function MessageRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <p className="text-sm font-semibold">{message.sender_name || 'You'}</p>
+          <p className="text-sm font-semibold">
+            {message.sender_name || 'You'}
+          </p>
           <time className="text-xs text-muted-foreground">
             {new Date(message.created_at).toLocaleTimeString([], {
               hour: '2-digit',

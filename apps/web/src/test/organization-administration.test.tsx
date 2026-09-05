@@ -8,6 +8,7 @@ const organizationApiMock = vi.hoisted(() => ({
   organizationUnits: vi.fn(),
   organizationPolicies: vi.fn(),
   createOrganizationUnit: vi.fn(),
+  members: vi.fn(),
   deleteOrganizationUnit: vi.fn(),
   updateOrganizationPolicy: vi.fn(),
 }))
@@ -75,6 +76,7 @@ beforeEach(() => {
   organizationApiMock.createOrganizationUnit.mockResolvedValue({
     id: 'unit-1',
   })
+  organizationApiMock.members.mockResolvedValue([])
   organizationApiMock.updateOrganizationPolicy.mockResolvedValue({
     enabled: false,
   })
@@ -110,6 +112,8 @@ test('creates structure and updates tenant policy through the backend API', asyn
       name: 'Product Engineering',
       code: 'ENG',
       unit_type: 'department',
+      manager_id: null,
+      status: 'active',
       address: {},
       working_hours: {},
     }),

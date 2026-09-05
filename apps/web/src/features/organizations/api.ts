@@ -111,6 +111,7 @@ export interface OrganizationUnit {
   id: string
   organization_id: string
   parent_id: string | null
+  manager_id: string | null
   unit_type: 'department' | 'branch' | 'location'
   name: string
   code: string | null
@@ -118,8 +119,16 @@ export interface OrganizationUnit {
   address: Record<string, unknown>
   timezone: string | null
   working_hours: Record<string, unknown>
+  status: 'active' | 'inactive'
   created_at: string
   updated_at: string
+}
+
+export interface DepartmentDetail extends OrganizationUnit {
+  employee_count: number
+  team_count: number
+  manager_name: string | null
+  recent_activity: Array<{ id: string; action: string; created_at: string }>
 }
 
 export interface OrganizationOverview {
@@ -173,6 +182,18 @@ export const organizationApi = {
     apiRequest<OrganizationUnit>(
       '/organizations/current/units',
       { method: 'POST', body: JSON.stringify(body) },
+      true,
+    ),
+  updateOrganizationUnit: (id: string, body: object) =>
+    apiRequest<OrganizationUnit>(
+      `/organizations/current/units/${id}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+      true,
+    ),
+  departmentDetail: (id: string) =>
+    apiRequest<DepartmentDetail>(
+      `/organizations/current/departments/${id}`,
+      {},
       true,
     ),
   deleteOrganizationUnit: (id: string) =>

@@ -14,6 +14,7 @@ export interface Role {
   name: string
   description: string | null
   system_role: boolean
+  member_count: number
   permissions: Permission[]
 }
 
@@ -27,8 +28,24 @@ export interface ManagedUser {
   display_name: string
   avatar_url: string | null
   phone: string | null
+  alternative_phone: string | null
   job_title: string | null
   department: string | null
+  department_id: string | null
+  manager_id: string | null
+  employee_number: string | null
+  employment_status:
+    | 'active'
+    | 'probation'
+    | 'on_leave'
+    | 'suspended'
+    | 'inactive'
+    | 'terminated'
+  employment_type:
+    'permanent' | 'contract' | 'temporary' | 'intern' | 'consultant'
+  employment_start_date: string | null
+  employment_confirmation_date: string | null
+  employment_end_date: string | null
   location: string | null
   workspace_id: string | null
   team_id: string | null
@@ -96,14 +113,53 @@ export interface UserInput {
   last_name: string
   email: string
   phone?: string | null
+  alternative_phone?: string | null
   job_title?: string | null
   department?: string | null
+  department_id?: string | null
+  manager_id?: string | null
+  employee_number?: string | null
+  employment_status?: ManagedUser['employment_status']
+  employment_type?: ManagedUser['employment_type']
+  employment_start_date?: string | null
+  employment_confirmation_date?: string | null
+  employment_end_date?: string | null
+  effective_date?: string | null
+  employment_change_reason?: string | null
   location?: string | null
   workspace_id?: string | null
   team_id?: string | null
   role_ids: string[]
   temporary_password?: string
   send_welcome_email?: boolean
+}
+
+export interface EmployeeDirectory {
+  items: ManagedUser[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface EmploymentHistoryEntry {
+  id: string
+  user_id: string
+  changed_by: string | null
+  change_type: string
+  old_values: Record<string, unknown>
+  new_values: Record<string, unknown>
+  effective_date: string
+  reason: string | null
+  created_at: string
+}
+
+export interface EmploymentHistoryPage {
+  items: EmploymentHistoryEntry[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
 }
 
 function params(filters: Record<string, string | boolean | undefined>) {
@@ -154,6 +210,48 @@ export const userAdminApi = {
       { method: 'POST', body: JSON.stringify({ user_ids, action }) },
       true,
     ),
+  employees: (filters: {
+    search?: string
+    department_id?: string
+    manager_id?: string
+    employment_status?: string
+    employment_type?: string
+    status?: string
+    page?: number
+    page_size?: number
+  }) => {
+    const { status, ...directoryFilters } = filters
+    return apiRequest<EmployeeDirectory>(
+      `/employees${params({ ...directoryFilters, account_status: status })}`,
+      {},
+      true,
+    )
+  },
+  employmentHistory: (id: string, page = 1) =>
+    apiRequest<EmploymentHistoryPage>(
+      `/employees/${id}/history?page=${page}`,
+      {},
+      true,
+    ),
+  terminate: (
+    id: string,
+    values: {
+      effective_date: string
+      reason?: string
+      disable_account?: boolean
+    },
+  ) =>
+    apiRequest<ManagedUser>(
+      `/employees/${id}/terminate`,
+      { method: 'POST', body: JSON.stringify(values) },
+      true,
+    ),
+  rehire: (id: string, values: { effective_date: string; reason?: string }) =>
+    apiRequest<ManagedUser>(
+      `/employees/${id}/rehire`,
+      { method: 'POST', body: JSON.stringify(values) },
+      true,
+    ),
   roles: () => apiRequest<Role[]>('/roles', {}, true),
   permissions: () => apiRequest<Permission[]>('/permissions', {}, true),
   createRole: (values: {
@@ -175,6 +273,14 @@ export const userAdminApi = {
       { method: 'PATCH', body: JSON.stringify(values) },
       true,
     ),
+  cloneRole: (id: string, values: { name: string; description?: string }) =>
+    apiRequest<Role>(
+      `/roles/${id}/clone`,
+      { method: 'POST', body: JSON.stringify(values) },
+      true,
+    ),
+  deleteRole: (id: string) =>
+    apiRequest<void>(`/roles/${id}`, { method: 'DELETE' }, true),
 }
 
 export const profileApi = {

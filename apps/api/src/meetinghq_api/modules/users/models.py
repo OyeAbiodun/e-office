@@ -2,15 +2,17 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
@@ -53,6 +55,7 @@ class User(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "username"),
         UniqueConstraint("email"),
+        UniqueConstraint("organization_id", "employee_number", name="uq_users_org_employee_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -66,8 +69,21 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(160))
     avatar_url: Mapped[str | None] = mapped_column(String(2048))
     phone: Mapped[str | None] = mapped_column(String(40))
+    alternative_phone: Mapped[str | None] = mapped_column(String(40))
     job_title: Mapped[str | None] = mapped_column(String(120))
     department: Mapped[str | None] = mapped_column(String(120), index=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organization_units.id", ondelete="SET NULL"), index=True
+    )
+    manager_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    employee_number: Mapped[str | None] = mapped_column(String(64), index=True)
+    employment_status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    employment_type: Mapped[str] = mapped_column(String(32), default="permanent", index=True)
+    employment_start_date: Mapped[date | None] = mapped_column(Date)
+    employment_confirmation_date: Mapped[date | None] = mapped_column(Date)
+    employment_end_date: Mapped[date | None] = mapped_column(Date)
     location: Mapped[str | None] = mapped_column(String(160))
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("workspaces.id", ondelete="SET NULL"), index=True
@@ -94,7 +110,9 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    roles: Mapped[list["Role"]] = relationship(secondary=user_roles, lazy="selectin")
+    roles: Mapped[list["Role"]] = relationship(
+        secondary=user_roles, lazy="selectin", back_populates="members"
+    )
 
 
 class Role(Base):
@@ -114,6 +132,13 @@ class Role(Base):
     permissions: Mapped[list["Permission"]] = relationship(
         secondary=role_permissions, lazy="selectin"
     )
+    members: Mapped[list[User]] = relationship(
+        secondary=user_roles, lazy="selectin", back_populates="roles"
+    )
+
+    @property
+    def member_count(self) -> int:
+        return len(self.members)
 
 
 class Permission(Base):
@@ -126,6 +151,41 @@ class Permission(Base):
     resource: Mapped[str] = mapped_column(String(80))
     action: Mapped[str] = mapped_column(String(80))
     description: Mapped[str | None] = mapped_column(String(500))
+
+
+class EmploymentHistory(Base):
+    """Effective-dated changes to the employment data held by a user identity."""
+
+    __tablename__ = "employment_history"
+    __table_args__ = (
+        Index(
+            "ix_employment_history_org_user_effective",
+            "organization_id",
+            "user_id",
+            "effective_date",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    change_type: Mapped[str] = mapped_column(String(48), index=True)
+    old_values: Mapped[dict[str, object]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=dict
+    )
+    new_values: Mapped[dict[str, object]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=dict
+    )
+    effective_date: Mapped[date] = mapped_column(Date, index=True)
+    reason: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UserProfileCenter(Base):

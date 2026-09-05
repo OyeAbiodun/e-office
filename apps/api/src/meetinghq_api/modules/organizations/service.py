@@ -19,10 +19,12 @@ from meetinghq_api.modules.organizations.models import (
 )
 from meetinghq_api.modules.organizations.repository import OrganizationRepository
 from meetinghq_api.modules.organizations.schemas import (
+    DepartmentDetailResponse,
     OrganizationCreate,
     OrganizationOverview,
     OrganizationResponse,
     OrganizationUnitInput,
+    OrganizationUnitResponse,
     OrganizationUpdate,
 )
 from meetinghq_api.modules.teams.models import Team
@@ -88,16 +90,7 @@ class OrganizationService:
         body: OrganizationUnitInput,
         actor_id: uuid.UUID,
     ) -> OrganizationUnit:
-        if body.parent_id is not None:
-            parent = await self.session.scalar(
-                select(OrganizationUnit.id).where(
-                    OrganizationUnit.id == body.parent_id,
-                    OrganizationUnit.organization_id == organization_id,
-                    OrganizationUnit.deleted_at.is_(None),
-                )
-            )
-            if parent is None:
-                raise NotFoundError("Parent organization unit not found")
+        await self._validate_unit_context(organization_id, body.parent_id, body.manager_id)
         unit = OrganizationUnit(organization_id=organization_id, **body.model_dump())
         self.session.add(unit)
         await self.session.flush()
@@ -113,6 +106,74 @@ class OrganizationService:
         )
         return unit
 
+    async def update_unit(
+        self,
+        organization_id: uuid.UUID,
+        unit_id: uuid.UUID,
+        body: OrganizationUnitInput,
+        actor_id: uuid.UUID,
+    ) -> OrganizationUnit:
+        unit = await self._unit(organization_id, unit_id)
+        await self._validate_unit_context(organization_id, body.parent_id, body.manager_id, unit_id)
+        if body.parent_id == unit.id:
+            raise ConflictError("A department cannot be its own parent")
+        for field, value in body.model_dump().items():
+            setattr(unit, field, value)
+        self.session.add(
+            AuditLog(
+                organization_id=organization_id,
+                user_id=actor_id,
+                action="department.updated",
+                resource="organization_unit",
+                resource_id=unit.id,
+                audit_metadata={"unit_type": unit.unit_type},
+            )
+        )
+        return unit
+
+    async def department_detail(
+        self, organization_id: uuid.UUID, unit_id: uuid.UUID
+    ) -> DepartmentDetailResponse:
+        unit = await self._unit(organization_id, unit_id)
+        if unit.unit_type != OrganizationUnitType.DEPARTMENT:
+            raise NotFoundError("Department not found")
+        manager = (
+            await self.session.get(User, unit.manager_id) if unit.manager_id is not None else None
+        )
+        employee_count = int(
+            await self.session.scalar(
+                select(func.count(User.id)).where(
+                    User.organization_id == organization_id,
+                    User.department_id == unit.id,
+                    User.removed_at.is_(None),
+                )
+            )
+            or 0
+        )
+        audits = list(
+            (
+                await self.session.scalars(
+                    select(AuditLog)
+                    .where(
+                        AuditLog.organization_id == organization_id,
+                        AuditLog.resource_id == unit.id,
+                    )
+                    .order_by(AuditLog.created_at.desc())
+                    .limit(8)
+                )
+            ).all()
+        )
+        return DepartmentDetailResponse(
+            **OrganizationUnitResponse.model_validate(unit).model_dump(),
+            employee_count=employee_count,
+            team_count=0,
+            manager_name=manager.display_name if manager is not None else None,
+            recent_activity=[
+                {"action": audit.action, "created_at": audit.created_at.isoformat()}
+                for audit in audits
+            ],
+        )
+
     async def delete_unit(
         self, organization_id: uuid.UUID, unit_id: uuid.UUID, actor_id: uuid.UUID
     ) -> None:
@@ -125,7 +186,74 @@ class OrganizationService:
         )
         if unit is None:
             raise NotFoundError("Organization unit not found")
+        active_employees = int(
+            await self.session.scalar(
+                select(func.count(User.id)).where(
+                    User.organization_id == organization_id,
+                    User.department_id == unit.id,
+                    User.removed_at.is_(None),
+                )
+            )
+            or 0
+        )
+        if active_employees:
+            raise ConflictError("Reassign active employees before archiving this department")
         unit.soft_delete(actor_id)
+        self.session.add(
+            AuditLog(
+                organization_id=organization_id,
+                user_id=actor_id,
+                action="department.archived",
+                resource="organization_unit",
+                resource_id=unit.id,
+                audit_metadata={},
+            )
+        )
+
+    async def _unit(self, organization_id: uuid.UUID, unit_id: uuid.UUID) -> OrganizationUnit:
+        unit = await self.session.scalar(
+            select(OrganizationUnit).where(
+                OrganizationUnit.id == unit_id,
+                OrganizationUnit.organization_id == organization_id,
+                OrganizationUnit.deleted_at.is_(None),
+            )
+        )
+        if unit is None:
+            raise NotFoundError("Organization unit not found")
+        return unit
+
+    async def _validate_unit_context(
+        self,
+        organization_id: uuid.UUID,
+        parent_id: uuid.UUID | None,
+        manager_id: uuid.UUID | None,
+        unit_id: uuid.UUID | None = None,
+    ) -> None:
+        if parent_id is not None:
+            parent = await self._unit(organization_id, parent_id)
+            if unit_id is not None:
+                ancestor_id = parent.parent_id
+                seen = {unit_id, parent.id}
+                while ancestor_id is not None:
+                    if ancestor_id in seen:
+                        raise ConflictError("Parent department would create a hierarchy cycle")
+                    seen.add(ancestor_id)
+                    ancestor_id = await self.session.scalar(
+                        select(OrganizationUnit.parent_id).where(
+                            OrganizationUnit.id == ancestor_id,
+                            OrganizationUnit.organization_id == organization_id,
+                        )
+                    )
+        if manager_id is not None:
+            manager = await self.session.scalar(
+                select(User.id).where(
+                    User.id == manager_id,
+                    User.organization_id == organization_id,
+                    User.removed_at.is_(None),
+                )
+            )
+            if manager is None:
+                raise NotFoundError("Department manager not found in this organization")
 
     async def policies(
         self, organization_id: uuid.UUID, settings: Settings
