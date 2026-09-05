@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
@@ -13,6 +13,7 @@ from meetinghq_api.modules.auth.presentation.dependencies import require_permiss
 from meetinghq_api.modules.organizations.models import OrganizationUnitType
 from meetinghq_api.modules.organizations.schemas import (
     DepartmentDetailResponse,
+    DepartmentDirectoryResponse,
     OrganizationCreate,
     OrganizationOverview,
     OrganizationPolicyUpdate,
@@ -58,6 +59,35 @@ async def organization_units(
         OrganizationUnitResponse.model_validate(unit)
         for unit in await OrganizationService(session).units(user.organization_id, unit_type)
     ]
+
+
+@router.get("/current/departments", response_model=DepartmentDirectoryResponse)
+async def departments(
+    session: Session,
+    user: Annotated[User, require_permission(Permissions.ORGANIZATIONS_READ)],
+    search: str | None = Query(default=None, max_length=160),
+    status: str | None = Query(default=None, pattern=r"^(active|inactive)$"),
+    sort: str = Query(default="name", pattern=r"^(name|created_at)$"),
+    direction: str = Query(default="asc", pattern=r"^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+) -> DepartmentDirectoryResponse:
+    rows, total = await OrganizationService(session).departments(
+        user.organization_id,
+        search=search,
+        status=status,
+        sort=sort,
+        direction=direction,
+        page=page,
+        page_size=page_size,
+    )
+    return DepartmentDirectoryResponse(
+        items=[OrganizationUnitResponse.model_validate(unit) for unit in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=max(1, (total + page_size - 1) // page_size),
+    )
 
 
 @router.post("/current/units", response_model=OrganizationUnitResponse, status_code=201)

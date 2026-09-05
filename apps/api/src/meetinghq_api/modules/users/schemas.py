@@ -2,11 +2,12 @@
 
 import uuid
 from datetime import date, datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from meetinghq_api.modules.auth.infrastructure.passwords import validate_password
-from meetinghq_api.modules.users.models import UserStatus
+from meetinghq_api.modules.users.models import Role, UserStatus
 
 
 class UserProfileUpdate(BaseModel):
@@ -238,6 +239,28 @@ class RoleResponse(BaseModel):
     system_role: bool
     member_count: int = 0
     permissions: list[PermissionResponse]
+
+    @model_validator(mode="before")
+    @classmethod
+    def avoid_async_relationship_loading(cls, value: Any) -> Any:
+        """Serialize only relationships explicitly loaded by the service layer.
+
+        Response serialization happens outside SQLAlchemy's async greenlet.
+        Reading an unloaded relationship or correlated property there would
+        otherwise attempt a database query and turn a valid mutation into a 500.
+        """
+        if not isinstance(value, Role):
+            return value
+        state = value.__dict__
+        return {
+            "id": value.id,
+            "organization_id": value.organization_id,
+            "name": value.name,
+            "description": value.description,
+            "system_role": value.system_role,
+            "member_count": state.get("member_count", 0),
+            "permissions": state.get("permissions", []),
+        }
 
 
 class UserResponse(BaseModel):

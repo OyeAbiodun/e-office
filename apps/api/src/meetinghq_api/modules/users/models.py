@@ -18,9 +18,10 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     func,
+    select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from meetinghq_api.infrastructure.database import Base
 
@@ -135,10 +136,12 @@ class Role(Base):
     members: Mapped[list[User]] = relationship(
         secondary=user_roles, lazy="selectin", back_populates="roles"
     )
-
-    @property
-    def member_count(self) -> int:
-        return len(self.members)
+    member_count: Mapped[int] = column_property(
+        select(func.count(user_roles.c.user_id))
+        .where(user_roles.c.role_id == id)
+        .correlate_except(user_roles)
+        .scalar_subquery()
+    )
 
 
 class Permission(Base):

@@ -84,6 +84,48 @@ class OrganizationService:
             ).all()
         )
 
+    async def departments(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+        sort: str = "name",
+        direction: str = "asc",
+        page: int = 1,
+        page_size: int = 25,
+    ) -> tuple[list[OrganizationUnit], int]:
+        """Return a tenant-local, paginated department directory."""
+        statement = select(OrganizationUnit).where(
+            OrganizationUnit.organization_id == organization_id,
+            OrganizationUnit.unit_type == OrganizationUnitType.DEPARTMENT,
+            OrganizationUnit.deleted_at.is_(None),
+        )
+        if search:
+            term = f"%{search.strip()}%"
+            statement = statement.where(
+                OrganizationUnit.name.ilike(term) | OrganizationUnit.code.ilike(term)
+            )
+        if status:
+            statement = statement.where(OrganizationUnit.status == status)
+        total = int(
+            await self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        )
+        order_column = (
+            OrganizationUnit.created_at if sort == "created_at" else OrganizationUnit.name
+        )
+        ordering = order_column.desc() if direction == "desc" else order_column.asc()
+        rows = list(
+            (
+                await self.session.scalars(
+                    statement.order_by(ordering, OrganizationUnit.id)
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).all()
+        )
+        return rows, total
+
     async def create_unit(
         self,
         organization_id: uuid.UUID,

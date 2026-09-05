@@ -3,11 +3,14 @@ import { Link } from '@tanstack/react-router'
 import {
   Activity,
   Building2,
+  ChevronLeft,
   ChevronRight,
+  Eye,
   FileClock,
   Globe2,
-  MapPin,
+  Pencil,
   Plus,
+  Search,
   Settings,
   ShieldCheck,
   Trash2,
@@ -19,6 +22,7 @@ import { useState } from 'react'
 
 import {
   organizationApi,
+  type DepartmentDetail,
   type OrganizationUnit,
 } from '@/features/organizations/api'
 
@@ -267,34 +271,92 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
   const client = useQueryClient()
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
+  const [description, setDescription] = useState('')
   const [type, setType] = useState<OrganizationUnit['unit_type']>('department')
   const [managerId, setManagerId] = useState('')
   const [unitStatus, setUnitStatus] = useState<'active' | 'inactive'>('active')
+  const [editing, setEditing] = useState<OrganizationUnit | null>(null)
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
+    null,
+  )
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | ''>(
+    '',
+  )
+  const [sort, setSort] = useState<'name' | 'created_at'>('name')
+  const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
   const [saving, setSaving] = useState(false)
   const members = useQuery({
     queryKey: ['organization-members'],
     queryFn: organizationApi.members,
   })
-  const create = async () => {
+  const departments = useQuery({
+    queryKey: [
+      'organization-departments',
+      search,
+      statusFilter,
+      sort,
+      direction,
+      page,
+    ],
+    queryFn: () =>
+      organizationApi.departments({
+        search,
+        status: statusFilter || undefined,
+        sort,
+        direction,
+        page,
+        page_size: 10,
+      }),
+  })
+  const detail = useQuery({
+    queryKey: ['department-detail', selectedDepartment],
+    queryFn: () => organizationApi.departmentDetail(selectedDepartment!),
+    enabled: Boolean(selectedDepartment),
+  })
+  const resetForm = () => {
+    setName('')
+    setCode('')
+    setDescription('')
+    setType('department')
+    setManagerId('')
+    setUnitStatus('active')
+    setEditing(null)
+  }
+  const edit = (unit: OrganizationUnit) => {
+    setEditing(unit)
+    setName(unit.name)
+    setCode(unit.code ?? '')
+    setDescription(unit.description ?? '')
+    setType(unit.unit_type)
+    setManagerId(unit.manager_id ?? '')
+    setUnitStatus(unit.status)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const save = async () => {
     if (!name.trim()) return
     setSaving(true)
     try {
-      await organizationApi.createOrganizationUnit({
+      const body = {
         name: name.trim(),
         code: code.trim() || null,
+        description: description.trim() || null,
         unit_type: type,
         manager_id: managerId || null,
         status: unitStatus,
         address: {},
         working_hours: {},
-      })
-      setName('')
-      setCode('')
-      setManagerId('')
-      setUnitStatus('active')
+      }
+      if (editing)
+        await organizationApi.updateOrganizationUnit(editing.id, body)
+      else await organizationApi.createOrganizationUnit(body)
+      resetForm()
       await Promise.all([
         client.invalidateQueries({ queryKey: ['organization-units'] }),
         client.invalidateQueries({ queryKey: ['organization-overview'] }),
+        client.invalidateQueries({ queryKey: ['organization-departments'] }),
+        client.invalidateQueries({ queryKey: ['department-detail'] }),
       ])
     } finally {
       setSaving(false)
@@ -303,7 +365,9 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
       <section className="rounded-2xl border bg-card p-5 shadow-sm">
-        <h2 className="font-semibold">Add organization unit</h2>
+        <h2 className="font-semibold">
+          {editing ? `Edit ${editing.name}` : 'Add organization unit'}
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Model a department, branch, or physical location.
         </p>
@@ -341,6 +405,15 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
             />
           </label>
           <label className="block text-sm font-medium">
+            Description
+            <textarea
+              className="mt-2 min-h-20 w-full rounded-xl border bg-background px-3 py-2"
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Purpose and scope for this unit"
+              value={description}
+            />
+          </label>
+          <label className="block text-sm font-medium">
             Department manager
             <select
               className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
@@ -368,42 +441,103 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
               <option value="inactive">Inactive</option>
             </select>
           </label>
-          <button
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground disabled:opacity-50"
-            disabled={saving || !name.trim()}
-            onClick={() => void create()}
-            type="button"
-          >
-            <Plus className="size-4" />
-            {saving ? 'Adding…' : 'Add unit'}
-          </button>
+          <div className="flex gap-2">
+            {editing && (
+              <button
+                className="h-11 rounded-xl border px-4 text-sm font-semibold"
+                onClick={resetForm}
+                type="button"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground disabled:opacity-50"
+              disabled={saving || !name.trim()}
+              onClick={() => void save()}
+              type="button"
+            >
+              <Plus className="size-4" />
+              {saving ? 'Saving…' : editing ? 'Save changes' : 'Add unit'}
+            </button>
+          </div>
         </div>
       </section>
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <header className="border-b p-5">
-          <h2 className="font-semibold">
-            Departments, branches, and locations
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {units.length} organization units
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">Department directory</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {departments.data?.total ?? 0} departments · server-filtered
+              </p>
+            </div>
+            <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+              {units.filter((unit) => unit.unit_type !== 'department').length}{' '}
+              other units
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+            <label className="relative">
+              <Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
+              <input
+                aria-label="Search departments"
+                className="h-10 w-full rounded-xl border bg-background pl-9 pr-3 text-sm"
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(1)
+                }}
+                placeholder="Search name or code"
+                value={search}
+              />
+            </label>
+            <select
+              aria-label="Filter department status"
+              className="h-10 rounded-xl border bg-background px-3 text-sm"
+              onChange={(event) => {
+                setStatusFilter(
+                  event.target.value as 'active' | 'inactive' | '',
+                )
+                setPage(1)
+              }}
+              value={statusFilter}
+            >
+              <option value="">All states</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <select
+              aria-label="Sort departments"
+              className="h-10 rounded-xl border bg-background px-3 text-sm"
+              onChange={(event) => {
+                setSort(event.target.value as 'name' | 'created_at')
+                setPage(1)
+              }}
+              value={sort}
+            >
+              <option value="name">Name</option>
+              <option value="created_at">Recently created</option>
+            </select>
+            <button
+              aria-label="Reverse department sort"
+              className="h-10 rounded-xl border px-3 text-sm font-medium"
+              onClick={() => setDirection(direction === 'asc' ? 'desc' : 'asc')}
+              type="button"
+            >
+              {direction === 'asc' ? 'A–Z' : 'Z–A'}
+            </button>
+          </div>
         </header>
         <div className="divide-y">
-          {units.map((unit) => (
+          {departments.data?.items.map((unit) => (
             <div className="flex items-center gap-4 p-4 sm:px-5" key={unit.id}>
               <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                {unit.unit_type === 'location' ? (
-                  <MapPin className="size-5" />
-                ) : (
-                  <Building2 className="size-5" />
-                )}
+                <Building2 className="size-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{unit.name}</p>
                 <p className="text-xs capitalize text-muted-foreground">
-                  {unit.unit_type}
-                  {unit.code ? ` · ${unit.code}` : ''}
-                  {unit.timezone ? ` · ${unit.timezone}` : ''}
+                  Department{unit.code ? ` · ${unit.code}` : ''}
                 </p>
                 {unit.manager_id && (
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -423,39 +557,166 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
               >
                 {unit.status}
               </span>
-              <button
-                aria-label={`Archive ${unit.name}`}
-                className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-                onClick={() =>
-                  void organizationApi
-                    .deleteOrganizationUnit(unit.id)
-                    .then(async () => {
-                      await client.invalidateQueries({
-                        queryKey: ['organization-units'],
+              <div className="flex items-center gap-1">
+                <button
+                  aria-label={`View ${unit.name}`}
+                  className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => setSelectedDepartment(unit.id)}
+                  type="button"
+                >
+                  <Eye className="size-4" />
+                </button>
+                <button
+                  aria-label={`Edit ${unit.name}`}
+                  className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => edit(unit)}
+                  type="button"
+                >
+                  <Pencil className="size-4" />
+                </button>
+                <button
+                  aria-label={`Archive ${unit.name}`}
+                  className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                  onClick={() =>
+                    void organizationApi
+                      .deleteOrganizationUnit(unit.id)
+                      .then(async () => {
+                        await Promise.all([
+                          client.invalidateQueries({
+                            queryKey: ['organization-units'],
+                          }),
+                          client.invalidateQueries({
+                            queryKey: ['organization-overview'],
+                          }),
+                          client.invalidateQueries({
+                            queryKey: ['organization-departments'],
+                          }),
+                          client.invalidateQueries({
+                            queryKey: ['department-detail'],
+                          }),
+                        ])
                       })
-                      await client.invalidateQueries({
-                        queryKey: ['organization-overview'],
-                      })
-                    })
-                }
-                type="button"
-              >
-                <Trash2 className="size-4" />
-              </button>
+                  }
+                  type="button"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
             </div>
           ))}
-          {units.length === 0 && (
+          {departments.isLoading && (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              Loading departments…
+            </div>
+          )}
+          {!departments.isLoading && departments.data?.items.length === 0 && (
             <div className="p-10 text-center">
               <Building2 className="mx-auto size-8 text-muted-foreground" />
-              <h3 className="mt-3 font-semibold">No organization units yet</h3>
+              <h3 className="mt-3 font-semibold">No departments found</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Add your first department, branch, or location.
+                Adjust the filters or add a department to get started.
               </p>
             </div>
           )}
         </div>
+        <footer className="flex items-center justify-between border-t p-4 text-sm text-muted-foreground">
+          <span>
+            Page {departments.data?.page ?? 1} of{' '}
+            {departments.data?.total_pages ?? 1}
+          </span>
+          <div className="flex gap-2">
+            <button
+              aria-label="Previous department page"
+              className="grid size-9 place-items-center rounded-lg border disabled:opacity-40"
+              disabled={!departments.data || departments.data.page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              type="button"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              aria-label="Next department page"
+              className="grid size-9 place-items-center rounded-lg border disabled:opacity-40"
+              disabled={
+                !departments.data ||
+                departments.data.page >= departments.data.total_pages
+              }
+              onClick={() => setPage((current) => current + 1)}
+              type="button"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        </footer>
       </section>
+      {selectedDepartment && (
+        <DepartmentPanel
+          detail={detail.data}
+          loading={detail.isLoading}
+          onClose={() => setSelectedDepartment(null)}
+        />
+      )}
     </div>
+  )
+}
+
+function DepartmentPanel({
+  detail,
+  loading,
+  onClose,
+}: {
+  detail: DepartmentDetail | undefined
+  loading: boolean
+  onClose: () => void
+}) {
+  return (
+    <section
+      aria-label="Department details"
+      className="rounded-2xl border bg-card p-5 shadow-sm xl:col-span-2"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-primary">
+            Department overview
+          </p>
+          <h2 className="mt-1 text-xl font-semibold">
+            {detail?.name ?? 'Loading department…'}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {detail?.description || 'No description has been added.'}
+          </p>
+        </div>
+        <button
+          className="rounded-xl border px-3 py-2 text-sm font-medium"
+          onClick={onClose}
+          type="button"
+        >
+          Close
+        </button>
+      </div>
+      {loading ? (
+        <p className="mt-5 text-sm text-muted-foreground">
+          Loading live metrics…
+        </p>
+      ) : detail ? (
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <StructureMetric label="Employees" value={detail.employee_count} />
+          <StructureMetric label="Teams" value={detail.team_count} />
+          <div className="rounded-xl bg-muted/45 p-4">
+            <p className="text-sm font-semibold">
+              {detail.manager_name ?? 'Unassigned'}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Department manager
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-destructive">
+          Department details could not be loaded.
+        </p>
+      )}
+    </section>
   )
 }
 

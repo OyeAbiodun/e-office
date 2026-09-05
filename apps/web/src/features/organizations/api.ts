@@ -131,6 +131,14 @@ export interface DepartmentDetail extends OrganizationUnit {
   recent_activity: Array<{ id: string; action: string; created_at: string }>
 }
 
+export interface DepartmentDirectory {
+  items: OrganizationUnit[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
 export interface OrganizationOverview {
   organization: Organization
   member_count: number
@@ -196,6 +204,24 @@ export const organizationApi = {
       {},
       true,
     ),
+  departments: (filters: {
+    search?: string
+    status?: 'active' | 'inactive'
+    sort?: 'name' | 'created_at'
+    direction?: 'asc' | 'desc'
+    page?: number
+    page_size?: number
+  }) => {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters))
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    const suffix = query.size ? `?${query}` : ''
+    return apiRequest<DepartmentDirectory>(
+      `/organizations/current/departments${suffix}`,
+      {},
+      true,
+    )
+  },
   deleteOrganizationUnit: (id: string) =>
     apiRequest(
       `/organizations/current/units/${id}`,

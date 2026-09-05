@@ -92,6 +92,16 @@ class DepartmentDetailResponse(OrganizationUnitResponse):
     recent_activity: list[dict[str, object]] = Field(default_factory=list)
 
 
+class DepartmentDirectoryResponse(BaseModel):
+    """Server-filtered department directory."""
+
+    items: list[OrganizationUnitResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 class OrganizationPolicyUpdate(BaseModel):
     """Validated policy category payload."""
 

@@ -42,6 +42,17 @@ async def test_employee_lifecycle_history_department_and_custom_role(
     assert custom_role.status_code == 201, custom_role.text
     role_id = custom_role.json()["data"]["id"]
 
+    second_role = await organization_client.post(
+        "/api/v1/roles",
+        headers=admin_headers,
+        json={
+            "name": "Product observer",
+            "description": "Can view product planning.",
+            "permission_ids": [permissions.json()["data"][0]["id"]],
+        },
+    )
+    assert second_role.status_code == 201, second_role.text
+
     employee_response = await organization_client.post(
         "/api/v1/users",
         headers=admin_headers,
@@ -74,6 +85,15 @@ async def test_employee_lifecycle_history_department_and_custom_role(
     assert directory.status_code == 200, directory.text
     assert [row["id"] for row in directory.json()["data"]["items"]] == [employee["id"]]
 
+    department_directory = await organization_client.get(
+        "/api/v1/organizations/current/departments",
+        headers=admin_headers,
+        params={"search": "PROD", "status": "active", "page": 1, "page_size": 10},
+    )
+    assert department_directory.status_code == 200, department_directory.text
+    assert department_directory.json()["data"]["total"] == 1
+    assert department_directory.json()["data"]["items"][0]["id"] == department_id
+
     updated = await organization_client.patch(
         f"/api/v1/users/{employee['id']}",
         headers=admin_headers,
@@ -87,13 +107,24 @@ async def test_employee_lifecycle_history_department_and_custom_role(
     assert updated.status_code == 200, updated.text
     assert updated.json()["data"]["employment_status"] == "active"
 
+    role_update = await organization_client.patch(
+        f"/api/v1/users/{employee['id']}",
+        headers=admin_headers,
+        json={
+            "role_ids": [role_id, second_role.json()["data"]["id"]],
+            "effective_date": "2026-04-06",
+        },
+    )
+    assert role_update.status_code == 200, role_update.text
+
     history = await organization_client.get(
         f"/api/v1/employees/{employee['id']}/history", headers=admin_headers
     )
     assert history.status_code == 200, history.text
     assert {entry["change_type"] for entry in history.json()["data"]["items"]} >= {
         "hired",
-        "employment_updated",
+        "status_changed",
+        "roles_changed",
     }
 
     terminated = await organization_client.post(
@@ -152,3 +183,39 @@ async def test_employee_records_and_departments_are_tenant_isolated(
         f"/api/v1/organizations/current/departments/{department_id}", headers=admin_headers
     )
     assert inaccessible.status_code == 404
+
+
+async def test_system_roles_remain_protected(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """Default roles cannot be removed through the administration API."""
+    roles = await organization_client.get("/api/v1/roles", headers=admin_headers)
+    assert roles.status_code == 200, roles.text
+    system_role = next(role for role in roles.json()["data"] if role["system_role"])
+
+    response = await organization_client.delete(
+        f"/api/v1/roles/{system_role['id']}", headers=admin_headers
+    )
+    assert response.status_code == 409
+
+
+async def test_unassigned_custom_role_can_be_deleted(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """A custom role that has no assignments can be safely removed."""
+    permissions = await organization_client.get("/api/v1/permissions", headers=admin_headers)
+    assert permissions.status_code == 200, permissions.text
+    created = await organization_client.post(
+        "/api/v1/roles",
+        headers=admin_headers,
+        json={
+            "name": "Disposable acceptance role",
+            "permission_ids": [permissions.json()["data"][0]["id"]],
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    deleted = await organization_client.delete(
+        f"/api/v1/roles/{created.json()['data']['id']}", headers=admin_headers
+    )
+    assert deleted.status_code == 204, deleted.text

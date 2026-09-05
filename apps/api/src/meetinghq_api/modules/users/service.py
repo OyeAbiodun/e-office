@@ -36,6 +36,7 @@ from meetinghq_api.modules.users.models import (
     UserApiToken,
     UserProfileCenter,
     UserStatus,
+    user_roles,
 )
 from meetinghq_api.modules.users.schemas import (
     ApiTokenCreate,
@@ -314,7 +315,10 @@ class UserService:
         self.session.add(role)
         await self.session.flush()
         self._audit(organization_id, actor_id, "role.created", role.id, {}, resource="role")
-        return role
+        # A freshly inserted ORM instance has not loaded its correlated
+        # ``member_count`` property. Re-query before FastAPI serializes the
+        # response, otherwise async lazy loading would fail at the API edge.
+        return await self._role(organization_id, role.id)
 
     async def update_role(
         self, organization_id: uuid.UUID, role_id: uuid.UUID, body: RoleUpdate, actor_id: uuid.UUID
@@ -364,7 +368,10 @@ class UserService:
         role = await self._role(organization_id, role_id)
         if role.system_role:
             raise ConflictError("Default roles cannot be deleted")
-        if role.members:
+        member_count = await self.session.scalar(
+            select(func.count()).select_from(user_roles).where(user_roles.c.role_id == role.id)
+        )
+        if member_count:
             raise ConflictError("Reassign members before deleting this role")
         self._audit(organization_id, actor_id, "role.deleted", role.id, {}, resource="role")
         await self.session.delete(role)
@@ -962,6 +969,9 @@ class UserService:
                 user.employment_end_date.isoformat() if user.employment_end_date else None
             ),
             "location": user.location,
+            # Include role assignments so a privilege change is visible in the
+            # effective-dated employment record as well as the immutable audit log.
+            "role_ids": sorted(str(role.id) for role in user.roles),
         }
 
     @staticmethod
@@ -974,6 +984,8 @@ class UserService:
             return "manager_changed"
         if "job_title" in changed:
             return "job_changed"
+        if "role_ids" in changed:
+            return "roles_changed"
         return "employment_updated"
 
     async def _roles(self, organization_id: uuid.UUID, role_ids: list[uuid.UUID]) -> list[Role]:

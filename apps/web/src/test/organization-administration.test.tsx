@@ -7,7 +7,10 @@ const organizationApiMock = vi.hoisted(() => ({
   organizationOverview: vi.fn(),
   organizationUnits: vi.fn(),
   organizationPolicies: vi.fn(),
+  departments: vi.fn(),
+  departmentDetail: vi.fn(),
   createOrganizationUnit: vi.fn(),
+  updateOrganizationUnit: vi.fn(),
   members: vi.fn(),
   deleteOrganizationUnit: vi.fn(),
   updateOrganizationPolicy: vi.fn(),
@@ -70,6 +73,14 @@ function renderPage() {
 beforeEach(() => {
   organizationApiMock.organizationOverview.mockResolvedValue(overview)
   organizationApiMock.organizationUnits.mockResolvedValue([])
+  organizationApiMock.departments.mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 10,
+    total_pages: 1,
+  })
+  organizationApiMock.departmentDetail.mockResolvedValue({})
   organizationApiMock.organizationPolicies.mockResolvedValue({
     security: { enabled: true, enforcement: 'organization_default' },
   })
@@ -111,6 +122,7 @@ test('creates structure and updates tenant policy through the backend API', asyn
     expect(organizationApiMock.createOrganizationUnit).toHaveBeenCalledWith({
       name: 'Product Engineering',
       code: 'ENG',
+      description: null,
       unit_type: 'department',
       manager_id: null,
       status: 'active',
@@ -131,5 +143,29 @@ test('creates structure and updates tenant policy through the backend API', asyn
       enabled: false,
       enforcement: 'organization_default',
     },
+  )
+})
+
+test('filters the server-paginated department directory', async () => {
+  renderPage()
+  await screen.findByRole('heading', { name: 'MeetingHQ' })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Structure' }))
+  fireEvent.change(
+    screen.getByRole('textbox', { name: 'Search departments' }),
+    {
+      target: { value: 'Product' },
+    },
+  )
+
+  await waitFor(() =>
+    expect(organizationApiMock.departments).toHaveBeenLastCalledWith({
+      search: 'Product',
+      status: undefined,
+      sort: 'name',
+      direction: 'asc',
+      page: 1,
+      page_size: 10,
+    }),
   )
 })
