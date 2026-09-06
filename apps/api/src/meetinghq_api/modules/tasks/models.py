@@ -117,6 +117,55 @@ class TaskComment(SoftDeleteMixin, Base):
     )
 
 
+class TaskAttachment(SoftDeleteMixin, Base):
+    """Task-owned reference to the shared secure object-storage boundary."""
+
+    __tablename__ = "task_attachments"
+    __table_args__ = (Index("ix_task_attachments_task_created", "task_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(255))
+    size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(1000), unique=True)
+    url: Mapped[str] = mapped_column(String(1200))
+    uploaded_by_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TaskChecklistItem(Base):
+    """Deliberately lightweight checklist item; no dependency graph semantics."""
+
+    __tablename__ = "task_checklist_items"
+    __table_args__ = (Index("ix_task_checklist_items_task_position", "task_id", "position"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(500))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TaskHistory(Base):
     __tablename__ = "task_history"
     __table_args__ = (Index("ix_task_history_task_created", "task_id", "created_at"),)

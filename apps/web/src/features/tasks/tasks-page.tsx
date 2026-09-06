@@ -2,9 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Clock3, ListChecks, Plus, Sparkles } from 'lucide-react'
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
 
-import { tasksApi, type Task, type TaskPriority, type TaskStatus } from './api'
+import {
+  tasksApi,
+  type Task,
+  type TaskAssignee,
+  type TaskDetail as TaskDetailResponse,
+  type TaskPriority,
+  type TaskStatus,
+} from './api'
 import { useAuth } from '@/features/auth/auth-store'
-import { userAdminApi } from '@/features/users/api'
 
 const statuses: Array<[TaskStatus, string]> = [
   ['not_started', 'Not started'],
@@ -43,13 +49,7 @@ export function TasksPage() {
   })
   const people = useQuery({
     queryKey: ['task-assignees'],
-    queryFn: () =>
-      userAdminApi.employees({
-        status: 'active',
-        employment_status: 'active',
-        page: 1,
-        page_size: 100,
-      }),
+    queryFn: tasksApi.assignees,
   })
   const dailySummary = useQuery({
     queryKey: ['task-daily-summary', todayDate],
@@ -84,16 +84,16 @@ export function TasksPage() {
   const rows = tasks.data?.items ?? []
   const overdue = rows.filter((task) => task.is_overdue).length
   const today = rows.filter((task) => task.due_date === todayDate).length
-  const scopeTabs = [
+  const scopeTabs: Array<[string, string]> = [
     ['mine', 'Today'],
     ['assigned', 'Assigned to me'],
     ['created', 'Created by me'],
     ...(permissions.has('tasks.view_team') || permissions.has('tasks.manage')
-      ? [['team', 'My team']]
+      ? ([['team', 'My team']] as Array<[string, string]>)
       : []),
     ...(permissions.has('tasks.view_department') ||
     permissions.has('tasks.manage')
-      ? [['department', 'Department work']]
+      ? ([['department', 'Department work']] as Array<[string, string]>)
       : []),
   ]
 
@@ -226,6 +226,34 @@ export function TasksPage() {
               Weekly summary unavailable.
             </p>
           )}
+          {weeklySummary.data?.workload.length ? (
+            <div className="mt-5 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Team workload</h3>
+                <span className="text-xs text-muted-foreground">
+                  Authorized view
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {weeklySummary.data.workload.map((person) => (
+                  <div
+                    className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-sm"
+                    key={person.user_id}
+                  >
+                    <span className="min-w-0 truncate font-medium">
+                      {person.display_name}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {person.open_tasks} open · {person.overdue_tasks} overdue
+                      {person.blocked_tasks
+                        ? ` · ${person.blocked_tasks} blocked`
+                        : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </article>
       </section>
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -237,6 +265,7 @@ export function TasksPage() {
                 key={key}
                 onClick={() => {
                   setScope(key)
+                  setDue(key === 'mine' ? 'today' : undefined)
                   setPage(1)
                 }}
                 type="button"
@@ -370,7 +399,7 @@ export function TasksPage() {
       </section>
       {showCreate && (
         <TaskForm
-          people={people.data?.items ?? []}
+          people={people.data ?? []}
           onClose={() => setShowCreate(false)}
           onSave={(body) => create.mutate(body)}
         />
@@ -483,7 +512,7 @@ function TaskForm({
   onClose,
   onSave,
 }: {
-  people: Array<{ id: string; display_name: string; job_title: string | null }>
+  people: TaskAssignee[]
   onClose: () => void
   onSave: (body: Record<string, unknown>) => void
 }) {
@@ -670,6 +699,7 @@ function TaskDetail({
     queryFn: () => tasksApi.get(task.id),
   })
   const [comment, setComment] = useState('')
+  const [checklistTitle, setChecklistTitle] = useState('')
   const client = useQueryClient()
   const commentMutation = useMutation({
     mutationFn: () => tasksApi.comment(task.id, comment),
@@ -677,6 +707,79 @@ function TaskDetail({
       setComment('')
       void client.invalidateQueries({ queryKey: ['task', task.id] })
     },
+  })
+  const refreshDetail = () =>
+    void client.invalidateQueries({ queryKey: ['task', task.id] })
+  const upload = useMutation({
+    mutationFn: (file: File) => tasksApi.uploadAttachment(task.id, file),
+    onSuccess: refreshDetail,
+  })
+  const addChecklist = useMutation({
+    mutationFn: () => tasksApi.addChecklist(task.id, checklistTitle),
+    onSuccess: () => {
+      setChecklistTitle('')
+      refreshDetail()
+    },
+  })
+  const updateChecklist = useMutation({
+    mutationFn: ({
+      itemId,
+      completed,
+    }: {
+      itemId: string
+      completed: boolean
+    }) => tasksApi.updateChecklist(task.id, itemId, { completed }),
+    onMutate: ({ itemId, completed }) => {
+      const previous = client.getQueryData<TaskDetailResponse>([
+        'task',
+        task.id,
+      ])
+      client.setQueryData<TaskDetailResponse>(['task', task.id], (current) =>
+        current
+          ? {
+              ...current,
+              checklist: current.checklist.map((item) =>
+                item.id === itemId
+                  ? {
+                      ...item,
+                      completed_at: completed ? new Date().toISOString() : null,
+                    }
+                  : item,
+              ),
+            }
+          : current,
+      )
+      return { previous }
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous)
+        client.setQueryData<TaskDetailResponse>(
+          ['task', task.id],
+          context.previous,
+        )
+    },
+    onSuccess: (updated) => {
+      client.setQueryData<TaskDetailResponse>(['task', task.id], (current) =>
+        current
+          ? {
+              ...current,
+              checklist: current.checklist.map((item) =>
+                item.id === updated.id ? updated : item,
+              ),
+            }
+          : current,
+      )
+      refreshDetail()
+    },
+  })
+  const deleteChecklist = useMutation({
+    mutationFn: (itemId: string) => tasksApi.deleteChecklist(task.id, itemId),
+    onSuccess: refreshDetail,
+  })
+  const deleteAttachment = useMutation({
+    mutationFn: (attachmentId: string) =>
+      tasksApi.deleteAttachment(task.id, attachmentId),
+    onSuccess: refreshDetail,
   })
   return (
     <Dialog title={`Task #${task.sequence}`} onClose={onClose}>
@@ -709,6 +812,105 @@ function TaskDetail({
             value={task.progress ?? 0}
           />
         </label>
+        <section>
+          <h3 className="font-semibold">Checklist</h3>
+          <div className="mt-2 space-y-2">
+            {detail.data?.checklist.map((item) => (
+              <div
+                className="flex items-center gap-2 rounded-lg bg-muted p-2 text-sm"
+                key={item.id}
+              >
+                <input
+                  aria-label={`Complete ${item.title}`}
+                  checked={Boolean(item.completed_at)}
+                  onChange={(event) =>
+                    updateChecklist.mutate({
+                      itemId: item.id,
+                      completed: event.target.checked,
+                    })
+                  }
+                  type="checkbox"
+                />
+                <span
+                  className={
+                    item.completed_at
+                      ? 'line-through text-muted-foreground'
+                      : ''
+                  }
+                >
+                  {item.title}
+                </span>
+                <button
+                  aria-label={`Delete ${item.title}`}
+                  className="ml-auto text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteChecklist.mutate(item.id)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <form
+            className="mt-3 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (checklistTitle.trim()) addChecklist.mutate()
+            }}
+          >
+            <input
+              aria-label="New checklist item"
+              className="min-w-0 flex-1 rounded-lg border bg-background p-2 text-sm"
+              onChange={(event) => setChecklistTitle(event.target.value)}
+              placeholder="Add a checklist item"
+              value={checklistTitle}
+            />
+            <button
+              className="rounded-lg border px-3 text-sm font-semibold"
+              type="submit"
+            >
+              Add
+            </button>
+          </form>
+        </section>
+        <section>
+          <h3 className="font-semibold">Attachments</h3>
+          <input
+            aria-label="Upload task attachment"
+            className="mt-2 block w-full text-sm"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) upload.mutate(file)
+              event.currentTarget.value = ''
+            }}
+            type="file"
+          />
+          <div className="mt-3 space-y-2 text-sm">
+            {detail.data?.attachments.map((attachment) => (
+              <div
+                className="flex items-center gap-2 rounded-lg bg-muted p-2"
+                key={attachment.id}
+              >
+                <a
+                  className="min-w-0 flex-1 truncate text-primary underline"
+                  href={attachment.url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {attachment.filename} · {Math.ceil(attachment.size / 1024)} KB
+                </a>
+                <button
+                  aria-label={`Delete ${attachment.filename}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteAttachment.mutate(attachment.id)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
         <section>
           <h3 className="font-semibold">Activity</h3>
           <div className="mt-2 max-h-40 space-y-2 overflow-auto text-sm">

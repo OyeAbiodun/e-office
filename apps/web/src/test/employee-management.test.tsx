@@ -148,6 +148,6 @@ test('employee editor exposes organization context and effective-dated history',
   expect(screen.getByRole('combobox', { name: 'Department' })).toHaveValue(
     'department-1',
   )
-  expect(screen.getByRole('textbox', { name: 'Effective date' })).toBeVisible()
+  expect(screen.getByLabelText('Effective date')).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Change reason' })).toBeVisible()
 })

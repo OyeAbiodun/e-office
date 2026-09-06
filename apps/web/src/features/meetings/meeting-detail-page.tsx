@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import {
   BarChart3,
@@ -16,6 +16,7 @@ import { useState } from 'react'
 
 import { meetingApi, type MeetingDetail } from '@/features/meetings/api'
 import { useAuth } from '@/features/auth/auth-store'
+import { tasksApi } from '@/features/tasks/api'
 
 type Section =
   | 'agenda'
@@ -49,6 +50,12 @@ export function MeetingDetailPage() {
   })
   const [section, setSection] = useState<Section>('agenda')
   const [value, setValue] = useState('')
+  const [linkedTasks, setLinkedTasks] = useState<Record<string, string>>({})
+  const linkAction = useMutation({
+    mutationFn: (actionId: string) => tasksApi.createFromAction(actionId),
+    onSuccess: (task, actionId) =>
+      setLinkedTasks((current) => ({ ...current, [actionId]: task.id })),
+  })
   const refresh = async () => {
     setValue('')
     await queryClient.invalidateQueries({ queryKey: ['meeting', meetingId] })
@@ -413,6 +420,29 @@ export function MeetingDetailPage() {
                         >
                           Make presenter
                         </button>
+                      </div>
+                    ) : null}
+                    {section === 'actions' && item.id ? (
+                      <div className="mt-3">
+                        {linkedTasks[String(item.id)] ? (
+                          <Link
+                            className="text-xs font-semibold text-primary hover:underline"
+                            to="/tasks"
+                          >
+                            View linked task
+                          </Link>
+                        ) : (
+                          <button
+                            className="rounded-lg border px-2.5 py-1 text-xs font-semibold hover:border-primary hover:text-primary disabled:opacity-50"
+                            disabled={linkAction.isPending}
+                            onClick={() => linkAction.mutate(String(item.id))}
+                            type="button"
+                          >
+                            {linkAction.isPending
+                              ? 'Creating task…'
+                              : 'Create linked task'}
+                          </button>
+                        )}
                       </div>
                     ) : null}
                     <p className="mt-2 text-xs capitalize text-muted-foreground">

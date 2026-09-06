@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   dailySummary: vi.fn(),
   weeklySummary: vi.fn(),
-  employees: vi.fn(),
+  assignees: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   recordActivity: vi.fn(),
@@ -24,6 +24,7 @@ vi.mock('@/features/auth/auth-store', () => ({
 vi.mock('@/features/tasks/api', () => ({
   tasksApi: {
     list: mocks.list,
+    assignees: mocks.assignees,
     dailySummary: mocks.dailySummary,
     weeklySummary: mocks.weeklySummary,
     create: mocks.create,
@@ -32,10 +33,6 @@ vi.mock('@/features/tasks/api', () => ({
     get: vi.fn(),
     comment: vi.fn(),
   },
-}))
-
-vi.mock('@/features/users/api', () => ({
-  userAdminApi: { employees: mocks.employees },
 }))
 
 function renderPage() {
@@ -102,8 +99,9 @@ beforeEach(() => {
     activity_minutes: 65,
     meetings_attended: 1,
     upcoming_due: 2,
+    workload: [],
   })
-  mocks.employees.mockResolvedValue({ items: [] })
+  mocks.assignees.mockResolvedValue([])
   mocks.create.mockResolvedValue({ id: 'task-created' })
 })
 
@@ -134,5 +132,20 @@ test('shows live work summaries and supports lightweight task creation', async (
       title: 'Send review notes',
       priority: 'normal',
     }),
+  )
+})
+
+test('clears the implicit today filter when switching to a broader work scope', async () => {
+  renderPage()
+
+  await screen.findByText('Prepare the customer review')
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Created by me' }))
+  })
+
+  await vi.waitFor(() =>
+    expect(mocks.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: 'created', due: undefined }),
+    ),
   )
 })

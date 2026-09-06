@@ -1,0 +1,1 @@
+MeetingHQ task attachment acceptance fixture.

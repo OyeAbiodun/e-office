@@ -48,6 +48,17 @@ class TaskCommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=20000)
 
 
+class TaskChecklistItemCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    position: int | None = Field(default=None, ge=0)
+
+
+class TaskChecklistItemUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    completed: bool | None = None
+    position: int | None = Field(default=None, ge=0)
+
+
 class DailyActivityCreate(BaseModel):
     activity_date: date
     summary: str = Field(min_length=1, max_length=20000)
@@ -99,6 +110,17 @@ class TaskPage(BaseModel):
     total_pages: int
 
 
+class TaskAssigneeResponse(BaseModel):
+    """Authorization-filtered employee data for the task assignment picker."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    display_name: str
+    job_title: str | None
+    department_id: uuid.UUID | None
+    department_name: str | None = None
+
+
 class TaskCommentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -124,6 +146,30 @@ class TaskDetailResponse(BaseModel):
     task: TaskResponse
     comments: list[TaskCommentResponse]
     history: list[TaskHistoryResponse]
+    attachments: list["TaskAttachmentResponse"] = Field(default_factory=list)
+    checklist: list["TaskChecklistItemResponse"] = Field(default_factory=list)
+
+
+class TaskAttachmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    size: int
+    url: str
+    uploaded_by_id: uuid.UUID
+    created_at: datetime
+
+
+class TaskChecklistItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    title: str
+    position: int
+    completed_at: datetime | None
+    completed_by_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class DailyActivityResponse(BaseModel):

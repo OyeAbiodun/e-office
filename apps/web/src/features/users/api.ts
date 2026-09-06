@@ -162,7 +162,9 @@ export interface EmploymentHistoryPage {
   total_pages: number
 }
 
-function params(filters: Record<string, string | boolean | undefined>) {
+function params(
+  filters: Record<string, string | number | boolean | undefined>,
+) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(filters))
     if (value !== undefined && value !== '') query.set(key, String(value))
@@ -212,6 +214,7 @@ export const userAdminApi = {
     ),
   employees: (filters: {
     search?: string
+    role_id?: string
     department_id?: string
     manager_id?: string
     employment_status?: string

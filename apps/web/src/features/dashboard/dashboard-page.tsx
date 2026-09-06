@@ -396,7 +396,7 @@ export function DashboardPage() {
             </div>
             <CheckCircle2 className="size-5 text-primary" />
           </div>
-          {work.data.items.length ? (
+          {work.data?.items.length ? (
             <div className="mt-4 divide-y">
               {work.data.items.map((task) => (
                 <Link
@@ -440,12 +440,15 @@ export function DashboardPage() {
           </p>
           <div className="mt-5 grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-muted/60 p-4">
-              <p className="text-2xl font-semibold">{work.data.total}</p>
+              <p className="text-2xl font-semibold">{work.data?.total ?? 0}</p>
               <p className="mt-1 text-xs text-muted-foreground">Task records</p>
             </div>
             <div className="rounded-xl bg-muted/60 p-4">
               <p className="text-2xl font-semibold">
-                {work.data.items.filter((task) => task.is_overdue).length}
+                {
+                  (work.data?.items ?? []).filter((task) => task.is_overdue)
+                    .length
+                }
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Overdue in this view

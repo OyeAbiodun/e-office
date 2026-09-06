@@ -4,6 +4,7 @@
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import cast
 
 from sqlalchemy import and_, case, func, or_, select
@@ -15,11 +16,23 @@ from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.meetings.models import Meeting, MeetingActionItem, MeetingAttendee
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.organizations.models import OrganizationUnit
-from meetinghq_api.modules.tasks.models import DailyActivity, Task, TaskComment, TaskHistory
+from meetinghq_api.modules.tasks.models import (
+    DailyActivity,
+    Task,
+    TaskAttachment,
+    TaskChecklistItem,
+    TaskComment,
+    TaskHistory,
+)
 from meetinghq_api.modules.tasks.schemas import (
     DailyActivityCreate,
     DailyActivityResponse,
     DailySummary,
+    TaskAssigneeResponse,
+    TaskAttachmentResponse,
+    TaskChecklistItemCreate,
+    TaskChecklistItemResponse,
+    TaskChecklistItemUpdate,
     TaskCommentCreate,
     TaskCommentResponse,
     TaskCreate,
@@ -57,6 +70,61 @@ class TaskService:
     @classmethod
     def can_manage(cls, user: User) -> bool:
         return "tasks.manage" in cls.permissions(user)
+
+    async def assignable_users(self, actor: User) -> list[TaskAssigneeResponse]:
+        """Return only people the actor can legitimately assign work to.
+
+        Mutation checks remain authoritative; narrowing this source makes the picker
+        truthful and avoids advertising employees outside a manager's remit.
+        """
+        permissions = self.permissions(actor)
+        query = select(User).where(
+            User.organization_id == actor.organization_id,
+            User.status == UserStatus.ACTIVE,
+            User.employment_status != "terminated",
+            User.removed_at.is_(None),
+        )
+        if not self.can_manage(actor):
+            if "tasks.assign" not in permissions:
+                query = query.where(User.id == actor.id)
+            elif "tasks.view_department" in permissions and actor.department_id:
+                query = query.where(
+                    or_(
+                        User.id == actor.id,
+                        User.manager_id == actor.id,
+                        User.department_id == actor.department_id,
+                    )
+                )
+            else:
+                query = query.where(or_(User.id == actor.id, User.manager_id == actor.id))
+        users = list((await self.session.scalars(query.order_by(User.display_name, User.id))).all())
+        department_ids = {user.department_id for user in users if user.department_id}
+        department_names: dict[uuid.UUID, str] = {}
+        if department_ids:
+            departments = list(
+                (
+                    await self.session.scalars(
+                        select(OrganizationUnit).where(
+                            OrganizationUnit.organization_id == actor.organization_id,
+                            OrganizationUnit.id.in_(department_ids),
+                            OrganizationUnit.deleted_at.is_(None),
+                        )
+                    )
+                ).all()
+            )
+            department_names = {department.id: department.name for department in departments}
+        return [
+            TaskAssigneeResponse(
+                id=user.id,
+                display_name=user.display_name,
+                job_title=user.job_title,
+                department_id=user.department_id,
+                department_name=(
+                    department_names.get(user.department_id) if user.department_id else None
+                ),
+            )
+            for user in users
+        ]
 
     async def create(self, actor: User, body: TaskCreate) -> Task:
         assignee_id = body.assignee_id or actor.id
@@ -226,11 +294,145 @@ class TaskService:
                 )
             ).all()
         )
+        attachments = list(
+            (
+                await self.session.scalars(
+                    select(TaskAttachment)
+                    .where(TaskAttachment.task_id == task.id, TaskAttachment.deleted_at.is_(None))
+                    .order_by(TaskAttachment.created_at.desc())
+                )
+            ).all()
+        )
+        checklist = list(
+            (
+                await self.session.scalars(
+                    select(TaskChecklistItem)
+                    .where(TaskChecklistItem.task_id == task.id)
+                    .order_by(TaskChecklistItem.position, TaskChecklistItem.created_at)
+                )
+            ).all()
+        )
         return TaskDetailResponse(
             task=await self._task_response(task),
             comments=[await self._comment_response(row) for row in comments],
             history=[await self._history_response(row) for row in history],
+            attachments=[self._attachment_response(row) for row in attachments],
+            checklist=[self._checklist_response(row) for row in checklist],
         )
+
+    async def add_attachment(
+        self,
+        actor: User,
+        task_id: uuid.UUID,
+        *,
+        filename: str,
+        content_type: str,
+        size: int,
+        storage_key: str,
+        url: str,
+    ) -> TaskAttachment:
+        task = await self._visible_task(actor, task_id)
+        await self._assert_task_editable(actor, task)
+        safe_name = Path(filename).name.strip()
+        if not safe_name or safe_name in {".", ".."}:
+            raise ValidationError("Attachment filename is invalid")
+        row = TaskAttachment(
+            organization_id=actor.organization_id,
+            task_id=task.id,
+            filename=safe_name[:255],
+            content_type=content_type,
+            size=size,
+            storage_key=storage_key,
+            url=url,
+            uploaded_by_id=actor.id,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        await self._record(task, actor.id, "attachment_added", {"attachment_id": str(row.id)})
+        await self._activity(task, actor.id, "task.attachment_added")
+        self._audit(actor, "task.attachment_added", task.id, {"attachment_id": str(row.id)})
+        return row
+
+    async def delete_attachment(
+        self, actor: User, task_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> str:
+        task = await self._visible_task(actor, task_id)
+        await self._assert_task_editable(actor, task)
+        row = await self.session.scalar(
+            select(TaskAttachment).where(
+                TaskAttachment.id == attachment_id,
+                TaskAttachment.task_id == task.id,
+                TaskAttachment.organization_id == actor.organization_id,
+                TaskAttachment.deleted_at.is_(None),
+            )
+        )
+        if row is None:
+            raise NotFoundError("Task attachment not found")
+        row.soft_delete(actor.id)
+        await self._record(task, actor.id, "attachment_removed", {"attachment_id": str(row.id)})
+        self._audit(actor, "task.attachment_removed", task.id, {"attachment_id": str(row.id)})
+        return row.storage_key
+
+    async def add_checklist_item(
+        self, actor: User, task_id: uuid.UUID, body: TaskChecklistItemCreate
+    ) -> TaskChecklistItem:
+        task = await self._visible_task(actor, task_id)
+        await self._assert_task_editable(actor, task)
+        position = body.position
+        if position is None:
+            position = (
+                int(
+                    await self.session.scalar(
+                        select(func.coalesce(func.max(TaskChecklistItem.position), -1)).where(
+                            TaskChecklistItem.task_id == task.id
+                        )
+                    )
+                    or -1
+                )
+                + 1
+            )
+        row = TaskChecklistItem(
+            organization_id=actor.organization_id,
+            task_id=task.id,
+            title=body.title.strip(),
+            position=position,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        await self.session.refresh(row)
+        await self._record(task, actor.id, "checklist_added", {"item_id": str(row.id)})
+        self._audit(actor, "task.checklist_added", task.id, {"item_id": str(row.id)})
+        return row
+
+    async def update_checklist_item(
+        self, actor: User, task_id: uuid.UUID, item_id: uuid.UUID, body: TaskChecklistItemUpdate
+    ) -> TaskChecklistItem:
+        task = await self._visible_task(actor, task_id)
+        await self._assert_task_editable(actor, task)
+        row = await self._checklist_item(actor.organization_id, task.id, item_id)
+        values = body.model_dump(exclude_unset=True)
+        if "title" in values:
+            row.title = cast(str, values["title"]).strip()
+        if "position" in values:
+            row.position = cast(int, values["position"])
+        if "completed" in values:
+            row.completed_at = datetime.now(UTC) if values["completed"] else None
+            row.completed_by_id = actor.id if values["completed"] else None
+        await self.session.flush()
+        await self.session.refresh(row)
+        await self._record(task, actor.id, "checklist_updated", {"item_id": str(row.id)})
+        self._audit(actor, "task.checklist_updated", task.id, {"item_id": str(row.id)})
+        return row
+
+    async def delete_checklist_item(
+        self, actor: User, task_id: uuid.UUID, item_id: uuid.UUID
+    ) -> None:
+        task = await self._visible_task(actor, task_id)
+        await self._assert_task_editable(actor, task)
+        row = await self._checklist_item(actor.organization_id, task.id, item_id)
+        await self.session.delete(row)
+        await self._record(task, actor.id, "checklist_removed", {"item_id": str(row.id)})
+        self._audit(actor, "task.checklist_removed", task.id, {"item_id": str(row.id)})
 
     async def update(self, actor: User, task_id: uuid.UUID, body: TaskUpdate) -> Task:
         task = await self._visible_task(actor, task_id)
@@ -536,6 +738,103 @@ class TaskService:
             )
             or 0
         )
+        workload: list[dict[str, object]] = []
+        permissions = self.permissions(actor)
+        if owner == actor.id and (self.can_manage(actor) or "tasks.view_team" in permissions):
+            people_query = select(User.id, User.display_name).where(
+                User.organization_id == actor.organization_id,
+                User.status == UserStatus.ACTIVE,
+                User.employment_status != "terminated",
+                User.removed_at.is_(None),
+            )
+            if not self.can_manage(actor):
+                people_query = people_query.where(User.manager_id == actor.id)
+            people = list((await self.session.execute(people_query)).all())
+            person_ids = [person.id for person in people]
+            if person_ids:
+                task_rows = list(
+                    (
+                        await self.session.execute(
+                            select(
+                                Task.assignee_id,
+                                func.sum(case((Task.status.in_(OPEN_STATUSES), 1), else_=0)).label(
+                                    "open_count"
+                                ),
+                                func.sum(
+                                    case(
+                                        (
+                                            and_(
+                                                Task.status.in_(OPEN_STATUSES),
+                                                Task.due_date < today,
+                                            ),
+                                            1,
+                                        ),
+                                        else_=0,
+                                    )
+                                ).label("overdue_count"),
+                                func.sum(case((Task.status == "blocked", 1), else_=0)).label(
+                                    "blocked_count"
+                                ),
+                                func.sum(
+                                    case(
+                                        (
+                                            and_(
+                                                Task.completed_at.is_not(None),
+                                                func.date(Task.completed_at).between(
+                                                    start_date, end_date
+                                                ),
+                                            ),
+                                            1,
+                                        ),
+                                        else_=0,
+                                    )
+                                ).label("completed_count"),
+                            )
+                            .where(
+                                Task.organization_id == actor.organization_id,
+                                Task.assignee_id.in_(person_ids),
+                                Task.deleted_at.is_(None),
+                            )
+                            .group_by(Task.assignee_id)
+                        )
+                    ).all()
+                )
+                activity_rows_by_user = list(
+                    (
+                        await self.session.execute(
+                            select(
+                                DailyActivity.user_id,
+                                func.count(DailyActivity.id).label("activity_count"),
+                            )
+                            .where(
+                                DailyActivity.organization_id == actor.organization_id,
+                                DailyActivity.user_id.in_(person_ids),
+                                DailyActivity.deleted_at.is_(None),
+                                DailyActivity.activity_date.between(start_date, end_date),
+                            )
+                            .group_by(DailyActivity.user_id)
+                        )
+                    ).all()
+                )
+                task_counts = {row.assignee_id: row for row in task_rows}
+                activity_counts = {
+                    row.user_id: int(row.activity_count) for row in activity_rows_by_user
+                }
+                for person in people:
+                    counts = task_counts.get(person.id)
+                    workload.append(
+                        {
+                            "user_id": str(person.id),
+                            "display_name": person.display_name,
+                            "open_tasks": int(counts.open_count or 0) if counts else 0,
+                            "overdue_tasks": int(counts.overdue_count or 0) if counts else 0,
+                            "blocked_tasks": int(counts.blocked_count or 0) if counts else 0,
+                            "completed_this_week": (
+                                int(counts.completed_count or 0) if counts else 0
+                            ),
+                            "activity_count": activity_counts.get(person.id, 0),
+                        }
+                    )
         return WeeklySummary(
             start_date=start_date,
             end_date=end_date,
@@ -546,6 +845,7 @@ class TaskService:
             activity_minutes=sum(row.duration_minutes or 0 for row in activity_rows),
             meetings_attended=meetings,
             upcoming_due=upcoming,
+            workload=workload,
         )
 
     async def process_due_reminders(self) -> int:
@@ -748,6 +1048,20 @@ class TaskService:
             raise NotFoundError("Meeting action item not found")
         return row
 
+    async def _checklist_item(
+        self, organization_id: uuid.UUID, task_id: uuid.UUID, item_id: uuid.UUID
+    ) -> TaskChecklistItem:
+        row = await self.session.scalar(
+            select(TaskChecklistItem).where(
+                TaskChecklistItem.id == item_id,
+                TaskChecklistItem.task_id == task_id,
+                TaskChecklistItem.organization_id == organization_id,
+            )
+        )
+        if row is None:
+            raise NotFoundError("Checklist item not found")
+        return row
+
     async def _record(
         self, task: Task, actor_id: uuid.UUID, event_type: str, payload: dict[str, object]
     ) -> None:
@@ -886,6 +1200,14 @@ class TaskService:
                 "user_name": user.display_name,
             }
         )
+
+    @staticmethod
+    def _attachment_response(row: TaskAttachment) -> TaskAttachmentResponse:
+        return TaskAttachmentResponse.model_validate(row)
+
+    @staticmethod
+    def _checklist_response(row: TaskChecklistItem) -> TaskChecklistItemResponse:
+        return TaskChecklistItemResponse.model_validate(row)
 
     @staticmethod
     def _clean_tags(tags: list[str]) -> list[str]:

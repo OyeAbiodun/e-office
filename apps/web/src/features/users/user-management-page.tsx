@@ -790,7 +790,11 @@ export function UserManagementPage() {
                           <Building2 className="mt-0.5 size-4 shrink-0 text-primary" />
                           <div>
                             <p className="font-medium capitalize">
-                              {entry.change_type.replaceAll('_', ' ')}
+                              {entry.change_type
+                                .replaceAll('_', ' ')
+                                .replace(/\b\w/g, (letter) =>
+                                  letter.toUpperCase(),
+                                )}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               Effective {entry.effective_date}
