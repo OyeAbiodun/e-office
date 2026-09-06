@@ -71,6 +71,20 @@ class Permissions:
     ACTIVITY_VIEW_TEAM = "activity.view_team"
     ACTIVITY_VIEW_DEPARTMENT = "activity.view_department"
     ACTIVITY_MANAGE = "activity.manage"
+    VOUCHERS_VIEW_OWN = "vouchers.view_own"
+    VOUCHERS_CREATE = "vouchers.create"
+    VOUCHERS_EDIT_DRAFT = "vouchers.edit_draft"
+    VOUCHERS_SUBMIT = "vouchers.submit"
+    VOUCHERS_APPROVE = "vouchers.approve"
+    VOUCHERS_REJECT = "vouchers.reject"
+    VOUCHERS_RETURN = "vouchers.return"
+    VOUCHERS_DISBURSE = "vouchers.disburse"
+    VOUCHERS_AUDIT = "vouchers.audit"
+    FINANCE_ACCOUNTS_VIEW = "finance.accounts.view"
+    FINANCE_ACCOUNTS_MANAGE = "finance.accounts.manage"
+    FINANCE_TRANSACTIONS_VIEW = "finance.transactions.view"
+    FINANCE_REVERSE = "finance.reverse"
+    FINANCE_RECONCILE = "finance.reconcile"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -144,6 +158,36 @@ _LEGACY_PERMISSION_CATALOG = tuple(
     )
 )
 
+_FINANCE_PERMISSION_CATALOG = tuple(
+    PermissionDefinition(name, resource, action, description)
+    for name, resource, action, description in (
+        (Permissions.VOUCHERS_VIEW_OWN, "vouchers", "view_own", "View own vouchers"),
+        (Permissions.VOUCHERS_CREATE, "vouchers", "create", "Create vouchers"),
+        (Permissions.VOUCHERS_EDIT_DRAFT, "vouchers", "edit_draft", "Edit own draft vouchers"),
+        (Permissions.VOUCHERS_SUBMIT, "vouchers", "submit", "Submit vouchers"),
+        (Permissions.VOUCHERS_APPROVE, "vouchers", "approve", "Approve vouchers"),
+        (Permissions.VOUCHERS_REJECT, "vouchers", "reject", "Reject vouchers"),
+        (Permissions.VOUCHERS_RETURN, "vouchers", "return", "Return vouchers for correction"),
+        (Permissions.VOUCHERS_DISBURSE, "vouchers", "disburse", "Disburse approved vouchers"),
+        (Permissions.VOUCHERS_AUDIT, "vouchers", "audit", "Audit organization vouchers"),
+        (Permissions.FINANCE_ACCOUNTS_VIEW, "finance", "accounts_view", "View finance accounts"),
+        (
+            Permissions.FINANCE_ACCOUNTS_MANAGE,
+            "finance",
+            "accounts_manage",
+            "Manage finance accounts",
+        ),
+        (
+            Permissions.FINANCE_TRANSACTIONS_VIEW,
+            "finance",
+            "transactions_view",
+            "View finance transactions",
+        ),
+        (Permissions.FINANCE_REVERSE, "finance", "reverse", "Reverse finance transactions"),
+        (Permissions.FINANCE_RECONCILE, "finance", "reconcile", "Reconcile finance transactions"),
+    )
+)
+
 MVP_PERMISSION_RESOURCES = (
     "dashboard",
     "calendar",
@@ -169,7 +213,14 @@ MVP_PERMISSION_CATALOG = tuple(
     for action in MVP_PERMISSION_ACTIONS
 )
 PERMISSION_CATALOG = tuple(
-    {item.name: item for item in (*_LEGACY_PERMISSION_CATALOG, *MVP_PERMISSION_CATALOG)}.values()
+    {
+        item.name: item
+        for item in (
+            *_LEGACY_PERMISSION_CATALOG,
+            *_FINANCE_PERMISSION_CATALOG,
+            *MVP_PERMISSION_CATALOG,
+        )
+    }.values()
 )
 
 
@@ -179,6 +230,7 @@ def _matrix(resources: set[str], actions: set[str] | None = None) -> frozenset[s
 
 
 _legacy_admin = frozenset(item.name for item in _LEGACY_PERMISSION_CATALOG)
+_finance_admin = frozenset(item.name for item in _FINANCE_PERMISSION_CATALOG)
 _task_employee = frozenset(
     {
         Permissions.TASKS_VIEW_OWN,
@@ -223,7 +275,7 @@ _meeting_operator = frozenset(
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "Super Admin": frozenset(item.name for item in PERMISSION_CATALOG),
-    "Admin": _legacy_admin | _matrix(set(MVP_PERMISSION_RESOURCES)),
+    "Admin": _legacy_admin | _finance_admin | _matrix(set(MVP_PERMISSION_RESOURCES)),
     "Meeting Organizer": _meeting_operator
     | _matrix({"dashboard"}, {"view"})
     | _matrix({"calendar", "meetings"})
@@ -261,6 +313,14 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         }
     )
     | _task_employee
+    | frozenset(
+        {
+            Permissions.VOUCHERS_VIEW_OWN,
+            Permissions.VOUCHERS_CREATE,
+            Permissions.VOUCHERS_EDIT_DRAFT,
+            Permissions.VOUCHERS_SUBMIT,
+        }
+    )
     | _matrix({"dashboard", "calendar", "meetings", "chat", "members"}, {"view"})
     | _matrix({"calendar", "meetings", "chat", "mail"}, {"create", "edit"})
     | _matrix({"mail"}, {"view"}),
