@@ -2,6 +2,7 @@
 
 import secrets
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -96,3 +97,66 @@ async def test_browser_push_is_queued_and_delivered_by_the_worker(
     assert queued is not None
     assert queued.status == "sent"
     assert queued.delivered_at is not None
+
+
+async def test_quiet_hours_keep_in_app_notification_and_suppress_browser_push(
+    notification_session: AsyncSession,
+) -> None:
+    organization = Organization(name="Quiet Hours Test", slug="quiet-hours-test")
+    notification_session.add(organization)
+    await notification_session.flush()
+    user = User(
+        organization_id=organization.id,
+        email="quiet-hours@example.test",
+        username="quiet-hours-user",
+        first_name="Quiet",
+        last_name="Hours",
+        display_name="Quiet Hours",
+        password_hash=secrets.token_urlsafe(32),
+    )
+    notification_session.add(user)
+    await notification_session.flush()
+    now = datetime.now(UTC)
+    notification_session.add_all(
+        [
+            NotificationPreference(
+                organization_id=organization.id,
+                user_id=user.id,
+                browser_enabled=True,
+                quiet_hours_enabled=True,
+                quiet_hours_start=(now - timedelta(minutes=10)).strftime("%H:%M"),
+                quiet_hours_end=(now + timedelta(minutes=10)).strftime("%H:%M"),
+                timezone="UTC",
+            ),
+            PushSubscription(
+                organization_id=organization.id,
+                user_id=user.id,
+                endpoint="https://push.example.test/quiet-hours",
+                p256dh="public-key",
+                auth="auth-key",
+                enabled=True,
+            ),
+        ]
+    )
+    await notification_session.flush()
+    service = NotificationService(
+        notification_session,
+        Settings(
+            environment="test",
+            web_push_vapid_public_key="public-vapid-key",
+            web_push_vapid_private_key="private-vapid-key",
+            web_push_vapid_subject="mailto:security@example.test",
+        ),
+    )
+
+    notification = await service.create_notification(
+        organization_id=organization.id,
+        user_id=user.id,
+        notification_type="task.reminder",
+        title="Task reminder",
+        body="A task needs your attention.",
+        category="tasks",
+    )
+
+    assert notification.id is not None
+    assert await notification_session.scalar(select(func.count(BrowserPushDelivery.id))) == 0

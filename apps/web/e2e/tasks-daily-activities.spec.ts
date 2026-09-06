@@ -40,10 +40,18 @@ async function apiLogin(
 }
 
 async function login(page: Page) {
+  await loginWithCredentials(page, organizerEmail, organizerPassword)
+}
+
+async function loginWithCredentials(
+  page: Page,
+  email: string,
+  passwordValue: string,
+) {
   await page.goto('/login')
-  await page.getByLabel(/work email|email/i).fill(organizerEmail)
+  await page.getByLabel(/work email|email/i).fill(email)
   const password = page.getByLabel('Password')
-  await password.fill(organizerPassword)
+  await password.fill(passwordValue)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await password.fill('').catch(() => undefined)
   await expect(page).toHaveURL('/', { timeout: 15_000 })
@@ -321,6 +329,149 @@ test('a manager can assign only an active direct report', async ({
   )
   await employeeContext.close()
   await managerContext.close()
+})
+
+test('task attachments use the authenticated route and deny an unrelated user', async ({
+  browser,
+  request,
+}) => {
+  test.setTimeout(180_000)
+  const organizer = await apiLogin(request, organizerEmail, organizerPassword)
+  const suffix = Date.now()
+  const temporaryPassword = `TaskFileTemp${suffix}!`
+  const finalPassword = `TaskFileFinal${suffix}!`
+  const [workspacesResponse, rolesResponse] = await Promise.all([
+    request.get(`${apiBase}/workspaces`, { headers: organizer.headers }),
+    request.get(`${apiBase}/roles`, { headers: organizer.headers }),
+  ])
+  const workspaces = (await workspacesResponse.json()) as {
+    data: Array<{ id: string }>
+  }
+  const roles = (await rolesResponse.json()) as {
+    data: Array<{ id: string; name: string }>
+  }
+  const employeeRole = roles.data.find((role) => role.name === 'Employee')
+  expect(employeeRole).toBeTruthy()
+
+  const createEmployee = async (prefix: string) => {
+    const response = await request.post(`${apiBase}/users`, {
+      headers: organizer.headers,
+      data: {
+        workspace_id: workspaces.data[0].id,
+        first_name: prefix,
+        last_name: 'Attachment acceptance',
+        email: `${prefix.toLowerCase()}.attachment.${suffix}@example.com`,
+        role_ids: [employeeRole?.id],
+        temporary_password: temporaryPassword,
+        send_welcome_email: false,
+      },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    return (await response.json()) as {
+      data: { id: string; email: string; display_name: string }
+    }
+  }
+  const permitted = await createEmployee('Permitted')
+  const unrelated = await createEmployee('Unrelated')
+  await changeTemporaryPassword(
+    request,
+    permitted.data.email,
+    temporaryPassword,
+    finalPassword,
+  )
+  await changeTemporaryPassword(
+    request,
+    unrelated.data.email,
+    temporaryPassword,
+    finalPassword,
+  )
+
+  const title = `Attachment authorization ${suffix}`
+  const taskResponse = await request.post(`${apiBase}/tasks`, {
+    headers: organizer.headers,
+    data: { title, assignee_id: permitted.data.id },
+  })
+  expect(taskResponse.ok(), await taskResponse.text()).toBeTruthy()
+  const task = (await taskResponse.json()) as { data: { id: string } }
+  const upload = await request.post(
+    `${apiBase}/tasks/${task.data.id}/attachments`,
+    {
+      headers: organizer.headers,
+      multipart: {
+        file: {
+          name: 'task-acceptance.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from(
+            'MeetingHQ task attachment acceptance fixture.\n',
+          ),
+        },
+      },
+    },
+  )
+  expect(upload.ok(), await upload.text()).toBeTruthy()
+  const uploadPayload = (await upload.json()) as {
+    data: { id: string; url: string }
+  }
+  const attachment = uploadPayload.data
+  expect(attachment.url).toMatch(
+    new RegExp(
+      `^/api/v1/tasks/${task.data.id}/attachments/${attachment.id}/download$`,
+    ),
+  )
+  expect(attachment.url).not.toMatch(/storage|signed|https?:\/\//i)
+
+  const permittedContext = await browser.newContext({
+    baseURL: process.env.PLAYWRIGHT_BASE_URL,
+  })
+  const permittedPage = await permittedContext.newPage()
+  await loginWithCredentials(permittedPage, permitted.data.email, finalPassword)
+  await permittedPage.goto('/tasks')
+  await permittedPage.getByRole('button', { name: 'Assigned to me' }).click()
+  await permittedPage.getByText(title, { exact: true }).click()
+  const download = permittedPage.waitForEvent('download')
+  await permittedPage
+    .getByRole('dialog')
+    .getByRole('button', { name: /^task-acceptance\.txt/ })
+    .click()
+  expect((await download).suggestedFilename()).toBe('task-acceptance.txt')
+
+  const unrelatedContext = await browser.newContext({
+    baseURL: process.env.PLAYWRIGHT_BASE_URL,
+  })
+  const unrelatedPage = await unrelatedContext.newPage()
+  await loginWithCredentials(unrelatedPage, unrelated.data.email, finalPassword)
+  const forbidden = await unrelatedPage.evaluate(
+    async ({ url, email, password, downloadPath }) => {
+      // Obtain an access token through the same browser session and call the
+      // protected route directly. The response body is deliberately ignored so
+      // a denial test cannot accidentally record protected metadata in traces.
+      const loginResponse = await fetch(`${url}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      })
+      const loginPayload = (await loginResponse.json()) as {
+        data?: { access_token?: string }
+      }
+      const response = await fetch(`${url}${downloadPath}`, {
+        headers: {
+          Authorization: `Bearer ${loginPayload.data?.access_token ?? ''}`,
+        },
+        credentials: 'include',
+      })
+      return response.status
+    },
+    {
+      url: apiBase,
+      email: unrelated.data.email,
+      password: finalPassword,
+      downloadPath: attachment.url,
+    },
+  )
+  expect(forbidden).toBe(404)
+  await permittedContext.close()
+  await unrelatedContext.close()
 })
 
 test('a meeting action item is converted once and stays linked in both directions', async ({
