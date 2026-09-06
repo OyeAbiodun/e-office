@@ -215,7 +215,9 @@ _meeting_operator = frozenset(
         Permissions.CALENDAR_WRITE,
         Permissions.CHAT_READ,
         Permissions.CHAT_SEND,
+        Permissions.ORGANIZATIONS_READ,
         Permissions.USERS_READ,
+        Permissions.WORKSPACES_READ,
     }
 )
 

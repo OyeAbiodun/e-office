@@ -106,6 +106,13 @@ test('a user can create, complete, and log activity against a task', async ({
   await expect(taskDialog.getByText(/task-acceptance\.txt/)).toBeVisible({
     timeout: 10_000,
   })
+  const attachmentDownload = page.waitForEvent('download')
+  await taskDialog
+    .getByRole('button', { name: /^task-acceptance\.txt/ })
+    .click()
+  expect((await attachmentDownload).suggestedFilename()).toBe(
+    'task-acceptance.txt',
+  )
   await taskDialog.getByRole('button').first().click()
 
   await page.getByRole('button', { name: 'Log today' }).click()
@@ -199,14 +206,31 @@ test('a manager can assign only an active direct report', async ({
     baseURL: process.env.PLAYWRIGHT_BASE_URL,
   })
   const managerPage = await managerContext.newPage()
+  const taskRequestFailures: string[] = []
+  managerPage.on('response', (response) => {
+    const url = response.url()
+    if (url.includes('/api/v1/tasks') && response.status() >= 400)
+      taskRequestFailures.push(`${response.status()} ${new URL(url).pathname}`)
+  })
   await managerPage.goto('/login')
-  await managerPage.getByLabel('Work email').fill(manager.data.email)
-  await managerPage.getByLabel('Password').fill(finalPassword)
+  const managerEmailField = managerPage.getByLabel('Work email')
+  const managerPasswordField = managerPage.getByLabel('Password')
+  await managerEmailField.waitFor({ state: 'visible', timeout: 15_000 })
+  await managerEmailField.fill(manager.data.email, { timeoutMs: 15_000 })
+  await managerPasswordField.fill(finalPassword, { timeoutMs: 15_000 })
   await managerPage.getByRole('button', { name: 'Sign in' }).click()
   await expect(managerPage).toHaveURL('/')
   const title = `Direct report task ${suffix}`
   await managerPage.goto('/tasks')
-  await managerPage.getByRole('button', { name: 'New task' }).click()
+  const newTask = managerPage.getByRole('button', { name: 'New task' })
+  try {
+    await newTask.waitFor({ state: 'visible', timeout: 20_000 })
+  } catch {
+    throw new Error(
+      `Manager task page did not become available; task API failures: ${taskRequestFailures.join(', ') || 'none'}`,
+    )
+  }
+  await newTask.click()
   await managerPage.getByLabel('Title').fill(title)
   await managerPage
     .getByText('Assignment and reminder', { exact: true })
@@ -231,6 +255,17 @@ test('a manager can assign only an active direct report', async ({
     manager.data.email,
     finalPassword,
   )
+  const createdTasks = await request.get(
+    `${apiBase}/tasks?scope=created&search=${encodeURIComponent(title)}`,
+    { headers: managerSession.headers },
+  )
+  expect(createdTasks.ok(), await createdTasks.text()).toBeTruthy()
+  const createdTaskPage = (await createdTasks.json()) as {
+    data: { items: Array<{ id: string }> }
+  }
+  const createdTask = createdTaskPage.data.items[0]
+  if (!createdTask)
+    throw new Error('Manager-created task was not returned by the API')
   const rejected = await request.post(`${apiBase}/tasks`, {
     headers: managerSession.headers,
     data: { title: 'Unauthorized assignment', assignee_id: unrelated.data.id },
@@ -267,6 +302,93 @@ test('a manager can assign only an active direct report', async ({
   await employeePage.goto('/tasks')
   await employeePage.getByRole('button', { name: 'Assigned to me' }).click()
   await expect(employeePage.getByText(title, { exact: true })).toBeVisible()
+  const statusUpdate = employeePage.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/tasks/${createdTask.id}`) &&
+      response.request().method() === 'PATCH',
+  )
+  await employeePage
+    .getByLabel(`Update ${title} status`)
+    .selectOption('in_progress')
+  expect((await statusUpdate).ok()).toBeTruthy()
+
+  // Browser contexts do not share a client-side cache. Reloading proves the
+  // manager sees the persisted employee update, rather than a local mutation.
+  await managerPage.reload()
+  await managerPage.getByRole('button', { name: 'Created by me' }).click()
+  await expect(managerPage.getByLabel(`Update ${title} status`)).toHaveValue(
+    'in_progress',
+  )
   await employeeContext.close()
   await managerContext.close()
+})
+
+test('a meeting action item is converted once and stays linked in both directions', async ({
+  page,
+  request,
+}) => {
+  const organizer = await apiLogin(request, organizerEmail, organizerPassword)
+  const suffix = Date.now()
+  const workspaces = await request.get(`${apiBase}/workspaces`, {
+    headers: organizer.headers,
+  })
+  expect(workspaces.ok(), await workspaces.text()).toBeTruthy()
+  const workspace = (await workspaces.json()) as { data: Array<{ id: string }> }
+  const title = `Action conversion ${suffix}`
+  // Keep acceptance meetings outside the common test window and vary the minute
+  // so an isolated runtime with prior acceptance data cannot trip availability.
+  const start = new Date(
+    Date.now() + 45 * 86_400_000 + Math.floor(Math.random() * 10_000) * 60_000,
+  )
+  const end = new Date(start.getTime() + 30 * 60_000)
+  const meetingResponse = await request.post(`${apiBase}/meetings`, {
+    headers: organizer.headers,
+    data: {
+      workspace_id: workspace.data[0].id,
+      title,
+      meeting_type: 'standard',
+      location_type: 'virtual',
+      start_datetime: start.toISOString(),
+      end_datetime: end.toISOString(),
+      timezone: 'UTC',
+    },
+  })
+  expect(meetingResponse.ok(), await meetingResponse.text()).toBeTruthy()
+  const meeting = (await meetingResponse.json()) as { data: { id: string } }
+  const actionTitle = `Follow up ${suffix}`
+  const actionResponse = await request.post(
+    `${apiBase}/meetings/${meeting.data.id}/actions`,
+    {
+      headers: organizer.headers,
+      data: { title: actionTitle, due_date: start.toISOString().slice(0, 10) },
+    },
+  )
+  expect(actionResponse.ok(), await actionResponse.text()).toBeTruthy()
+
+  await login(page)
+  await page.goto(`/meetings/${meeting.data.id}`)
+  await expect(page.getByRole('heading', { name: title })).toBeVisible()
+  await page.getByRole('button', { name: /Action items/ }).click()
+  await expect(page.getByText(actionTitle, { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Create linked task' }).click()
+  await expect(
+    page.getByRole('link', { name: 'View linked task' }),
+  ).toBeVisible()
+
+  // The action no longer exposes a second conversion control after the browser
+  // mutation; the server also returns the same linked task on a repeated call.
+  await expect(
+    page.getByRole('button', { name: 'Create linked task' }),
+  ).toHaveCount(0)
+  await page.getByRole('link', { name: 'View linked task' }).click()
+  await expect(page).toHaveURL(/\/tasks/)
+  await page.getByRole('button', { name: 'Created by me' }).click()
+  await page.getByLabel('Search tasks').fill(actionTitle)
+  await page.getByText(actionTitle, { exact: true }).click()
+  const taskDialog = page.getByRole('dialog')
+  await expect(
+    taskDialog.getByRole('link', { name: /Open source meeting/ }),
+  ).toBeVisible()
+  await taskDialog.getByRole('link', { name: /Open source meeting/ }).click()
+  await expect(page).toHaveURL(new RegExp(`/meetings/${meeting.data.id}$`))
 })

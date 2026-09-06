@@ -18,3 +18,10 @@ def test_role_capabilities_follow_least_privilege() -> None:
     assert Permissions.ADMIN_MANAGE in ROLE_PERMISSIONS["Admin"]
     assert Permissions.ADMIN_MANAGE not in ROLE_PERMISSIONS["Guest"]
     assert ROLE_PERMISSIONS["Guest"] < ROLE_PERMISSIONS["Admin"]
+
+
+def test_operational_roles_can_load_the_tenant_application_shell() -> None:
+    """Non-admin roles must retain the read access required by the shared shell."""
+    for role_name in ("Meeting Organizer", "Team Manager"):
+        assert Permissions.ORGANIZATIONS_READ in ROLE_PERMISSIONS[role_name]
+        assert Permissions.WORKSPACES_READ in ROLE_PERMISSIONS[role_name]

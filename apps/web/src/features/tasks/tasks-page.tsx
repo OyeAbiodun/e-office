@@ -11,6 +11,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from './api'
+import { authenticatedAsset } from '@/features/auth/api'
 import { useAuth } from '@/features/auth/auth-store'
 
 const statuses: Array<[TaskStatus, string]> = [
@@ -862,6 +863,20 @@ function TaskDetail({
       tasksApi.deleteAttachment(task.id, attachmentId),
     onSuccess: refreshDetail,
   })
+  const downloadAttachment = async (attachment: {
+    filename: string
+    url: string
+  }) => {
+    const blob = await authenticatedAsset(attachment.url)
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = attachment.filename
+    document.body.append(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(objectUrl)
+  }
   return (
     <Dialog title={`Task #${task.sequence}`} onClose={onClose}>
       <div className="space-y-5">
@@ -982,14 +997,13 @@ function TaskDetail({
                 className="flex items-center gap-2 rounded-lg bg-muted p-2"
                 key={attachment.id}
               >
-                <a
+                <button
                   className="min-w-0 flex-1 truncate text-primary underline"
-                  href={attachment.url}
-                  rel="noreferrer"
-                  target="_blank"
+                  onClick={() => void downloadAttachment(attachment)}
+                  type="button"
                 >
                   {attachment.filename} · {Math.ceil(attachment.size / 1024)} KB
-                </a>
+                </button>
                 <button
                   aria-label={`Delete ${attachment.filename}`}
                   className="text-muted-foreground hover:text-destructive"
