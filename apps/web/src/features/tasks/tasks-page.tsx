@@ -672,7 +672,10 @@ function TaskForm({
           </div>
           {selectedPerson && (
             <p className="text-sm text-muted-foreground">
-              Assigning to <span className="font-medium text-foreground">{selectedPerson.display_name}</span>
+              Assigning to{' '}
+              <span className="font-medium text-foreground">
+                {selectedPerson.display_name}
+              </span>
               {selectedPerson.department_name
                 ? ` · ${selectedPerson.department_name}`
                 : ''}
@@ -873,7 +876,8 @@ function TaskDetail({
               params={{ meetingId: task.meeting_id }}
               to="/meetings/$meetingId"
             >
-              Open source meeting{task.meeting_title ? `: ${task.meeting_title}` : ''}
+              Open source meeting
+              {task.meeting_title ? `: ${task.meeting_title}` : ''}
             </Link>
           ) : null}
         </div>
