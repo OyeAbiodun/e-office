@@ -29,6 +29,9 @@ async def organization_client() -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_database_session] = database_override
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+        # Focused service tests can exercise scheduled work against this same
+        # isolated schema without reaching the shared local runtime.
+        client._meetinghq_session_factory = factory  # type: ignore[attr-defined]
         yield client
     app.dependency_overrides.clear()
     await engine.dispose()

@@ -117,6 +117,7 @@ class TaskService:
             TaskAssigneeResponse(
                 id=user.id,
                 display_name=user.display_name,
+                avatar_url=user.avatar_url,
                 job_title=user.job_title,
                 department_id=user.department_id,
                 department_name=(
@@ -267,7 +268,7 @@ class TaskService:
             ).all()
         )
         return TaskPage(
-            items=[await self._task_response(item) for item in rows],
+            items=await self._task_responses(rows),
             total=count,
             page=page,
             page_size=page_size,
@@ -314,8 +315,8 @@ class TaskService:
         )
         return TaskDetailResponse(
             task=await self._task_response(task),
-            comments=[await self._comment_response(row) for row in comments],
-            history=[await self._history_response(row) for row in history],
+            comments=await self._comment_responses(comments),
+            history=await self._history_responses(history),
             attachments=[self._attachment_response(row) for row in attachments],
             checklist=[self._checklist_response(row) for row in checklist],
         )
@@ -329,7 +330,6 @@ class TaskService:
         content_type: str,
         size: int,
         storage_key: str,
-        url: str,
     ) -> TaskAttachment:
         task = await self._visible_task(actor, task_id)
         await self._assert_task_editable(actor, task)
@@ -343,14 +343,37 @@ class TaskService:
             content_type=content_type,
             size=size,
             storage_key=storage_key,
-            url=url,
+            url="",
             uploaded_by_id=actor.id,
         )
         self.session.add(row)
         await self.session.flush()
+        row.url = f"/api/v1/tasks/{task.id}/attachments/{row.id}/download"
         await self._record(task, actor.id, "attachment_added", {"attachment_id": str(row.id)})
         await self._activity(task, actor.id, "task.attachment_added")
         self._audit(actor, "task.attachment_added", task.id, {"attachment_id": str(row.id)})
+        return row
+
+    async def ensure_attachment_upload_allowed(self, actor: User, task_id: uuid.UUID) -> None:
+        """Authorize before writing to object storage to avoid orphan uploads."""
+        task = await self._visible_task(actor, task_id)
+        await self._assert_task_editable(actor, task)
+
+    async def attachment_for_download(
+        self, actor: User, task_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> TaskAttachment:
+        """Return an attachment only when the requester may view its parent task."""
+        task = await self._visible_task(actor, task_id)
+        row = await self.session.scalar(
+            select(TaskAttachment).where(
+                TaskAttachment.id == attachment_id,
+                TaskAttachment.task_id == task.id,
+                TaskAttachment.organization_id == actor.organization_id,
+                TaskAttachment.deleted_at.is_(None),
+            )
+        )
+        if row is None:
+            raise NotFoundError("Task attachment not found")
         return row
 
     async def delete_attachment(
@@ -663,7 +686,7 @@ class TaskService:
             completed_tasks=completed,
             in_progress_tasks=in_progress,
             overdue_tasks=overdue,
-            activities=[await self._activity_response(row) for row in selected],
+            activities=await self._activity_responses(selected),
             blockers=[row.blockers for row in selected if row.blockers],
             meetings_attended=meetings,
             upcoming_due=upcoming,
@@ -874,15 +897,22 @@ class TaskService:
         )
         delivered = 0
         for task in rows:
-            if task.reminder_at and task.reminder_at <= now and task.reminder_sent_at is None:
+            reminder_due = task.reminder_at and self._utc(task.reminder_at) <= now
+            follow_up_due = task.follow_up_at and self._utc(task.follow_up_at) <= now
+            if reminder_due and task.reminder_sent_at is None:
                 await self._notify_due(task, "reminder")
                 task.reminder_sent_at = now
                 delivered += 1
-            if task.follow_up_at and task.follow_up_at <= now and task.follow_up_sent_at is None:
+            if follow_up_due and task.follow_up_sent_at is None:
                 await self._notify_due(task, "follow_up")
                 task.follow_up_sent_at = now
                 delivered += 1
         return delivered
+
+    @staticmethod
+    def _utc(value: datetime) -> datetime:
+        """Normalize legacy/SQLite timestamps before comparing them to UTC now."""
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
     async def _scope_clause(self, actor: User, scope: str) -> ColumnElement[bool]:
         if scope in {"mine", "assigned"}:
@@ -932,7 +962,9 @@ class TaskService:
         if assignee.manager_id == actor.id and "tasks.view_team" in self.permissions(actor):
             return task
         if (
-            assignee.department_id == actor.department_id
+            actor.department_id is not None
+            and assignee.department_id is not None
+            and assignee.department_id == actor.department_id
             and "tasks.view_department" in self.permissions(actor)
         ):
             return task
@@ -941,14 +973,18 @@ class TaskService:
     async def _assert_visible_user(
         self, actor: User, user_id: uuid.UUID, activity: bool = False
     ) -> None:
-        if user_id == actor.id or self.can_manage(actor):
+        if user_id == actor.id:
             return
         target = await self._active_user(actor.organization_id, user_id, allow_inactive=True)
+        if self.can_manage(actor):
+            return
         prefixes = "activity" if activity else "tasks"
         if target.manager_id == actor.id and f"{prefixes}.view_team" in self.permissions(actor):
             return
         if (
-            target.department_id == actor.department_id
+            actor.department_id is not None
+            and target.department_id is not None
+            and target.department_id == actor.department_id
             and f"{prefixes}.view_department" in self.permissions(actor)
         ):
             return
@@ -966,7 +1002,9 @@ class TaskService:
         if assignee.manager_id == actor.id:
             return
         if (
-            assignee.department_id == actor.department_id
+            actor.department_id is not None
+            and assignee.department_id is not None
+            and assignee.department_id == actor.department_id
             and "tasks.view_department" in self.permissions(actor)
         ):
             return
@@ -989,6 +1027,8 @@ class TaskService:
         if (
             "tasks.assign" in permissions
             and "tasks.view_department" in permissions
+            and actor.department_id is not None
+            and assignee.department_id is not None
             and assignee.department_id == actor.department_id
         ):
             return
@@ -1130,76 +1170,202 @@ class TaskService:
         )
 
     async def _task_response(self, task: Task) -> TaskResponse:
-        assignee = await self._active_user(
-            task.organization_id, task.assignee_id, allow_inactive=True
-        )
-        department = (
-            await self._department(task.organization_id, task.department_id)
-            if task.department_id
-            else None
-        )
-        meeting = (
-            await self._meeting(task.organization_id, task.meeting_id) if task.meeting_id else None
+        return (await self._task_responses([task]))[0]
+
+    async def _task_responses(self, tasks: list[Task]) -> list[TaskResponse]:
+        """Serialize task collections with bounded related-record queries.
+
+        List, dashboard, and team views can contain up to 100 tasks.  Resolving
+        each user, department, and meeting individually would regress into an
+        async N+1 pattern, so each relation is collected exactly once here.
+        """
+        if not tasks:
+            return []
+        organization_id = tasks[0].organization_id
+        users, departments, meetings = await self._task_related_records(
+            organization_id,
+            {task.assignee_id for task in tasks},
+            {task.department_id for task in tasks if task.department_id},
+            {task.meeting_id for task in tasks if task.meeting_id},
         )
         today = datetime.now(UTC).date()
-        overdue = bool(task.due_date and task.due_date < today and task.status in OPEN_STATUSES)
-        return TaskResponse.model_validate(
-            {
-                **{
-                    key: getattr(task, key)
-                    for key in TaskResponse.model_fields
-                    if hasattr(task, key)
-                },
-                "is_overdue": overdue,
-                "overdue_days": (today - task.due_date).days if overdue and task.due_date else 0,
-                "assignee_name": assignee.display_name,
-                "department_name": department.name if department else None,
-                "meeting_title": meeting.title if meeting else None,
-            }
+        responses: list[TaskResponse] = []
+        for task in tasks:
+            assignee = users.get(task.assignee_id)
+            if assignee is None:
+                raise NotFoundError("Employee not found")
+            overdue = bool(task.due_date and task.due_date < today and task.status in OPEN_STATUSES)
+            department = departments.get(task.department_id) if task.department_id else None
+            meeting = meetings.get(task.meeting_id) if task.meeting_id else None
+            responses.append(
+                TaskResponse.model_validate(
+                    {
+                        **{
+                            key: getattr(task, key)
+                            for key in TaskResponse.model_fields
+                            if hasattr(task, key)
+                        },
+                        "is_overdue": overdue,
+                        "overdue_days": (
+                            (today - task.due_date).days if overdue and task.due_date else 0
+                        ),
+                        "assignee_name": assignee.display_name,
+                        "department_name": department.name if department else None,
+                        "meeting_title": meeting.title if meeting else None,
+                    }
+                )
+            )
+        return responses
+
+    async def _task_related_records(
+        self,
+        organization_id: uuid.UUID,
+        assignee_ids: set[uuid.UUID],
+        department_ids: set[uuid.UUID],
+        meeting_ids: set[uuid.UUID],
+    ) -> tuple[
+        dict[uuid.UUID, User],
+        dict[uuid.UUID, OrganizationUnit],
+        dict[uuid.UUID, Meeting],
+    ]:
+        users = list(
+            (
+                await self.session.scalars(
+                    select(User).where(
+                        User.organization_id == organization_id,
+                        User.id.in_(assignee_ids),
+                        User.removed_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        departments = (
+            list(
+                (
+                    await self.session.scalars(
+                        select(OrganizationUnit).where(
+                            OrganizationUnit.organization_id == organization_id,
+                            OrganizationUnit.id.in_(department_ids),
+                            OrganizationUnit.deleted_at.is_(None),
+                        )
+                    )
+                ).all()
+            )
+            if department_ids
+            else []
+        )
+        meetings = (
+            list(
+                (
+                    await self.session.scalars(
+                        select(Meeting).where(
+                            Meeting.organization_id == organization_id,
+                            Meeting.id.in_(meeting_ids),
+                        )
+                    )
+                ).all()
+            )
+            if meeting_ids
+            else []
+        )
+        return (
+            {row.id: row for row in users},
+            {row.id: row for row in departments},
+            {row.id: row for row in meetings},
         )
 
     async def _comment_response(self, row: TaskComment) -> TaskCommentResponse:
-        author = await self._active_user(row.organization_id, row.author_id, allow_inactive=True)
-        return TaskCommentResponse.model_validate(
-            {
-                **{
-                    key: getattr(row, key)
-                    for key in TaskCommentResponse.model_fields
-                    if hasattr(row, key)
-                },
-                "author_name": author.display_name,
-            }
-        )
+        return (await self._comment_responses([row]))[0]
+
+    async def _comment_responses(self, rows: list[TaskComment]) -> list[TaskCommentResponse]:
+        if not rows:
+            return []
+        users = await self._users_by_id(rows[0].organization_id, {row.author_id for row in rows})
+        responses: list[TaskCommentResponse] = []
+        for row in rows:
+            author = users.get(row.author_id)
+            if author is None:
+                raise NotFoundError("Employee not found")
+            responses.append(
+                TaskCommentResponse.model_validate(
+                    {
+                        **{
+                            key: getattr(row, key)
+                            for key in TaskCommentResponse.model_fields
+                            if hasattr(row, key)
+                        },
+                        "author_name": author.display_name,
+                    }
+                )
+            )
+        return responses
 
     async def _history_response(self, row: TaskHistory) -> TaskHistoryResponse:
-        actor = (
-            await self._active_user(row.organization_id, row.actor_id, allow_inactive=True)
-            if row.actor_id
-            else None
+        return (await self._history_responses([row]))[0]
+
+    async def _history_responses(self, rows: list[TaskHistory]) -> list[TaskHistoryResponse]:
+        if not rows:
+            return []
+        users = await self._users_by_id(
+            rows[0].organization_id, {row.actor_id for row in rows if row.actor_id}
         )
-        return TaskHistoryResponse.model_validate(
-            {
-                **{
-                    key: getattr(row, key)
-                    for key in TaskHistoryResponse.model_fields
-                    if hasattr(row, key)
-                },
-                "actor_name": actor.display_name if actor else None,
-            }
-        )
+        return [
+            TaskHistoryResponse.model_validate(
+                {
+                    **{
+                        key: getattr(row, key)
+                        for key in TaskHistoryResponse.model_fields
+                        if hasattr(row, key)
+                    },
+                    "actor_name": users[row.actor_id].display_name if row.actor_id else None,
+                }
+            )
+            for row in rows
+        ]
 
     async def _activity_response(self, row: DailyActivity) -> DailyActivityResponse:
-        user = await self._active_user(row.organization_id, row.user_id, allow_inactive=True)
-        return DailyActivityResponse.model_validate(
-            {
-                **{
-                    key: getattr(row, key)
-                    for key in DailyActivityResponse.model_fields
-                    if hasattr(row, key)
-                },
-                "user_name": user.display_name,
-            }
+        return (await self._activity_responses([row]))[0]
+
+    async def _activity_responses(self, rows: list[DailyActivity]) -> list[DailyActivityResponse]:
+        if not rows:
+            return []
+        users = await self._users_by_id(rows[0].organization_id, {row.user_id for row in rows})
+        responses: list[DailyActivityResponse] = []
+        for row in rows:
+            user = users.get(row.user_id)
+            if user is None:
+                raise NotFoundError("Employee not found")
+            responses.append(
+                DailyActivityResponse.model_validate(
+                    {
+                        **{
+                            key: getattr(row, key)
+                            for key in DailyActivityResponse.model_fields
+                            if hasattr(row, key)
+                        },
+                        "user_name": user.display_name,
+                    }
+                )
+            )
+        return responses
+
+    async def _users_by_id(
+        self, organization_id: uuid.UUID, user_ids: set[uuid.UUID]
+    ) -> dict[uuid.UUID, User]:
+        if not user_ids:
+            return {}
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(User).where(
+                        User.organization_id == organization_id,
+                        User.id.in_(user_ids),
+                        User.removed_at.is_(None),
+                    )
+                )
+            ).all()
         )
+        return {row.id: row for row in rows}
 
     @staticmethod
     def _attachment_response(row: TaskAttachment) -> TaskAttachmentResponse:

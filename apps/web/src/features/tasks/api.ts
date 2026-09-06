@@ -50,6 +50,7 @@ export interface TaskPage {
 export interface TaskAssignee {
   id: string
   display_name: string
+  avatar_url: string | null
   job_title: string | null
   department_id: string | null
   department_name: string | null

@@ -116,6 +116,7 @@ class TaskAssigneeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     display_name: str
+    avatar_url: str | None = None
     job_title: str | None
     department_id: uuid.UUID | None
     department_name: str | None = None

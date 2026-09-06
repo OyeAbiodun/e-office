@@ -2,12 +2,15 @@
 
 # ruff: noqa: E501
 
+import asyncio
 import io
 import uuid
 from datetime import date
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
@@ -35,7 +38,7 @@ from meetinghq_api.modules.tasks.schemas import (
 )
 from meetinghq_api.modules.tasks.service import TaskService
 from meetinghq_api.modules.users.models import User
-from meetinghq_api.shared.exceptions import ValidationError
+from meetinghq_api.shared.exceptions import NotFoundError, ValidationError
 from meetinghq_api.shared.responses import OperationResponse
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -54,6 +57,14 @@ ALLOWED_ATTACHMENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
+
+
+def _task_attachment_path(storage_root: str, storage_key: str) -> Path | None:
+    root = Path(storage_root).resolve()
+    target = (root / storage_key).resolve()
+    if root not in target.parents or not target.is_file():
+        return None
+    return target
 
 
 def service(session: Session, settings: AppSettings) -> TaskService:
@@ -131,7 +142,7 @@ async def activities(
 ) -> list[DailyActivityResponse]:
     task_service = service(session, settings)
     rows, _ = await task_service.activities(user, user_id=user_id, page=page, page_size=page_size)
-    return [await task_service._activity_response(row) for row in rows]
+    return await task_service._activity_responses(rows)
 
 
 @router.post("/activities", response_model=DailyActivityResponse, status_code=201)
@@ -203,6 +214,8 @@ async def upload_attachment(
     user: TaskReader,
     file: TaskUpload,
 ) -> TaskAttachmentResponse:
+    task_service = service(session, settings)
+    await task_service.ensure_attachment_upload_allowed(user, task_id)
     content = await file.read(25 * 1024 * 1024 + 1)
     if not content or len(content) > 25 * 1024 * 1024:
         raise ValidationError("Task attachments must be between 1 byte and 25 MB")
@@ -219,7 +232,6 @@ async def upload_attachment(
         content_type,
         len(content),
     )
-    task_service = service(session, settings)
     row = await task_service.add_attachment(
         user,
         task_id,
@@ -227,9 +239,31 @@ async def upload_attachment(
         content_type=stored.content_type,
         size=stored.size,
         storage_key=stored.key,
-        url=stored.url,
     )
     return task_service._attachment_response(row)
+
+
+@router.get("/{task_id}/attachments/{attachment_id}/download", response_class=FileResponse)
+async def download_attachment(
+    task_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: TaskReader,
+) -> FileResponse:
+    """Download a task file only after task-level authorization succeeds."""
+    row = await service(session, settings).attachment_for_download(user, task_id, attachment_id)
+    target = await asyncio.to_thread(
+        _task_attachment_path, settings.local_storage_path, row.storage_key
+    )
+    if target is None:
+        raise NotFoundError("Task attachment not found")
+    return FileResponse(
+        target,
+        media_type=row.content_type,
+        filename=row.filename,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.delete("/{task_id}/attachments/{attachment_id}", response_model=OperationResponse)

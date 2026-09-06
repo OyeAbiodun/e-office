@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { CheckCircle2, Clock3, ListChecks, Plus, Sparkles } from 'lucide-react'
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
 
@@ -516,6 +517,16 @@ function TaskForm({
   onClose: () => void
   onSave: (body: Record<string, unknown>) => void
 }) {
+  const [assigneeId, setAssigneeId] = useState('')
+  const [assigneeSearch, setAssigneeSearch] = useState('')
+  const matchingPeople = people.filter((person) =>
+    [person.display_name, person.job_title, person.department_name]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(assigneeSearch.toLowerCase()),
+  )
+  const selectedPerson = people.find((person) => person.id === assigneeId)
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -524,7 +535,7 @@ function TaskForm({
       description: form.get('description') || undefined,
       due_date: form.get('due_date') || undefined,
       priority: form.get('priority'),
-      assignee_id: form.get('assignee_id') || undefined,
+      assignee_id: assigneeId || undefined,
       reminder_at: form.get('reminder_at')
         ? new Date(String(form.get('reminder_at'))).toISOString()
         : undefined,
@@ -577,19 +588,14 @@ function TaskForm({
           </summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium">
-              Assign to
-              <select
+              Search authorized employees
+              <input
+                aria-label="Search authorized employees"
                 className="mt-1 w-full rounded-lg border bg-background p-2"
-                name="assignee_id"
-              >
-                <option value="">Myself</option>
-                {people.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.display_name}
-                    {person.job_title ? ` · ${person.job_title}` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(event) => setAssigneeSearch(event.target.value)}
+                placeholder="Name, job title, or department"
+                value={assigneeSearch}
+              />
             </label>
             <label className="text-sm font-medium">
               Reminder
@@ -600,6 +606,78 @@ function TaskForm({
               />
             </label>
           </div>
+          <div
+            aria-label="Authorized assignees"
+            className="max-h-52 space-y-1 overflow-auto rounded-lg border p-1"
+            role="listbox"
+          >
+            <button
+              aria-selected={!assigneeId}
+              className={`flex w-full items-center gap-3 rounded-md p-2 text-left text-sm hover:bg-muted ${
+                !assigneeId ? 'bg-muted' : ''
+              }`}
+              onClick={() => setAssigneeId('')}
+              role="option"
+              type="button"
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 font-semibold text-primary">
+                Me
+              </span>
+              <span>
+                <span className="block font-medium">Assign to myself</span>
+                <span className="block text-xs text-muted-foreground">
+                  Keep this work in your own queue
+                </span>
+              </span>
+            </button>
+            {matchingPeople.map((person) => (
+              <button
+                aria-selected={assigneeId === person.id}
+                className={`flex w-full items-center gap-3 rounded-md p-2 text-left text-sm hover:bg-muted ${
+                  assigneeId === person.id ? 'bg-muted' : ''
+                }`}
+                key={person.id}
+                onClick={() => setAssigneeId(person.id)}
+                role="option"
+                type="button"
+              >
+                {person.avatar_url ? (
+                  <img
+                    alt=""
+                    className="size-8 shrink-0 rounded-full object-cover"
+                    src={person.avatar_url}
+                  />
+                ) : (
+                  <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 font-semibold text-primary">
+                    {person.display_name.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {person.display_name}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {[person.job_title, person.department_name]
+                      .filter(Boolean)
+                      .join(' · ') || 'Employee'}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {!matchingPeople.length && (
+              <p className="p-3 text-sm text-muted-foreground">
+                No authorized employees match this search.
+              </p>
+            )}
+          </div>
+          {selectedPerson && (
+            <p className="text-sm text-muted-foreground">
+              Assigning to <span className="font-medium text-foreground">{selectedPerson.display_name}</span>
+              {selectedPerson.department_name
+                ? ` · ${selectedPerson.department_name}`
+                : ''}
+            </p>
+          )}
         </details>
         <DialogActions onClose={onClose} />
       </form>
@@ -789,6 +867,15 @@ function TaskDetail({
           <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
             {task.description || 'No description provided.'}
           </p>
+          {task.meeting_id ? (
+            <Link
+              className="mt-3 inline-flex text-sm font-semibold text-primary hover:underline"
+              params={{ meetingId: task.meeting_id }}
+              to="/meetings/$meetingId"
+            >
+              Open source meeting{task.meeting_title ? `: ${task.meeting_title}` : ''}
+            </Link>
+          ) : null}
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <Info label="Assignee" value={task.assignee_name ?? '—'} />
