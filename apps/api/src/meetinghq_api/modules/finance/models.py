@@ -101,6 +101,9 @@ class Voucher(SoftDeleteMixin, Base):
     meeting_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("meetings.id", ondelete="SET NULL"), index=True
     )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), index=True
+    )
     title: Mapped[str] = mapped_column(String(240))
     description: Mapped[str | None] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(String(3), default="NGN")

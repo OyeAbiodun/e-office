@@ -34,6 +34,7 @@ from meetinghq_api.modules.finance.schemas import (
 from meetinghq_api.modules.finance.service import OPEN_EDITABLE, ZERO, FinanceService
 from meetinghq_api.modules.meetings.models import Meeting
 from meetinghq_api.modules.organizations.models import OrganizationUnit
+from meetinghq_api.modules.tasks.models import Task
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.exceptions import ValidationError
 
@@ -125,6 +126,18 @@ class FinanceQueries:
                 )
             ).all()
         }
+        tasks = {
+            key: value
+            for key, value in (
+                await self.session.execute(
+                    select(Task.id, Task.title).where(
+                        Task.organization_id == actor.organization_id,
+                        Task.id.in_({v.task_id for v in rows if v.task_id}),
+                        Task.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        }
         result = []
         for row in rows:
             item = VoucherResponse.model_validate(row)
@@ -132,6 +145,7 @@ class FinanceQueries:
                 item.requester_name = f"{user.first_name} {user.last_name or ''}".strip()
             item.department_name = departments.get(row.department_id) if row.department_id else None
             item.meeting_title = meetings.get(row.meeting_id) if row.meeting_id else None
+            item.task_title = tasks.get(row.task_id) if row.task_id else None
             result.append(item)
         return result
 

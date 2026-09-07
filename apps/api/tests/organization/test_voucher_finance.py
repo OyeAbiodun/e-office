@@ -84,7 +84,15 @@ async def test_finance_complete_workflow_and_replay(
     staff, _ = await identity(c, "requester", "Employee", manager_id)
     accountant, _ = await identity(c, "accountant", "Accountant")
     auditor, _ = await identity(c, "auditor", "Auditor")
-    v = await create(c, staff)
+    task = await c.post(
+        "/api/v1/tasks",
+        headers=staff,
+        json={"title": "Prepare workshop reimbursement", "priority": "normal"},
+    )
+    assert task.status_code == 201, task.text
+    task_id = task.json()["data"]["id"]
+    v = await create(c, staff, task_id=task_id)
+    assert v["task_id"] == task_id
     base = f"/api/v1/vouchers/{v['id']}"
     assert v["requested_amount"] == "105.00"
     edited = await c.patch(base, headers=staff, json={"title": "Updated purpose"})

@@ -40,6 +40,7 @@ from meetinghq_api.modules.finance.schemas import (
 from meetinghq_api.modules.meetings.models import Meeting, MeetingAttendee
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.organizations.models import Organization, OrganizationUnit
+from meetinghq_api.modules.tasks.models import Task
 from meetinghq_api.modules.users.models import Permission, Role, User, UserStatus
 from meetinghq_api.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
@@ -285,6 +286,21 @@ class FinanceService:
         if await self.session.scalar(query) is None:
             raise NotFoundError("Meeting not found")
 
+    async def _task(self, actor: User, task_id: uuid.UUID | None) -> None:
+        """Permit links only to tenant tasks the requester can legitimately access."""
+        if task_id is None:
+            return
+        self.require(actor, "tasks.view_own")
+        query = select(Task.id).where(
+            Task.id == task_id,
+            Task.organization_id == actor.organization_id,
+            Task.deleted_at.is_(None),
+        )
+        if not self._has(actor, "tasks.manage"):
+            query = query.where(or_(Task.assignee_id == actor.id, Task.created_by_id == actor.id))
+        if await self.session.scalar(query) is None:
+            raise NotFoundError("Task not found")
+
     async def _replace_lines(self, actor: User, voucher: Voucher, body: VoucherCreate) -> None:
         await self._category(actor, body.expense_category_id)
         await self._department(actor, body.department_id)
@@ -320,6 +336,7 @@ class FinanceService:
     async def create(self, actor: User, body: VoucherCreate) -> Voucher:
         self.require(actor, "vouchers.create")
         await self._meeting(actor, body.meeting_id)
+        await self._task(actor, body.task_id)
         voucher = Voucher(
             organization_id=actor.organization_id,
             voucher_number=await self._number(actor.organization_id),
@@ -327,6 +344,7 @@ class FinanceService:
             department_id=body.department_id or actor.department_id,
             expense_category_id=body.expense_category_id,
             meeting_id=body.meeting_id,
+            task_id=body.task_id,
             title=body.title.strip(),
             description=body.description,
             currency=body.currency,
@@ -351,6 +369,8 @@ class FinanceService:
             await self._category(actor, body.expense_category_id)
         if "meeting_id" in changes:
             await self._meeting(actor, body.meeting_id)
+        if "task_id" in changes:
+            await self._task(actor, body.task_id)
         for name, value in changes.items():
             setattr(voucher, name, value)
         if body.line_items is not None:
@@ -361,6 +381,7 @@ class FinanceService:
                     title=voucher.title,
                     department_id=voucher.department_id,
                     expense_category_id=voucher.expense_category_id,
+                    task_id=voucher.task_id,
                     line_items=body.line_items,
                 ),
             )

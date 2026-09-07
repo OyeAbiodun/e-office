@@ -32,6 +32,7 @@ class VoucherCreate(InputModel):
     department_id: uuid.UUID | None = None
     expense_category_id: uuid.UUID | None = None
     meeting_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
     line_items: list[VoucherLineItemInput] = Field(default_factory=list, max_length=100)
 
 
@@ -42,6 +43,7 @@ class VoucherUpdate(InputModel):
     department_id: uuid.UUID | None = None
     expense_category_id: uuid.UUID | None = None
     meeting_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
     line_items: list[VoucherLineItemInput] | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
@@ -156,6 +158,7 @@ class VoucherResponse(OrmResponse):
     department_id: uuid.UUID | None
     expense_category_id: uuid.UUID | None
     meeting_id: uuid.UUID | None
+    task_id: uuid.UUID | None
     title: str
     description: str | None
     currency: str
@@ -173,6 +176,7 @@ class VoucherResponse(OrmResponse):
     requester_name: str | None = None
     department_name: str | None = None
     meeting_title: str | None = None
+    task_title: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

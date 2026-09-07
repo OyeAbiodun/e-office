@@ -23,6 +23,8 @@ export interface Voucher {
   department_name: string | null
   meeting_id: string | null
   meeting_title: string | null
+  task_id: string | null
+  task_title: string | null
   expense_category_id: string | null
   title: string
   description: string | null

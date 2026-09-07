@@ -121,6 +121,20 @@ export function VoucherDetailPage() {
                 </dd>
               </div>
             )}
+            {v.task_id && (
+              <div>
+                <dt className="text-muted-foreground">Related task</dt>
+                <dd>
+                  <Link
+                    className="text-primary"
+                    to="/tasks/$taskId"
+                    params={{ taskId: v.task_id }}
+                  >
+                    {v.task_title ?? 'Open task'}
+                  </Link>
+                </dd>
+              </div>
+            )}
           </dl>
         </Section>
         <Documents detail={d} refresh={refresh} />

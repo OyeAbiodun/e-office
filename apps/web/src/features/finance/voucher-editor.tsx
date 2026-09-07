@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '@/features/auth/auth-store'
 import { meetingApi } from '@/features/meetings/api'
+import { tasksApi } from '@/features/tasks/api'
 import { financeApi, type LineItem, type VoucherDetail } from './api'
 import { ErrorState, Field, FinanceLayout, Loading, Section } from './shared'
 
@@ -63,6 +64,11 @@ function VoucherEditor({ detail }: { detail?: VoucherDetail }) {
     queryFn: () => meetingApi.list(),
     enabled: user?.permissions.includes('meetings.read'),
   })
+  const tasks = useQuery({
+    queryKey: ['voucher-tasks'],
+    queryFn: () => tasksApi.list({ page_size: 100 }),
+    enabled: user?.permissions.includes('tasks.view_own'),
+  })
   const save = useMutation({
     mutationFn: async (body: Record<string, unknown>) =>
       detail
@@ -87,6 +93,7 @@ function VoucherEditor({ detail }: { detail?: VoucherDetail }) {
       department_id: data.get('department_id') || null,
       expense_category_id: data.get('expense_category_id') || null,
       meeting_id: data.get('meeting_id') || null,
+      task_id: data.get('task_id') || null,
       line_items: lines,
     })
   }
@@ -190,6 +197,24 @@ function VoucherEditor({ detail }: { detail?: VoucherDetail }) {
               </select>
             </Field>
           </details>
+          {user?.permissions.includes('tasks.view_own') && (
+            <details>
+              <summary>Link to a task (optional)</summary>
+              <Field label="Related task">
+                <select
+                  name="task_id"
+                  defaultValue={detail?.voucher.task_id ?? ''}
+                >
+                  <option value="">No task</option>
+                  {tasks.data?.items.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      #{task.sequence} · {task.title}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </details>
+          )}
         </Section>
         <Section
           title="2. Line items"
