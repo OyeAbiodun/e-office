@@ -23,6 +23,7 @@ dependencies = [
   "python-multipart>=0.0.20,<1",
   "qrcode>=8.2,<9",
   "redis>=6.2,<7",
+  "reportlab>=4.4,<5",
   "sqlalchemy[asyncio]>=2.0.41,<3",
   "structlog>=25.4,<26",
   "tzdata>=2026.1",

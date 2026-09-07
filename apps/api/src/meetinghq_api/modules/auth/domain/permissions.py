@@ -170,6 +170,10 @@ _FINANCE_PERMISSION_CATALOG = tuple(
         (Permissions.VOUCHERS_RETURN, "vouchers", "return", "Return vouchers for correction"),
         (Permissions.VOUCHERS_DISBURSE, "vouchers", "disburse", "Disburse approved vouchers"),
         (Permissions.VOUCHERS_AUDIT, "vouchers", "audit", "Audit organization vouchers"),
+        ("vouchers.view_all", "vouchers", "view_all", "Review vouchers across the organization"),
+        ("vouchers.comment", "vouchers", "comment", "Comment on accessible vouchers"),
+        ("vouchers.export", "vouchers", "export", "Export accessible vouchers and PDFs"),
+        ("finance.export", "finance", "export", "Export statements and transaction lists"),
         (Permissions.FINANCE_ACCOUNTS_VIEW, "finance", "accounts_view", "View finance accounts"),
         (
             Permissions.FINANCE_ACCOUNTS_MANAGE,
@@ -342,3 +346,41 @@ ROLE_PERMISSIONS["Team Manager"] |= (
 )
 ROLE_PERMISSIONS["Team Manager"] |= _task_manager
 ROLE_PERMISSIONS["Meeting Organizer"] |= _task_manager
+
+_voucher_employee = frozenset(
+    {
+        "vouchers.view_own",
+        "vouchers.create",
+        "vouchers.edit_draft",
+        "vouchers.submit",
+        "vouchers.comment",
+        "vouchers.export",
+    }
+)
+ROLE_PERMISSIONS["Employee"] |= _voucher_employee
+ROLE_PERMISSIONS["Team Manager"] |= _voucher_employee | frozenset(
+    {"vouchers.approve", "vouchers.return", "vouchers.reject"}
+)
+ROLE_PERMISSIONS["Accountant"] = _matrix({"dashboard", "notifications"}, {"view"}) | frozenset(
+    {
+        "vouchers.view_own",
+        "vouchers.disburse",
+        "vouchers.comment",
+        "vouchers.export",
+        "finance.accounts.view",
+        "finance.transactions.view",
+        "finance.export",
+        "finance.reconcile",
+        "finance.reverse",
+    }
+)
+ROLE_PERMISSIONS["Auditor"] = _matrix({"dashboard", "notifications"}, {"view"}) | frozenset(
+    {
+        "vouchers.view_own",
+        "vouchers.audit",
+        "vouchers.export",
+        "finance.accounts.view",
+        "finance.transactions.view",
+        "finance.export",
+    }
+)

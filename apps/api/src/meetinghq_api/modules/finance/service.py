@@ -6,9 +6,10 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from meetinghq_api.core.errors import AuthorizationError
 from meetinghq_api.infrastructure.events import TransactionalDomainEventPublisher
@@ -34,9 +35,10 @@ from meetinghq_api.modules.finance.schemas import (
     VoucherReviewInput,
     VoucherUpdate,
 )
+from meetinghq_api.modules.meetings.models import Meeting, MeetingAttendee
 from meetinghq_api.modules.notifications.service import NotificationService
-from meetinghq_api.modules.organizations.models import OrganizationUnit
-from meetinghq_api.modules.users.models import User
+from meetinghq_api.modules.organizations.models import Organization, OrganizationUnit
+from meetinghq_api.modules.users.models import Permission, Role, User, UserStatus
 from meetinghq_api.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
 ZERO = Decimal("0.00")
@@ -64,11 +66,45 @@ class FinanceService:
     def _has(cls, user: User, permission: str) -> bool:
         return permission in cls._permissions(user)
 
+    @classmethod
+    def require(cls, actor: User, permission: str) -> None:
+        if not cls._has(actor, permission):
+            raise AuthorizationError(f"Permission required: {permission}")
+
+    def managed_requesters(self, actor: User) -> ColumnElement[bool]:
+        return Voucher.requester_id.in_(
+            select(User.id).where(
+                User.organization_id == actor.organization_id,
+                or_(
+                    User.manager_id == actor.id,
+                    User.department_id.in_(
+                        select(OrganizationUnit.id).where(
+                            OrganizationUnit.organization_id == actor.organization_id,
+                            OrganizationUnit.manager_id == actor.id,
+                            OrganizationUnit.deleted_at.is_(None),
+                        )
+                    ),
+                ),
+            )
+        )
+
+    def visible(self, actor: User) -> ColumnElement[bool]:
+        permissions = self._permissions(actor)
+        own = Voucher.requester_id == actor.id
+        if permissions & {"vouchers.audit", "vouchers.view_all"}:
+            return Voucher.organization_id == actor.organization_id
+        if permissions & {"vouchers.approve", "vouchers.return", "vouchers.reject"}:
+            own = or_(own, and_(self.managed_requesters(actor), Voucher.status != "draft"))
+        if "vouchers.disburse" in permissions:
+            own = or_(own, Voucher.status.in_({"approved", "partially_disbursed", "completed"}))
+        return own
+
     async def _voucher(self, actor: User, voucher_id: uuid.UUID, *, lock: bool = False) -> Voucher:
         statement = select(Voucher).where(
             Voucher.id == voucher_id,
             Voucher.organization_id == actor.organization_id,
             Voucher.deleted_at.is_(None),
+            self.visible(actor),
         )
         if lock:
             statement = statement.with_for_update()
@@ -122,6 +158,10 @@ class FinanceService:
     async def _number(self, organization_id: uuid.UUID) -> str:
         """Allocate VCH-yyyymmdd-0001 under a locked, tenant/day sequence row."""
         today = datetime.now(UTC).date()
+        # Lock the existing tenant root first, including the first allocation of a day.
+        await self.session.scalar(
+            select(Organization.id).where(Organization.id == organization_id).with_for_update()
+        )
         row = await self.session.scalar(
             select(VoucherSequence)
             .where(
@@ -135,12 +175,7 @@ class FinanceService:
                 organization_id=organization_id, sequence_date=today, next_sequence=1
             )
             self.session.add(row)
-            try:
-                await self.session.flush()
-            except IntegrityError as error:
-                raise ConflictError(
-                    "Voucher number allocation conflicted; retry the request"
-                ) from error
+            await self.session.flush()
         number = row.next_sequence
         row.next_sequence += 1
         return f"VCH-{today:%Y%m%d}-{number:04d}"
@@ -173,12 +208,89 @@ class FinanceService:
                 audit_metadata=payload,
             )
         )
+        if event_type in {
+            "submitted",
+            "approved",
+            "returned",
+            "rejected",
+            "partially_disbursed",
+            "disbursed",
+            "reversed",
+        }:
+            await self._notify(voucher, actor, event_type)
+
+    async def _notify(self, voucher: Voucher, actor: User, event_type: str) -> None:
+        recipients = {voucher.requester_id}
+        if event_type in {"submitted", "approved"}:
+            permission = "vouchers.approve" if event_type == "submitted" else "vouchers.disburse"
+            users = list(
+                (
+                    await self.session.scalars(
+                        select(User)
+                        .where(
+                            User.organization_id == actor.organization_id,
+                            User.status == UserStatus.ACTIVE,
+                            User.roles.any(Role.permissions.any(Permission.name == permission)),
+                        )
+                        .options(selectinload(User.roles).selectinload(Role.permissions))
+                    )
+                ).all()
+            )
+            for candidate in users:
+                if candidate.id == voucher.requester_id:
+                    continue
+                if event_type == "submitted" and not self._has(candidate, "vouchers.view_all"):
+                    allowed = await self.session.scalar(
+                        select(Voucher.id).where(
+                            Voucher.id == voucher.id, self.managed_requesters(candidate)
+                        )
+                    )
+                    if not allowed:
+                        continue
+                if event_type == "approved" and candidate.id == actor.id:
+                    continue
+                recipients.add(candidate.id)
+        for recipient in recipients - {actor.id}:
+            await self.notifications.create_notification(
+                organization_id=actor.organization_id,
+                user_id=recipient,
+                notification_type=f"voucher_{event_type}",
+                title=f"{voucher.voucher_number}: {event_type.replace('_', ' ')}",
+                body=voucher.title,
+                category="approvals",
+                metadata={"voucher_id": str(voucher.id)},
+                action_url=f"/vouchers/{voucher.id}",
+            )
+
+    async def _meeting(self, actor: User, meeting_id: uuid.UUID | None) -> None:
+        if meeting_id is None:
+            return
+        self.require(actor, "meetings.read")
+        query = select(Meeting.id).where(
+            Meeting.id == meeting_id, Meeting.organization_id == actor.organization_id
+        )
+        if not self._has(actor, "meetings.manage"):
+            query = query.where(
+                or_(
+                    Meeting.organizer_id == actor.id,
+                    Meeting.id.in_(
+                        select(MeetingAttendee.meeting_id).where(
+                            MeetingAttendee.user_id == actor.id
+                        )
+                    ),
+                )
+            )
+        if await self.session.scalar(query) is None:
+            raise NotFoundError("Meeting not found")
 
     async def _replace_lines(self, actor: User, voucher: Voucher, body: VoucherCreate) -> None:
         await self._category(actor, body.expense_category_id)
         await self._department(actor, body.department_id)
         await self.session.execute(
-            VoucherLineItem.__table__.delete().where(VoucherLineItem.voucher_id == voucher.id)
+            delete(VoucherLineItem).where(
+                VoucherLineItem.voucher_id == voucher.id,
+                VoucherLineItem.organization_id == actor.organization_id,
+            )
         )
         total = ZERO
         for position, line in enumerate(body.line_items):
@@ -200,8 +312,12 @@ class FinanceService:
                 )
             )
         voucher.requested_amount = self._money(total)
+        if total > Decimal("9999999999999999.99"):
+            raise ValidationError("Voucher total exceeds supported amount")
 
     async def create(self, actor: User, body: VoucherCreate) -> Voucher:
+        self.require(actor, "vouchers.create")
+        await self._meeting(actor, body.meeting_id)
         voucher = Voucher(
             organization_id=actor.organization_id,
             voucher_number=await self._number(actor.organization_id),
@@ -222,20 +338,35 @@ class FinanceService:
     async def update_draft(
         self, actor: User, voucher_id: uuid.UUID, body: VoucherUpdate
     ) -> Voucher:
+        self.require(actor, "vouchers.edit_draft")
         voucher = await self._voucher(actor, voucher_id, lock=True)
         if voucher.requester_id != actor.id or voucher.status not in OPEN_EDITABLE:
             raise AuthorizationError("Only the requester may edit a draft or returned voucher")
-        voucher.title = (body.title or voucher.title).strip()
-        voucher.description = body.description
-        voucher.department_id = body.department_id or actor.department_id
-        voucher.expense_category_id = body.expense_category_id
-        voucher.meeting_id = body.meeting_id
-        voucher.currency = body.currency
-        await self._replace_lines(actor, voucher, body)
+        changes = body.model_dump(exclude_unset=True, exclude={"line_items"})
+        if "department_id" in changes:
+            await self._department(actor, body.department_id)
+        if "expense_category_id" in changes:
+            await self._category(actor, body.expense_category_id)
+        if "meeting_id" in changes:
+            await self._meeting(actor, body.meeting_id)
+        for name, value in changes.items():
+            setattr(voucher, name, value)
+        if body.line_items is not None:
+            await self._replace_lines(
+                actor,
+                voucher,
+                VoucherCreate(
+                    title=voucher.title,
+                    department_id=voucher.department_id,
+                    expense_category_id=voucher.expense_category_id,
+                    line_items=body.line_items,
+                ),
+            )
         await self._history(voucher, actor, "edited")
         return voucher
 
     async def submit(self, actor: User, voucher_id: uuid.UUID) -> Voucher:
+        self.require(actor, "vouchers.submit")
         voucher = await self._voucher(actor, voucher_id, lock=True)
         if voucher.requester_id != actor.id or voucher.status not in OPEN_EDITABLE:
             raise AuthorizationError("Only the requester may submit a draft or returned voucher")
@@ -253,7 +384,17 @@ class FinanceService:
         decision: str,
         body: VoucherReviewInput | VoucherReturnInput,
     ) -> Voucher:
+        permission = {"approved": "approve", "returned": "return", "rejected": "reject"}.get(
+            decision
+        )
+        if permission is None:
+            raise ValidationError("Unsupported voucher decision")
+        self.require(actor, f"vouchers.{permission}")
         voucher = await self._voucher(actor, voucher_id, lock=True)
+        if not self._has(actor, "vouchers.view_all") and not await self.session.scalar(
+            select(Voucher.id).where(Voucher.id == voucher.id, self.managed_requesters(actor))
+        ):
+            raise AuthorizationError("Only an authorized reporting-line reviewer may review")
         if voucher.status != "submitted":
             raise ConflictError("Only submitted vouchers may be reviewed")
         if voucher.requester_id == actor.id:
@@ -301,14 +442,17 @@ class FinanceService:
     async def disburse(
         self, actor: User, voucher_id: uuid.UUID, body: DisbursementInput
     ) -> Voucher:
+        self.require(actor, "vouchers.disburse")
         voucher = await self._voucher(actor, voucher_id, lock=True)
-        if voucher.status not in {"approved", "partially_disbursed"}:
-            raise ConflictError("Only approved vouchers can be disbursed")
         if voucher.requester_id == actor.id:
             raise AuthorizationError("A requester cannot disburse their own voucher")
         review = await self.session.scalar(
             select(VoucherReview)
-            .where(VoucherReview.voucher_id == voucher.id, VoucherReview.decision == "approved")
+            .where(
+                VoucherReview.voucher_id == voucher.id,
+                VoucherReview.organization_id == actor.organization_id,
+                VoucherReview.decision == "approved",
+            )
             .order_by(VoucherReview.created_at.desc())
         )
         if review and review.reviewer_id == actor.id:
@@ -320,9 +464,33 @@ class FinanceService:
             )
         )
         if existing:
-            if existing.voucher_id != voucher.id:
-                raise ConflictError("Idempotency key belongs to another disbursement")
+            if (
+                existing.voucher_id != voucher.id
+                or existing.disbursed_by_id != actor.id
+                or any(
+                    getattr(existing, name) != getattr(body, name)
+                    for name in (
+                        "account_id",
+                        "amount",
+                        "payment_method",
+                        "payment_reference",
+                        "beneficiary",
+                        "note",
+                        "payment_date",
+                    )
+                )
+            ):
+                raise ConflictError("Idempotency key belongs to a different payment request")
             return voucher
+        if voucher.status not in {"approved", "partially_disbursed"}:
+            raise ConflictError("Only approved vouchers can be disbursed")
+        if await self.session.scalar(
+            select(FinanceTransaction.id).where(
+                FinanceTransaction.organization_id == actor.organization_id,
+                FinanceTransaction.idempotency_key == body.idempotency_key,
+            )
+        ):
+            raise ConflictError("Idempotency key already used")
         account = await self._account(actor, body.account_id, lock=True)
         if account.status != "active" or account.currency != voucher.currency:
             raise ValidationError("Use an active account with the voucher currency")
@@ -385,6 +553,7 @@ class FinanceService:
         return voucher
 
     async def create_account(self, actor: User, body: FinanceAccountInput) -> FinanceAccount:
+        self.require(actor, "finance.accounts.manage")
         masked = None
         if body.account_number:
             masked = f"••••{body.account_number[-4:]}" if len(body.account_number) > 4 else "••••"
@@ -417,21 +586,19 @@ class FinanceService:
     async def reverse(
         self, actor: User, transaction_id: uuid.UUID, body: ReversalInput
     ) -> FinanceTransaction:
+        self.require(actor, "finance.reverse")
         original = await self.session.scalar(
-            select(FinanceTransaction)
-            .where(
+            select(FinanceTransaction).where(
                 FinanceTransaction.id == transaction_id,
                 FinanceTransaction.organization_id == actor.organization_id,
             )
-            .with_for_update()
         )
         if original is None:
             raise NotFoundError("Finance transaction not found")
-        existing = await self.session.scalar(
-            select(FinanceTransaction).where(FinanceTransaction.reversal_of_id == original.id)
-        )
-        if existing:
-            raise ConflictError("This transaction has already been reversed")
+        voucher = None
+        if original.voucher_id:
+            voucher = await self._voucher(actor, original.voucher_id, lock=True)
+        await self._account(actor, original.account_id, lock=True)
         duplicate = await self.session.scalar(
             select(FinanceTransaction).where(
                 FinanceTransaction.organization_id == actor.organization_id,
@@ -439,7 +606,23 @@ class FinanceService:
             )
         )
         if duplicate:
+            if (
+                duplicate.reversal_of_id != original.id
+                or duplicate.description != body.reason
+                or duplicate.created_by_id != actor.id
+            ):
+                raise ConflictError("Idempotency key belongs to another request")
             return duplicate
+        if original.reversal_of_id is not None:
+            raise ConflictError("A reversal cannot itself be reversed")
+        existing = await self.session.scalar(
+            select(FinanceTransaction.id).where(
+                FinanceTransaction.organization_id == actor.organization_id,
+                FinanceTransaction.reversal_of_id == original.id,
+            )
+        )
+        if existing:
+            raise ConflictError("This transaction has already been reversed")
         direction = "credit" if original.direction == "debit" else "debit"
         reversal = FinanceTransaction(
             organization_id=actor.organization_id,
@@ -460,6 +643,19 @@ class FinanceService:
             created_by_id=actor.id,
         )
         self.session.add(reversal)
+        await self.session.flush()
+        if voucher:
+            voucher.disbursed_amount = self._money(voucher.disbursed_amount - original.amount)
+            voucher.status = "partially_disbursed" if voucher.disbursed_amount else "approved"
+            voucher.completed_at = None
+            await self._history(
+                voucher,
+                actor,
+                "reversed",
+                body.reason,
+                reference=reversal.reference,
+                amount=str(original.amount),
+            )
         self.session.add(
             AuditLog(
                 organization_id=actor.organization_id,
@@ -475,6 +671,7 @@ class FinanceService:
     async def reconcile(
         self, actor: User, transaction_id: uuid.UUID, body: ReconciliationInput
     ) -> FinanceTransaction:
+        self.require(actor, "finance.reconcile")
         transaction = await self.session.scalar(
             select(FinanceTransaction)
             .where(
@@ -506,12 +703,15 @@ class FinanceService:
         credit = await self.session.scalar(
             select(func.coalesce(func.sum(FinanceTransaction.amount), ZERO)).where(
                 FinanceTransaction.account_id == account.id,
+                FinanceTransaction.organization_id == account.organization_id,
                 FinanceTransaction.direction == "credit",
             )
         )
         debit = await self.session.scalar(
             select(func.coalesce(func.sum(FinanceTransaction.amount), ZERO)).where(
-                FinanceTransaction.account_id == account.id, FinanceTransaction.direction == "debit"
+                FinanceTransaction.account_id == account.id,
+                FinanceTransaction.direction == "debit",
+                FinanceTransaction.organization_id == account.organization_id,
             )
         )
         return self._money(

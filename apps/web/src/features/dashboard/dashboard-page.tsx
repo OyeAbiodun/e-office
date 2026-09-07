@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 
 import { getDashboard } from '@/features/dashboard/api'
+import { FinanceWidget } from '@/features/finance/finance-widget'
 import { meetingApi } from '@/features/meetings/api'
 import { notificationApi } from '@/features/notifications/api'
 import { tasksApi } from '@/features/tasks/api'
@@ -113,6 +114,7 @@ export function DashboardPage() {
   const actionItems = meetings.data.my_action_items
   return (
     <div className="mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
+      <FinanceWidget />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-primary">

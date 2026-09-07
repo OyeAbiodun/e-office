@@ -5,6 +5,9 @@ export interface BreadcrumbItem {
 }
 
 const labels: Record<string, string> = {
+  vouchers: 'Vouchers',
+  finance: 'Finance Center',
+  accounts: 'Accounts',
   calendar: 'Calendar',
   meetings: 'Meetings',
   chat: 'Chat',

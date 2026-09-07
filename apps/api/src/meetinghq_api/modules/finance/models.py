@@ -69,6 +69,7 @@ class Voucher(SoftDeleteMixin, Base):
     """A controlled expenditure request; amounts are derived and never floats."""
 
     __tablename__ = "vouchers"
+    __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
         UniqueConstraint("organization_id", "voucher_number", name="uq_vouchers_org_number"),
         Index("ix_vouchers_org_status_submitted", "organization_id", "status", "submitted_at"),
@@ -77,6 +78,10 @@ class Voucher(SoftDeleteMixin, Base):
         CheckConstraint("requested_amount >= 0", name="ck_vouchers_requested_nonnegative"),
         CheckConstraint("approved_amount >= 0", name="ck_vouchers_approved_nonnegative"),
         CheckConstraint("disbursed_amount >= 0", name="ck_vouchers_disbursed_nonnegative"),
+        CheckConstraint(
+            "disbursed_amount <= approved_amount AND approved_amount <= requested_amount",
+            name="ck_vouchers_amount_order",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -287,6 +292,9 @@ class FinanceTransaction(Base):
             "transaction_date",
         ),
         CheckConstraint("amount > 0", name="ck_finance_transactions_amount_positive"),
+        CheckConstraint(
+            "direction IN ('credit', 'debit')", name="ck_finance_transactions_direction"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

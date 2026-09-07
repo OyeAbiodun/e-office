@@ -1,30 +1,43 @@
 """Voucher and finance HTTP boundary with permission-first workflow routes."""
 
+import asyncio
 import uuid
-from typing import Annotated
+from datetime import date
+from pathlib import Path
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
 from meetinghq_api.infrastructure.database import get_database_session
+from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.auth.presentation.dependencies import require_permission
+from meetinghq_api.modules.finance import exports
+from meetinghq_api.modules.finance.documents import MAX_BYTES, VoucherDocuments
 from meetinghq_api.modules.finance.models import (
     ExpenseCategory,
-    FinanceAccount,
     FinanceTransaction,
     Voucher,
 )
+from meetinghq_api.modules.finance.queries import FinanceQueries
 from meetinghq_api.modules.finance.schemas import (
+    AttachmentResponse,
     DisbursementInput,
     ExpenseCategoryInput,
     FinanceAccountInput,
     FinanceAccountResponse,
+    FinanceTransactionPage,
     FinanceTransactionResponse,
     ReconciliationInput,
     ReversalInput,
+    StatementResponse,
+    VoucherCommentInput,
     VoucherCreate,
+    VoucherDetailResponse,
+    VoucherFilters,
     VoucherPage,
     VoucherResponse,
     VoucherReturnInput,
@@ -33,7 +46,10 @@ from meetinghq_api.modules.finance.schemas import (
 )
 from meetinghq_api.modules.finance.service import FinanceService
 from meetinghq_api.modules.notifications.service import NotificationService
+from meetinghq_api.modules.organizations.models import Organization, OrganizationUnit
 from meetinghq_api.modules.users.models import User
+from meetinghq_api.shared.exceptions import NotFoundError, ValidationError
+from meetinghq_api.shared.responses import OperationResponse
 
 router = APIRouter(tags=["finance"])
 Session = Annotated[AsyncSession, Depends(get_database_session)]
@@ -53,37 +69,9 @@ async def list_vouchers(
     session: Session,
     settings: AppSettings,
     user: VoucherReader,
-    status_filter: str | None = Query(None, alias="status"),
-    search: str | None = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(25, ge=10, le=100),
+    filters: Annotated[VoucherFilters, Query()],
 ) -> VoucherPage:
-    query = select(Voucher).where(
-        Voucher.organization_id == user.organization_id, Voucher.deleted_at.is_(None)
-    )
-    if "vouchers.audit" not in {p.name for r in user.roles for p in r.permissions}:
-        query = query.where(Voucher.requester_id == user.id)
-    if status_filter:
-        query = query.where(Voucher.status == status_filter)
-    if search:
-        query = query.where(Voucher.title.ilike(f"%{search.strip()}%"))
-    total = int(await session.scalar(select(func.count()).select_from(query.subquery())) or 0)
-    rows = list(
-        (
-            await session.scalars(
-                query.order_by(Voucher.created_at.desc())
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-            )
-        ).all()
-    )
-    return VoucherPage(
-        items=[VoucherResponse.model_validate(row) for row in rows],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=max(1, (total + page_size - 1) // page_size),
-    )
+    return await FinanceQueries(service(session, settings)).vouchers(user, filters)
 
 
 @router.post("/vouchers", response_model=VoucherResponse, status_code=status.HTTP_201_CREATED)
@@ -170,21 +158,11 @@ async def disburse_voucher(
 
 @router.get("/finance/accounts", response_model=list[FinanceAccountResponse])
 async def accounts(
-    session: Session, user: Annotated[User, require_permission("finance.accounts.view")]
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.accounts.view")],
 ) -> list[FinanceAccountResponse]:
-    rows = list(
-        (
-            await session.scalars(
-                select(FinanceAccount)
-                .where(
-                    FinanceAccount.organization_id == user.organization_id,
-                    FinanceAccount.deleted_at.is_(None),
-                )
-                .order_by(FinanceAccount.account_name)
-            )
-        ).all()
-    )
-    return [FinanceAccountResponse.model_validate(row) for row in rows]
+    return await FinanceQueries(service(session, settings)).accounts(user)
 
 
 @router.post(
@@ -287,4 +265,329 @@ async def create_category(
     )
     session.add(item)
     await session.flush()
+    session.add(
+        AuditLog(
+            organization_id=user.organization_id,
+            user_id=user.id,
+            action="finance.category_created",
+            resource="expense_category",
+            resource_id=item.id,
+            audit_metadata={"name": item.name},
+        )
+    )
     return {"id": str(item.id), "name": item.name}
+
+
+def download(data: bytes, filename: str, content_type: str) -> Response:
+    return Response(
+        data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/vouchers/export")
+async def export_vouchers(
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("vouchers.export")],
+    filters: Annotated[VoucherFilters, Query()],
+) -> Response:
+    queries = FinanceQueries(service(session, settings))
+    query = queries.vouchers_query(user, filters)
+    rows = list((await session.scalars(query.limit(10001))).all())
+    if len(rows) > 10000:
+        raise ValidationError("Narrow the filters to export at most 10,000 vouchers")
+    return download(
+        exports.voucher_csv(await queries.enrich(user, rows)), "vouchers.csv", "text/csv"
+    )
+
+
+@router.get("/vouchers/options")
+async def voucher_options(
+    session: Session, settings: AppSettings, user: VoucherReader
+) -> dict[str, object]:
+    svc = service(session, settings)
+    visible = select(Voucher.requester_id).where(
+        Voucher.organization_id == user.organization_id, svc.visible(user)
+    )
+    users = (
+        await session.scalars(
+            select(User).where(User.organization_id == user.organization_id, User.id.in_(visible))
+        )
+    ).all()
+    departments = (
+        await session.scalars(
+            select(OrganizationUnit).where(
+                OrganizationUnit.organization_id == user.organization_id,
+                OrganizationUnit.deleted_at.is_(None),
+                OrganizationUnit.id.in_(
+                    {u.department_id for u in [*users, user] if u.department_id}
+                ),
+            )
+        )
+    ).all()
+    from meetinghq_api.modules.finance.models import VoucherReview
+
+    reviewers = (
+        await session.scalars(
+            select(User).where(
+                User.organization_id == user.organization_id,
+                User.id.in_(
+                    select(VoucherReview.reviewer_id)
+                    .join(Voucher, Voucher.id == VoucherReview.voucher_id)
+                    .where(Voucher.organization_id == user.organization_id, svc.visible(user))
+                ),
+            )
+        )
+    ).all()
+    return {
+        "requesters": [
+            {"id": str(u.id), "name": f"{u.first_name} {u.last_name or ''}".strip()} for u in users
+        ],
+        "approvers": [
+            {"id": str(u.id), "name": f"{u.first_name} {u.last_name or ''}".strip()}
+            for u in reviewers
+        ],
+        "departments": [{"id": str(d.id), "name": d.name} for d in departments],
+    }
+
+
+@router.get("/vouchers/summary")
+async def voucher_summary(
+    session: Session, settings: AppSettings, user: VoucherReader
+) -> dict[str, object]:
+    svc = service(session, settings)
+    rows = (
+        await session.execute(
+            select(
+                Voucher.status,
+                Voucher.currency,
+                func.count(Voucher.id),
+                func.sum(Voucher.approved_amount - Voucher.disbursed_amount),
+            )
+            .where(
+                Voucher.organization_id == user.organization_id,
+                Voucher.deleted_at.is_(None),
+                svc.visible(user),
+            )
+            .group_by(Voucher.status, Voucher.currency)
+        )
+    ).all()
+    return {
+        "groups": [
+            {"status": s, "currency": c, "count": n, "outstanding": str(v)} for s, c, n, v in rows
+        ]
+    }
+
+
+@router.get("/vouchers/{voucher_id}", response_model=VoucherDetailResponse)
+async def voucher_detail(
+    voucher_id: uuid.UUID, session: Session, settings: AppSettings, user: VoucherReader
+) -> VoucherDetailResponse:
+    return await FinanceQueries(service(session, settings)).detail(user, voucher_id)
+
+
+@router.get("/vouchers/{voucher_id}/pdf")
+async def export_voucher_pdf(
+    voucher_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("vouchers.export")],
+) -> Response:
+    detail = await FinanceQueries(service(session, settings)).detail(user, voucher_id)
+    name = await session.scalar(
+        select(Organization.name).where(Organization.id == user.organization_id)
+    )
+    data = await asyncio.to_thread(exports.voucher_pdf, detail, name or "MeetingHQ")
+    return download(data, f"{detail.voucher.voucher_number}.pdf", "application/pdf")
+
+
+@router.post("/vouchers/{voucher_id}/comments", status_code=201)
+async def comment_voucher(
+    voucher_id: uuid.UUID,
+    body: VoucherCommentInput,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("vouchers.comment")],
+) -> OperationResponse:
+    await VoucherDocuments(service(session, settings), settings).comment(
+        user, voucher_id, body.body
+    )
+    return OperationResponse(message="Comment added")
+
+
+@router.post(
+    "/vouchers/{voucher_id}/attachments", response_model=AttachmentResponse, status_code=201
+)
+async def upload_attachment(
+    voucher_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("vouchers.edit_draft")],
+    file: Annotated[UploadFile, File()],
+) -> AttachmentResponse:
+    documents = VoucherDocuments(service(session, settings), settings)
+    voucher = await documents.editable(user, voucher_id)
+    content = await file.read(MAX_BYTES + 1)
+    return await documents.upload(
+        user,
+        voucher,
+        file.filename or "document",
+        file.content_type or "application/octet-stream",
+        content,
+    )
+
+
+@router.get("/vouchers/{voucher_id}/attachments", response_model=list[dict[str, object]])
+async def list_attachments(
+    voucher_id: uuid.UUID, session: Session, settings: AppSettings, user: VoucherReader
+) -> list[dict[str, object]]:
+    return (await FinanceQueries(service(session, settings)).detail(user, voucher_id)).attachments
+
+
+@router.get("/vouchers/{voucher_id}/attachments/{attachment_id}/download")
+async def download_attachment(
+    voucher_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: VoucherReader,
+) -> FileResponse:
+    row = await VoucherDocuments(service(session, settings), settings).attachment(
+        user, voucher_id, attachment_id
+    )
+    target = await asyncio.to_thread(document_path, settings.local_storage_path, row.storage_key)
+    if target is None:
+        raise NotFoundError("Voucher document not found")
+    return FileResponse(
+        target,
+        media_type=row.content_type,
+        filename=row.filename,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+def document_path(root_path: str, key: str) -> Path | None:
+    root = Path(root_path).resolve()
+    target = (root / key).resolve()
+    return target if root in target.parents and target.is_file() else None
+
+
+@router.delete("/vouchers/{voucher_id}/attachments/{attachment_id}")
+async def delete_attachment(
+    voucher_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("vouchers.edit_draft")],
+) -> OperationResponse:
+    await VoucherDocuments(service(session, settings), settings).delete(
+        user, voucher_id, attachment_id
+    )
+    return OperationResponse(message="Document removed")
+
+
+@router.get("/finance/transactions/page", response_model=FinanceTransactionPage)
+async def transaction_page(
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.transactions.view")],
+    account_id: uuid.UUID | None = None,
+    search: str | None = Query(None, max_length=200),
+    reconciled: bool | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=10, le=100),
+) -> FinanceTransactionPage:
+    return await FinanceQueries(service(session, settings)).transactions(
+        user,
+        account_id=account_id,
+        search=search,
+        reconciled=reconciled,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/finance/transactions/export")
+async def transaction_export(
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.export")],
+    account_id: uuid.UUID | None = None,
+    search: str | None = None,
+    reconciled: bool | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> Response:
+    service(session, settings).require(user, "finance.transactions.view")
+    page = await FinanceQueries(service(session, settings)).transactions(
+        user,
+        account_id=account_id,
+        search=search,
+        reconciled=reconciled,
+        from_date=from_date,
+        to_date=to_date,
+        page_size=10001,
+    )
+    if page.total > 10000:
+        raise ValidationError("Narrow the filters to export at most 10,000 transactions")
+    return download(exports.transaction_csv(page.items), "transactions.csv", "text/csv")
+
+
+@router.get("/finance/accounts/{account_id}", response_model=FinanceAccountResponse)
+async def account_detail(
+    account_id: uuid.UUID,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.accounts.view")],
+) -> FinanceAccountResponse:
+    svc = service(session, settings)
+    row = await svc._account(user, account_id)
+    result = FinanceAccountResponse.model_validate(row)
+    result.balance = await svc.account_balance(row)
+    return result
+
+
+@router.get("/finance/accounts/{account_id}/statement", response_model=StatementResponse)
+async def account_statement(
+    account_id: uuid.UUID,
+    from_date: date,
+    to_date: date,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.transactions.view")],
+) -> StatementResponse:
+    return await FinanceQueries(service(session, settings)).statement(
+        user, account_id, from_date, to_date
+    )
+
+
+@router.get("/finance/accounts/{account_id}/statement/export")
+async def statement_export(
+    account_id: uuid.UUID,
+    from_date: date,
+    to_date: date,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.export")],
+    format: Literal["csv", "pdf"] = "csv",
+) -> Response:
+    svc = service(session, settings)
+    svc.require(user, "finance.transactions.view")
+    statement = await FinanceQueries(svc).statement(user, account_id, from_date, to_date)
+    if format == "csv":
+        return download(exports.statement_csv(statement), "statement.csv", "text/csv")
+    name = await session.scalar(
+        select(Organization.name).where(Organization.id == user.organization_id)
+    )
+    data = await asyncio.to_thread(exports.statement_pdf, statement, name or "MeetingHQ")
+    return download(data, "statement.pdf", "application/pdf")
