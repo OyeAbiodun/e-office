@@ -109,6 +109,30 @@ class ReconciliationInput(InputModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class FinanceAdjustmentInput(InputModel):
+    """A deliberately controlled non-voucher ledger correction."""
+
+    account_id: uuid.UUID
+    direction: Literal["credit", "debit"]
+    amount: Money = Field(gt=0, max_digits=18, decimal_places=2)
+    transaction_date: date
+    description: str = Field(min_length=1, max_length=2000)
+    reference: str | None = Field(default=None, max_length=96)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class FinanceTransferInput(InputModel):
+    """Move funds between two active accounts in one atomic ledger operation."""
+
+    source_account_id: uuid.UUID
+    destination_account_id: uuid.UUID
+    amount: Money = Field(gt=0, max_digits=18, decimal_places=2)
+    transaction_date: date
+    description: str = Field(min_length=1, max_length=2000)
+    reference: str | None = Field(default=None, max_length=96)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
 class OrmResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -186,6 +210,7 @@ class FinanceTransactionResponse(OrmResponse):
     id: uuid.UUID
     account_id: uuid.UUID
     voucher_id: uuid.UUID | None
+    transfer_group_id: uuid.UUID | None
     reversal_of_id: uuid.UUID | None
     reference: str
     transaction_type: str

@@ -29,8 +29,10 @@ from meetinghq_api.modules.finance.schemas import (
     ExpenseCategoryInput,
     FinanceAccountInput,
     FinanceAccountResponse,
+    FinanceAdjustmentInput,
     FinanceTransactionPage,
     FinanceTransactionResponse,
+    FinanceTransferInput,
     ReconciliationInput,
     ReversalInput,
     StatementResponse,
@@ -177,6 +179,40 @@ async def create_account(
     return FinanceAccountResponse.model_validate(
         await service(session, settings).create_account(user, body)
     )
+
+
+@router.post(
+    "/finance/transactions/adjustments",
+    response_model=FinanceTransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_adjustment(
+    body: FinanceAdjustmentInput,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.transactions.manage")],
+) -> FinanceTransactionResponse:
+    return FinanceTransactionResponse.model_validate(
+        await service(session, settings).adjust(user, body)
+    )
+
+
+@router.post(
+    "/finance/transfers",
+    response_model=list[FinanceTransactionResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_transfer(
+    body: FinanceTransferInput,
+    session: Session,
+    settings: AppSettings,
+    user: Annotated[User, require_permission("finance.transactions.manage")],
+) -> list[FinanceTransactionResponse]:
+    debit, credit = await service(session, settings).transfer(user, body)
+    return [
+        FinanceTransactionResponse.model_validate(debit),
+        FinanceTransactionResponse.model_validate(credit),
+    ]
 
 
 @router.get("/finance/transactions", response_model=list[FinanceTransactionResponse])

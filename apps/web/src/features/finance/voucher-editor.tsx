@@ -7,24 +7,268 @@ import { financeApi, type LineItem, type VoucherDetail } from './api'
 import { ErrorState, Field, FinanceLayout, Loading, Section } from './shared'
 
 export function VoucherEditorPage() {
-  const { voucherId } = useParams({ strict:false })
-  const detail = useQuery({queryKey:['voucher',voucherId],queryFn:() => financeApi.detail(voucherId!),enabled:!!voucherId})
-  if(voucherId && detail.isLoading) return <FinanceLayout title="Edit voucher"><Loading/></FinanceLayout>
-  if(detail.error) return <FinanceLayout title="Edit voucher"><ErrorState error={detail.error}/></FinanceLayout>
-  return <VoucherEditor key={voucherId ?? 'new'} detail={detail.data}/>
+  const { voucherId } = useParams({ strict: false })
+  const detail = useQuery({
+    queryKey: ['voucher', voucherId],
+    queryFn: () => financeApi.detail(voucherId!),
+    enabled: !!voucherId,
+  })
+  if (voucherId && detail.isLoading)
+    return (
+      <FinanceLayout title="Edit voucher">
+        <Loading />
+      </FinanceLayout>
+    )
+  if (detail.error)
+    return (
+      <FinanceLayout title="Edit voucher">
+        <ErrorState error={detail.error} />
+      </FinanceLayout>
+    )
+  return <VoucherEditor key={voucherId ?? 'new'} detail={detail.data} />
 }
 function VoucherEditor({ detail }: { detail?: VoucherDetail }) {
-  const { user } = useAuth(); const navigate = useNavigate(); const client = useQueryClient()
-  const [lines,setLines] = useState<LineItem[]>(detail?.line_items.map(({description,quantity,unit_price,tax_amount,expense_category_id,notes}) => ({description,quantity,unit_price,tax_amount,expense_category_id,notes})) ?? [{description:'',quantity:'1',unit_price:'',tax_amount:'0'}])
-  const categories = useQuery({queryKey:['expense-categories'],queryFn:financeApi.categories})
-  const options = useQuery({queryKey:['voucher-options'],queryFn:financeApi.options})
-  const meetings = useQuery({queryKey:['voucher-meetings'],queryFn:() => meetingApi.list(),enabled:user?.permissions.includes('meetings.read')})
-  const save = useMutation({mutationFn: async (body: Record<string,unknown>) => detail ? financeApi.edit(detail.voucher.id,body) : financeApi.create(body), onSuccess:async (v) => { await client.invalidateQueries({queryKey:['vouchers']}); await client.invalidateQueries({queryKey:['voucher',v.id]}); await navigate({to:'/vouchers/$voucherId',params:{voucherId:v.id}}) }})
-  const submit = (e: FormEvent<HTMLFormElement>) => {e.preventDefault();const data = new FormData(e.currentTarget);save.mutate({title:data.get('title'),description:data.get('description') || null,currency:data.get('currency'),department_id:data.get('department_id') || null,expense_category_id:data.get('expense_category_id') || null,meeting_id:data.get('meeting_id') || null,line_items:lines})}
-  if(detail ? !detail.allowed_actions.includes('edit') : !user?.permissions.includes('vouchers.create')) return <FinanceLayout title="Voucher"><ErrorState error={new Error('This voucher cannot be edited with your current permissions or status.')}/></FinanceLayout>
-  return <FinanceLayout title={detail ? `Edit ${detail.voucher.voucher_number}` : 'New voucher'} subtitle="Start with the expense details. Save your draft, attach supporting documents, then submit for review." actions={<Link className="finance-button" to="/vouchers">Back to vouchers</Link>}>
-    <form onSubmit={submit} className="grid gap-5"><Section title="1. Request details"><div className="finance-grid"><Field label="Purpose"><input name="title" required maxLength={240} autoFocus defaultValue={detail?.voucher.title} placeholder="e.g. Client workshop supplies"/></Field><Field label="Currency"><input name="currency" required pattern="[A-Z]{3}" maxLength={3} defaultValue={detail?.voucher.currency ?? 'NGN'}/></Field><Field label="Department"><select name="department_id" defaultValue={detail?.voucher.department_id ?? ''}><option value="">My department</option>{options.data?.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field><Field label="Expense category"><select name="expense_category_id" defaultValue={detail?.voucher.expense_category_id ?? ''}><option value="">Uncategorized</option>{categories.data?.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></Field></div><div className="mt-4"><Field label="Description / justification"><textarea name="description" maxLength={10000} defaultValue={detail?.voucher.description ?? ''}/></Field></div><details><summary>Link to a meeting (optional)</summary><Field label="Related meeting"><select name="meeting_id" defaultValue={detail?.voucher.meeting_id ?? ''}><option value="">No meeting</option>{meetings.data?.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></Field></details></Section>
-    <Section title="2. Line items" actions={<button type="button" disabled={lines.length >= 100} onClick={() => setLines([...lines,{description:'',quantity:'1',unit_price:'',tax_amount:'0'}])}>Add line item</button>}>{lines.map((line,index) => <div className="finance-line" key={index}>{(['description','quantity','unit_price','tax_amount'] as const).map(key => <Field key={key} label={`${{description:'Description',quantity:'Quantity',unit_price:'Unit price',tax_amount:'Tax amount'}[key]} ${index+1}`}><input required type={key === 'description' ? 'text' : 'number'} min={key === 'quantity' ? '0.001' : '0'} step={key === 'quantity' ? '0.001' : '0.01'} value={line[key]} maxLength={key === 'description' ? 500 : undefined} onChange={e => setLines(lines.map((v,i) => i === index ? {...v,[key]:e.target.value} : v))}/></Field>)}<button type="button" aria-label={`Remove line ${index+1}`} disabled={lines.length === 1} onClick={() => setLines(lines.filter((_,i) => i !== index))}>Remove</button></div>)}<p className="mt-4 text-xs text-muted-foreground">Amounts are calculated and verified when you save. Tax is a fixed amount per line.</p></Section>
-    <div className="finance-callout">Next: add receipts and documents, review the calculated total, and submit your request. Your draft is visible only to you and authorized auditors.</div>{save.error && <ErrorState error={save.error}/>}<div className="finance-actions"><button className="finance-primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save draft and review'}</button><Link className="finance-button" to="/vouchers">Cancel</Link></div></form>
-  </FinanceLayout>
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const [lines, setLines] = useState<LineItem[]>(
+    detail?.line_items.map(
+      ({
+        description,
+        quantity,
+        unit_price,
+        tax_amount,
+        expense_category_id,
+        notes,
+      }) => ({
+        description,
+        quantity,
+        unit_price,
+        tax_amount,
+        expense_category_id,
+        notes,
+      }),
+    ) ?? [{ description: '', quantity: '1', unit_price: '', tax_amount: '0' }],
+  )
+  const categories = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: financeApi.categories,
+  })
+  const options = useQuery({
+    queryKey: ['voucher-options'],
+    queryFn: financeApi.options,
+  })
+  const meetings = useQuery({
+    queryKey: ['voucher-meetings'],
+    queryFn: () => meetingApi.list(),
+    enabled: user?.permissions.includes('meetings.read'),
+  })
+  const save = useMutation({
+    mutationFn: async (body: Record<string, unknown>) =>
+      detail
+        ? financeApi.edit(detail.voucher.id, body)
+        : financeApi.create(body),
+    onSuccess: async (v) => {
+      await client.invalidateQueries({ queryKey: ['vouchers'] })
+      await client.invalidateQueries({ queryKey: ['voucher', v.id] })
+      await navigate({
+        to: '/vouchers/$voucherId',
+        params: { voucherId: v.id },
+      })
+    },
+  })
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const data = new FormData(e.currentTarget)
+    save.mutate({
+      title: data.get('title'),
+      description: data.get('description') || null,
+      currency: data.get('currency'),
+      department_id: data.get('department_id') || null,
+      expense_category_id: data.get('expense_category_id') || null,
+      meeting_id: data.get('meeting_id') || null,
+      line_items: lines,
+    })
+  }
+  if (
+    detail
+      ? !detail.allowed_actions.includes('edit')
+      : !user?.permissions.includes('vouchers.create')
+  )
+    return (
+      <FinanceLayout title="Voucher">
+        <ErrorState
+          error={
+            new Error(
+              'This voucher cannot be edited with your current permissions or status.',
+            )
+          }
+        />
+      </FinanceLayout>
+    )
+  return (
+    <FinanceLayout
+      title={detail ? `Edit ${detail.voucher.voucher_number}` : 'New voucher'}
+      subtitle="Start with the expense details. Save your draft, attach supporting documents, then submit for review."
+      actions={
+        <Link className="finance-button" to="/vouchers">
+          Back to vouchers
+        </Link>
+      }
+    >
+      <form onSubmit={submit} className="grid gap-5">
+        <Section title="1. Request details">
+          <div className="finance-grid">
+            <Field label="Purpose">
+              <input
+                name="title"
+                required
+                maxLength={240}
+                autoFocus
+                defaultValue={detail?.voucher.title}
+                placeholder="e.g. Client workshop supplies"
+              />
+            </Field>
+            <Field label="Currency">
+              <input
+                name="currency"
+                required
+                pattern="[A-Z]{3}"
+                maxLength={3}
+                defaultValue={detail?.voucher.currency ?? 'NGN'}
+              />
+            </Field>
+            <Field label="Department">
+              <select
+                name="department_id"
+                defaultValue={detail?.voucher.department_id ?? ''}
+              >
+                <option value="">My department</option>
+                {options.data?.departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Expense category">
+              <select
+                name="expense_category_id"
+                defaultValue={detail?.voucher.expense_category_id ?? ''}
+              >
+                <option value="">Uncategorized</option>
+                {categories.data?.map((c) => (
+                  <option value={c.id} key={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="mt-4">
+            <Field label="Description / justification">
+              <textarea
+                name="description"
+                maxLength={10000}
+                defaultValue={detail?.voucher.description ?? ''}
+              />
+            </Field>
+          </div>
+          <details>
+            <summary>Link to a meeting (optional)</summary>
+            <Field label="Related meeting">
+              <select
+                name="meeting_id"
+                defaultValue={detail?.voucher.meeting_id ?? ''}
+              >
+                <option value="">No meeting</option>
+                {meetings.data?.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </details>
+        </Section>
+        <Section
+          title="2. Line items"
+          actions={
+            <button
+              type="button"
+              disabled={lines.length >= 100}
+              onClick={() =>
+                setLines([
+                  ...lines,
+                  {
+                    description: '',
+                    quantity: '1',
+                    unit_price: '',
+                    tax_amount: '0',
+                  },
+                ])
+              }
+            >
+              Add line item
+            </button>
+          }
+        >
+          {lines.map((line, index) => (
+            <div className="finance-line" key={index}>
+              {(
+                ['description', 'quantity', 'unit_price', 'tax_amount'] as const
+              ).map((key) => (
+                <Field
+                  key={key}
+                  label={`${{ description: 'Description', quantity: 'Quantity', unit_price: 'Unit price', tax_amount: 'Tax amount' }[key]} ${index + 1}`}
+                >
+                  <input
+                    required
+                    type={key === 'description' ? 'text' : 'number'}
+                    min={key === 'quantity' ? '0.001' : '0'}
+                    step={key === 'quantity' ? '0.001' : '0.01'}
+                    value={line[key]}
+                    maxLength={key === 'description' ? 500 : undefined}
+                    onChange={(e) =>
+                      setLines(
+                        lines.map((v, i) =>
+                          i === index ? { ...v, [key]: e.target.value } : v,
+                        ),
+                      )
+                    }
+                  />
+                </Field>
+              ))}
+              <button
+                type="button"
+                aria-label={`Remove line ${index + 1}`}
+                disabled={lines.length === 1}
+                onClick={() => setLines(lines.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <p className="mt-4 text-xs text-muted-foreground">
+            Amounts are calculated and verified when you save. Tax is a fixed
+            amount per line.
+          </p>
+        </Section>
+        <div className="finance-callout">
+          Next: add receipts and documents, review the calculated total, and
+          submit your request. Your draft is visible only to you and authorized
+          auditors.
+        </div>
+        {save.error && <ErrorState error={save.error} />}
+        <div className="finance-actions">
+          <button className="finance-primary" disabled={save.isPending}>
+            {save.isPending ? 'Saving…' : 'Save draft and review'}
+          </button>
+          <Link className="finance-button" to="/vouchers">
+            Cancel
+          </Link>
+        </div>
+      </form>
+    </FinanceLayout>
+  )
 }

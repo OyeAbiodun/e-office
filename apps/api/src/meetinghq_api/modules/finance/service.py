@@ -28,6 +28,8 @@ from meetinghq_api.modules.finance.models import (
 from meetinghq_api.modules.finance.schemas import (
     DisbursementInput,
     FinanceAccountInput,
+    FinanceAdjustmentInput,
+    FinanceTransferInput,
     ReconciliationInput,
     ReversalInput,
     VoucherCreate,
@@ -582,6 +584,168 @@ class FinanceService:
             )
         )
         return account
+
+    async def adjust(self, actor: User, body: FinanceAdjustmentInput) -> FinanceTransaction:
+        """Record an explicit, immutable ledger adjustment under finance-admin control."""
+        self.require(actor, "finance.transactions.manage")
+        account = await self._account(actor, body.account_id, lock=True)
+        if account.status != "active":
+            raise ValidationError("Use an active finance account")
+        existing = await self.session.scalar(
+            select(FinanceTransaction).where(
+                FinanceTransaction.organization_id == actor.organization_id,
+                FinanceTransaction.idempotency_key == body.idempotency_key,
+            )
+        )
+        if existing:
+            expected_reference = body.reference or existing.reference
+            if (
+                existing.account_id != account.id
+                or existing.direction != body.direction
+                or existing.amount != self._money(body.amount)
+                or existing.transaction_date != body.transaction_date
+                or existing.description != body.description.strip()
+                or existing.reference != expected_reference
+                or existing.transaction_type != "adjustment"
+            ):
+                raise ConflictError("Idempotency key belongs to a different ledger adjustment")
+            return existing
+        reference = body.reference or f"ADJ-{uuid.uuid4().hex[:12].upper()}"
+        transaction = FinanceTransaction(
+            organization_id=actor.organization_id,
+            account_id=account.id,
+            reference=reference,
+            idempotency_key=body.idempotency_key,
+            transaction_type="adjustment",
+            direction=body.direction,
+            amount=self._money(body.amount),
+            currency=account.currency,
+            transaction_date=body.transaction_date,
+            description=body.description.strip(),
+            created_by_id=actor.id,
+        )
+        self.session.add(transaction)
+        await self.session.flush()
+        self.session.add(
+            AuditLog(
+                organization_id=actor.organization_id,
+                user_id=actor.id,
+                action="finance.adjustment_created",
+                resource="finance_transaction",
+                resource_id=transaction.id,
+                audit_metadata={"account_id": str(account.id), "direction": body.direction},
+            )
+        )
+        return transaction
+
+    async def transfer(
+        self, actor: User, body: FinanceTransferInput
+    ) -> tuple[FinanceTransaction, FinanceTransaction]:
+        """Create the debit and credit legs together; no partial transfer can commit."""
+        self.require(actor, "finance.transactions.manage")
+        if body.source_account_id == body.destination_account_id:
+            raise ValidationError("Source and destination accounts must be different")
+        account_ids = sorted((body.source_account_id, body.destination_account_id), key=str)
+        accounts = {
+            account.id: account
+            for account in (
+                await self.session.scalars(
+                    select(FinanceAccount)
+                    .where(
+                        FinanceAccount.organization_id == actor.organization_id,
+                        FinanceAccount.id.in_(account_ids),
+                        FinanceAccount.deleted_at.is_(None),
+                    )
+                    .order_by(FinanceAccount.id)
+                    .with_for_update()
+                )
+            ).all()
+        }
+        source = accounts.get(body.source_account_id)
+        destination = accounts.get(body.destination_account_id)
+        if source is None or destination is None:
+            raise NotFoundError("Finance account not found")
+        if source.status != "active" or destination.status != "active":
+            raise ValidationError("Transfers require active finance accounts")
+        if source.currency != destination.currency:
+            raise ValidationError("Transfers require matching account currencies")
+        debit_key, credit_key = f"{body.idempotency_key}:debit", f"{body.idempotency_key}:credit"
+        existing = list(
+            (
+                await self.session.scalars(
+                    select(FinanceTransaction).where(
+                        FinanceTransaction.organization_id == actor.organization_id,
+                        FinanceTransaction.idempotency_key.in_((debit_key, credit_key)),
+                    )
+                )
+            ).all()
+        )
+        if existing:
+            if len(existing) != 2:
+                raise ConflictError("Incomplete transfer idempotency record detected")
+            by_direction = {entry.direction: entry for entry in existing}
+            debit, credit = by_direction.get("debit"), by_direction.get("credit")
+            if (
+                debit is None
+                or credit is None
+                or (
+                    debit.account_id != source.id
+                    or credit.account_id != destination.id
+                    or debit.amount != self._money(body.amount)
+                    or credit.amount != self._money(body.amount)
+                    or debit.transaction_date != body.transaction_date
+                    or credit.transaction_date != body.transaction_date
+                    or debit.transaction_type != "transfer"
+                    or credit.transaction_type != "transfer"
+                    or debit.transfer_group_id != credit.transfer_group_id
+                )
+            ):
+                raise ConflictError("Idempotency key belongs to a different transfer")
+            return debit, credit
+        transfer_group_id = uuid.uuid4()
+        reference = body.reference or f"XFR-{uuid.uuid4().hex[:12].upper()}"
+        amount = self._money(body.amount)
+        common = {
+            "organization_id": actor.organization_id,
+            "transfer_group_id": transfer_group_id,
+            "transaction_type": "transfer",
+            "amount": amount,
+            "currency": source.currency,
+            "transaction_date": body.transaction_date,
+            "description": body.description.strip(),
+            "created_by_id": actor.id,
+        }
+        debit = FinanceTransaction(
+            **common,
+            account_id=source.id,
+            reference=f"{reference}-OUT",
+            idempotency_key=debit_key,
+            direction="debit",
+        )
+        credit = FinanceTransaction(
+            **common,
+            account_id=destination.id,
+            reference=f"{reference}-IN",
+            idempotency_key=credit_key,
+            direction="credit",
+        )
+        self.session.add_all((debit, credit))
+        await self.session.flush()
+        self.session.add(
+            AuditLog(
+                organization_id=actor.organization_id,
+                user_id=actor.id,
+                action="finance.transfer_created",
+                resource="finance_transfer",
+                resource_id=transfer_group_id,
+                audit_metadata={
+                    "source_account_id": str(source.id),
+                    "destination_account_id": str(destination.id),
+                    "amount": str(amount),
+                },
+            )
+        )
+        return debit, credit
 
     async def reverse(
         self, actor: User, transaction_id: uuid.UUID, body: ReversalInput

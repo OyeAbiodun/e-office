@@ -360,6 +360,84 @@ async def test_statement_prior_balance_and_exports(
     assert str(v["id"]) not in exported.text
 
 
+async def test_controlled_adjustments_and_atomic_transfers(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """Finance admins can post explicit corrections and paired transfers once."""
+    c = organization_client
+    accounts = []
+    for code in ("SOURCE", "DEST"):
+        response = await c.post(
+            "/api/v1/finance/accounts",
+            headers=admin_headers,
+            json={
+                "account_name": f"{code} account",
+                "account_code": code,
+                "account_type": "cash",
+                "opening_balance": "100.00" if code == "SOURCE" else "10.00",
+            },
+        )
+        assert response.status_code == 201, response.text
+        accounts.append(response.json()["data"])
+    adjustment = {
+        "account_id": accounts[0]["id"],
+        "direction": "credit",
+        "amount": "5.25",
+        "transaction_date": "2030-06-01",
+        "description": "Verified opening correction",
+        "idempotency_key": "adjustment-001",
+    }
+    posted = await c.post(
+        "/api/v1/finance/transactions/adjustments", headers=admin_headers, json=adjustment
+    )
+    assert posted.status_code == 201, posted.text
+    assert (
+        await c.post(
+            "/api/v1/finance/transactions/adjustments", headers=admin_headers, json=adjustment
+        )
+    ).status_code == 201
+    assert (
+        await c.post(
+            "/api/v1/finance/transactions/adjustments",
+            headers=admin_headers,
+            json={**adjustment, "amount": "5.26"},
+        )
+    ).status_code == 409
+    transfer = {
+        "source_account_id": accounts[0]["id"],
+        "destination_account_id": accounts[1]["id"],
+        "amount": "20.00",
+        "transaction_date": "2030-06-02",
+        "description": "Working capital transfer",
+        "idempotency_key": "transfer-001",
+    }
+    moved = await c.post("/api/v1/finance/transfers", headers=admin_headers, json=transfer)
+    assert moved.status_code == 201, moved.text
+    entries = moved.json()["data"]
+    assert len(entries) == 2
+    assert {entry["direction"] for entry in entries} == {"credit", "debit"}
+    assert len({entry["transfer_group_id"] for entry in entries}) == 1
+    replay = await c.post("/api/v1/finance/transfers", headers=admin_headers, json=transfer)
+    assert replay.status_code == 201
+    assert (
+        await c.post(
+            "/api/v1/finance/transfers",
+            headers=admin_headers,
+            json={**transfer, "destination_account_id": accounts[0]["id"]},
+        )
+    ).status_code == 422
+    source = await c.get(
+        f"/api/v1/finance/accounts/{accounts[0]['id']}/statement?from_date=2030-06-01&to_date=2030-06-03",
+        headers=admin_headers,
+    )
+    destination = await c.get(
+        f"/api/v1/finance/accounts/{accounts[1]['id']}/statement?from_date=2030-06-01&to_date=2030-06-03",
+        headers=admin_headers,
+    )
+    assert source.json()["data"]["closing_balance"] == "85.25"
+    assert destination.json()["data"]["closing_balance"] == "30.00"
+
+
 async def test_return_edit_resubmit_and_review_reasons(
     organization_client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:

@@ -291,6 +291,11 @@ class FinanceTransaction(Base):
             "reconciled",
             "transaction_date",
         ),
+        Index(
+            "ix_finance_transactions_org_transfer_group",
+            "organization_id",
+            "transfer_group_id",
+        ),
         CheckConstraint("amount > 0", name="ck_finance_transactions_amount_positive"),
         CheckConstraint(
             "direction IN ('credit', 'debit')", name="ck_finance_transactions_direction"
@@ -307,6 +312,7 @@ class FinanceTransaction(Base):
     voucher_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("vouchers.id", ondelete="RESTRICT"), index=True
     )
+    transfer_group_id: Mapped[uuid.UUID | None] = mapped_column()
     reversal_of_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("finance_transactions.id", ondelete="RESTRICT"), unique=True, index=True
     )

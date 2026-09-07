@@ -83,6 +83,7 @@ class Permissions:
     FINANCE_ACCOUNTS_VIEW = "finance.accounts.view"
     FINANCE_ACCOUNTS_MANAGE = "finance.accounts.manage"
     FINANCE_TRANSACTIONS_VIEW = "finance.transactions.view"
+    FINANCE_TRANSACTIONS_MANAGE = "finance.transactions.manage"
     FINANCE_REVERSE = "finance.reverse"
     FINANCE_RECONCILE = "finance.reconcile"
 
@@ -186,6 +187,12 @@ _FINANCE_PERMISSION_CATALOG = tuple(
             "finance",
             "transactions_view",
             "View finance transactions",
+        ),
+        (
+            Permissions.FINANCE_TRANSACTIONS_MANAGE,
+            "finance",
+            "transactions_manage",
+            "Create controlled finance adjustments and account transfers",
         ),
         (Permissions.FINANCE_REVERSE, "finance", "reverse", "Reverse finance transactions"),
         (Permissions.FINANCE_RECONCILE, "finance", "reconcile", "Reconcile finance transactions"),

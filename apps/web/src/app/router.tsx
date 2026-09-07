@@ -218,11 +218,31 @@ const TasksPage = lazy(() =>
 )
 
 const rootRoute = createRootRoute({ component: RouteOutlet })
-const VouchersPage = lazy(() => import('@/features/finance/vouchers-page').then(m => ({default:m.VouchersPage})))
-const VoucherEditorPage = lazy(() => import('@/features/finance/voucher-editor').then(m => ({default:m.VoucherEditorPage})))
-const VoucherDetailPage = lazy(() => import('@/features/finance/voucher-detail').then(m => ({default:m.VoucherDetailPage})))
-const FinancePage = lazy(() => import('@/features/finance/finance-page').then(m => ({default:m.FinancePage})))
-const AccountDetailPage = lazy(() => import('@/features/finance/finance-page').then(m => ({default:m.AccountDetailPage})))
+const VouchersPage = lazy(() =>
+  import('@/features/finance/vouchers-page').then((m) => ({
+    default: m.VouchersPage,
+  })),
+)
+const VoucherEditorPage = lazy(() =>
+  import('@/features/finance/voucher-editor').then((m) => ({
+    default: m.VoucherEditorPage,
+  })),
+)
+const VoucherDetailPage = lazy(() =>
+  import('@/features/finance/voucher-detail').then((m) => ({
+    default: m.VoucherDetailPage,
+  })),
+)
+const FinancePage = lazy(() =>
+  import('@/features/finance/finance-page').then((m) => ({
+    default: m.FinancePage,
+  })),
+)
+const AccountDetailPage = lazy(() =>
+  import('@/features/finance/finance-page').then((m) => ({
+    default: m.AccountDetailPage,
+  })),
+)
 const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_protected',
@@ -235,12 +255,36 @@ const appShellRoute = createRoute({
 })
 
 const protectedPages = [
-  createRoute({getParentRoute:()=>appShellRoute,path:'/vouchers',component:VouchersPage}),
-  createRoute({getParentRoute:()=>appShellRoute,path:'/vouchers/new',component:VoucherEditorPage}),
-  createRoute({getParentRoute:()=>appShellRoute,path:'/vouchers/$voucherId',component:VoucherDetailPage}),
-  createRoute({getParentRoute:()=>appShellRoute,path:'/vouchers/$voucherId/edit',component:VoucherEditorPage}),
-  createRoute({getParentRoute:()=>appShellRoute,path:'/finance',component:FinancePage}),
-  createRoute({getParentRoute:()=>appShellRoute,path:'/finance/accounts/$accountId',component:AccountDetailPage}),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/vouchers',
+    component: VouchersPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/vouchers/new',
+    component: VoucherEditorPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/vouchers/$voucherId',
+    component: VoucherDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/vouchers/$voucherId/edit',
+    component: VoucherEditorPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/finance',
+    component: FinancePage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/finance/accounts/$accountId',
+    component: AccountDetailPage,
+  }),
   createRoute({
     getParentRoute: () => appShellRoute,
     path: '/',
