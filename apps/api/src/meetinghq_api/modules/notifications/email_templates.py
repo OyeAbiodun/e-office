@@ -26,6 +26,13 @@ TemplateKey = Literal[
     "meeting.updated",
     "meeting.cancelled",
     "meeting.reminder",
+    "voucher.submitted",
+    "voucher.returned",
+    "voucher.approved",
+    "voucher.rejected",
+    "voucher.partially_disbursed",
+    "voucher.disbursed",
+    "voucher.reversed",
     "smtp.test",
 ]
 
@@ -123,6 +130,20 @@ class SmtpTestEmailData:
     environment: str
 
 
+@dataclass(frozen=True, slots=True)
+class VoucherEmailData:
+    """Display-safe data for a controlled voucher-workflow delivery."""
+
+    voucher_url: str
+    voucher_number: str
+    title: str
+    requested_amount: str
+    approved_amount: str
+    disbursed_amount: str
+    outstanding_amount: str
+    reason: str | None = None
+
+
 EmailTemplateData = (
     PasswordResetEmailData
     | VerificationEmailData
@@ -130,6 +151,7 @@ EmailTemplateData = (
     | TemporaryPasswordEmailData
     | MeetingEmailData
     | SmtpTestEmailData
+    | VoucherEmailData
 )
 
 
@@ -161,6 +183,16 @@ class EmailTemplateRegistry:
             return cls._meeting(key, data, brand)
         if key == "smtp.test" and isinstance(data, SmtpTestEmailData):
             return cls._smtp_test(data, brand)
+        if key in {
+            "voucher.submitted",
+            "voucher.returned",
+            "voucher.approved",
+            "voucher.rejected",
+            "voucher.partially_disbursed",
+            "voucher.disbursed",
+            "voucher.reversed",
+        } and isinstance(data, VoucherEmailData):
+            return cls._voucher(key, data, brand)
         raise TypeError(f"Template {key} received incompatible data")
 
     @classmethod
@@ -218,6 +250,72 @@ class EmailTemplateRegistry:
                 "Africa/Lagos",
                 join_url="https://meet.example/quarterly",
                 reminder_label="15 minutes",
+            ),
+            "voucher.submitted": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 0.00",
+                "NGN 0.00",
+                "NGN 0.00",
+            ),
+            "voucher.returned": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 0.00",
+                "NGN 0.00",
+                "NGN 0.00",
+                "Please add the missing receipt.",
+            ),
+            "voucher.approved": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 500,000.00",
+                "NGN 0.00",
+                "NGN 500,000.00",
+            ),
+            "voucher.rejected": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 0.00",
+                "NGN 0.00",
+                "NGN 0.00",
+                "This request is outside the approved budget.",
+            ),
+            "voucher.partially_disbursed": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 500,000.00",
+                "NGN 300,000.00",
+                "NGN 200,000.00",
+            ),
+            "voucher.disbursed": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 500,000.00",
+                "NGN 500,000.00",
+                "NGN 0.00",
+            ),
+            "voucher.reversed": VoucherEmailData(
+                f"{app}/vouchers/example",
+                "VCH-20260907-0001",
+                "Quarterly planning supplies",
+                "NGN 500,000.00",
+                "NGN 500,000.00",
+                "NGN 300,000.00",
+                "NGN 200,000.00",
+                "Payment returned by the bank.",
             ),
             "smtp.test": SmtpTestEmailData(
                 datetime.now(UTC).strftime("%B %d, %Y · %H:%M UTC"), "development"
@@ -423,6 +521,63 @@ class EmailTemplateRegistry:
             )
         )
         return _render("smtp.test", "MeetingHQ | SMTP test successful", text, body, brand)
+
+    @staticmethod
+    def _voucher(key: TemplateKey, data: VoucherEmailData, brand: EmailBranding) -> RenderedEmail:
+        voucher_url = _required_url(data.voucher_url)
+        voucher_number = _safe_text(data.voucher_number, "Voucher", 64)
+        title = _safe_text(data.title, "Untitled voucher", 250)
+        labels = {
+            "voucher.submitted": ("Voucher submitted", "A voucher is ready for review."),
+            "voucher.returned": (
+                "Voucher returned",
+                "This voucher needs an update before it can be reviewed again.",
+            ),
+            "voucher.approved": (
+                "Voucher approved",
+                "This voucher is approved and ready for disbursement.",
+            ),
+            "voucher.rejected": ("Voucher rejected", "This voucher was not approved."),
+            "voucher.partially_disbursed": (
+                "Voucher partially disbursed",
+                "A partial payment has been recorded.",
+            ),
+            "voucher.disbursed": (
+                "Voucher fully disbursed",
+                "The approved amount has been disbursed.",
+            ),
+            "voucher.reversed": (
+                "Voucher payment reversed",
+                "A related payment has been reversed.",
+            ),
+        }
+        heading, lead = labels[key]
+        rows: list[tuple[str, str | None]] = [
+            ("Voucher", voucher_number),
+            ("Purpose", title),
+            ("Requested", data.requested_amount),
+            ("Approved", data.approved_amount),
+            ("Disbursed", data.disbursed_amount),
+            ("Outstanding", data.outstanding_amount),
+        ]
+        text_lines = [heading, "", voucher_number, title, lead, ""]
+        text_lines.extend(f"{label}: {_safe_text(value, '—', 120)}" for label, value in rows[2:])
+        if data.reason:
+            text_lines.extend(["", f"Note: {_safe_text(data.reason, '', 2000)}"])
+        text_lines.extend(["", f"View voucher: {voucher_url}"])
+        body = _heading(heading) + _paragraph(lead) + _detail_rows(rows)
+        if data.reason:
+            body += _section("Note", data.reason)
+        body += _button(voucher_url, "View voucher", brand) + _fallback_link(
+            voucher_url, "View voucher"
+        )
+        return _render(
+            key,
+            f"MeetingHQ | {heading}: {voucher_number}",
+            "\n".join(text_lines),
+            body,
+            brand,
+        )
 
 
 def _render(

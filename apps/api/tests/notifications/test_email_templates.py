@@ -11,6 +11,7 @@ from meetinghq_api.modules.notifications.email_templates import (
     MeetingEmailData,
     PasswordResetEmailData,
     SmtpTestEmailData,
+    VoucherEmailData,
 )
 from meetinghq_api.modules.notifications.service import MeetingEmailSender
 
@@ -26,6 +27,13 @@ from meetinghq_api.modules.notifications.service import MeetingEmailSender
         "meeting.updated",
         "meeting.cancelled",
         "meeting.reminder",
+        "voucher.submitted",
+        "voucher.returned",
+        "voucher.approved",
+        "voucher.rejected",
+        "voucher.partially_disbursed",
+        "voucher.disbursed",
+        "voucher.reversed",
         "smtp.test",
     ],
 )
@@ -122,3 +130,26 @@ def test_smtp_template_has_no_secrets_and_provides_delivery_guidance() -> None:
 
     assert "SMTP test successful" in rendered.subject
     assert "final mailbox delivery" in rendered.text
+
+
+def test_voucher_template_is_branded_safe_and_has_no_visible_internal_id() -> None:
+    rendered = EmailTemplateRegistry.render(
+        "voucher.approved",
+        VoucherEmailData(
+            "https://app.meetinghq.example/vouchers/opaque-route-identifier",
+            "VCH-20260907-0001",
+            '<script>alert("unsafe")</script>',
+            "NGN 500,000.00",
+            "NGN 450,000.00",
+            "NGN 0.00",
+            "NGN 450,000.00",
+            "<b>Within budget</b>",
+        ),
+    )
+
+    assert "Voucher approved" in rendered.subject
+    assert "VCH-20260907-0001" in rendered.text
+    assert "NGN 450,000.00" in rendered.html
+    assert "&lt;script&gt;" in rendered.html
+    assert "<script>" not in rendered.html
+    assert "javascript:" not in rendered.html.lower()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import cast
 
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +39,13 @@ from meetinghq_api.modules.finance.schemas import (
     VoucherUpdate,
 )
 from meetinghq_api.modules.meetings.models import Meeting, MeetingAttendee
-from meetinghq_api.modules.notifications.service import NotificationService
+from meetinghq_api.modules.notifications.email_templates import (
+    EmailTemplateRegistry,
+    RenderedEmail,
+    TemplateKey,
+    VoucherEmailData,
+)
+from meetinghq_api.modules.notifications.service import MeetingEmailSender, NotificationService
 from meetinghq_api.modules.organizations.models import Organization, OrganizationUnit
 from meetinghq_api.modules.tasks.models import Task
 from meetinghq_api.modules.users.models import Permission, Role, User, UserStatus
@@ -220,9 +227,17 @@ class FinanceService:
             "disbursed",
             "reversed",
         }:
-            await self._notify(voucher, actor, event_type)
+            await self._notify(voucher, actor, event_type, reason=reason)
 
-    async def _notify(self, voucher: Voucher, actor: User, event_type: str) -> None:
+    async def _notify(
+        self, voucher: Voucher, actor: User, event_type: str, *, reason: str | None = None
+    ) -> None:
+        """Create in-app delivery first, then make best-effort branded email delivery.
+
+        Financial state and its audit trail remain authoritative even when an outbound
+        provider is unavailable.  The email outcome is separately audited without
+        retaining recipient addresses or provider error text.
+        """
         recipients = {voucher.requester_id}
         if event_type in {"submitted", "approved"}:
             permission = "vouchers.approve" if event_type == "submitted" else "vouchers.disburse"
@@ -253,10 +268,11 @@ class FinanceService:
                 if event_type == "approved" and candidate.id == actor.id:
                     continue
                 recipients.add(candidate.id)
-        for recipient in recipients - {actor.id}:
+        recipient_ids = recipients - {actor.id}
+        for recipient_id in recipient_ids:
             await self.notifications.create_notification(
                 organization_id=actor.organization_id,
-                user_id=recipient,
+                user_id=recipient_id,
                 notification_type=f"voucher_{event_type}",
                 title=f"{voucher.voucher_number}: {event_type.replace('_', ' ')}",
                 body=voucher.title,
@@ -264,6 +280,99 @@ class FinanceService:
                 metadata={"voucher_id": str(voucher.id)},
                 action_url=f"/vouchers/{voucher.id}",
             )
+        if not recipient_ids:
+            return
+        users = list(
+            (
+                await self.session.scalars(
+                    select(User).where(
+                        User.organization_id == voucher.organization_id,
+                        User.id.in_(recipient_ids),
+                        User.status == UserStatus.ACTIVE,
+                    )
+                )
+            ).all()
+        )
+        try:
+            sender = await MeetingEmailSender.for_organization(
+                self.session, self.notifications.settings, voucher.organization_id
+            )
+            rendered = self._voucher_email(voucher, event_type, sender, reason=reason)
+        except Exception as exc:
+            self._record_delivery_failure(voucher, actor, event_type, exc)
+            return
+        for recipient in users:
+            try:
+                transport_id = await sender.send_rendered(
+                    recipient.email,
+                    rendered,
+                    message_key=f"voucher-{voucher.id}-{event_type}-{recipient.id}",
+                )
+                self.session.add(
+                    AuditLog(
+                        organization_id=voucher.organization_id,
+                        user_id=actor.id,
+                        action="voucher.delivery.accepted",
+                        resource="voucher",
+                        resource_id=voucher.id,
+                        audit_metadata={
+                            "event_type": event_type,
+                            "channel": "email",
+                            "recipient_domain": recipient.email.rpartition("@")[2].lower(),
+                            "transport_id": transport_id,
+                            "template_key": rendered.key,
+                            "template_version": rendered.version,
+                        },
+                    )
+                )
+            except Exception as exc:
+                self._record_delivery_failure(voucher, actor, event_type, exc)
+
+    def _voucher_email(
+        self,
+        voucher: Voucher,
+        event_type: str,
+        sender: MeetingEmailSender,
+        *,
+        reason: str | None,
+    ) -> RenderedEmail:
+        template_key = cast(TemplateKey, f"voucher.{event_type}")
+        data = VoucherEmailData(
+            voucher_url=f"{self.notifications.settings.web_app_url.rstrip('/')}/vouchers/{voucher.id}",
+            voucher_number=voucher.voucher_number,
+            title=voucher.title,
+            requested_amount=self._format_money(voucher.currency, voucher.requested_amount),
+            approved_amount=self._format_money(voucher.currency, voucher.approved_amount),
+            disbursed_amount=self._format_money(voucher.currency, voucher.disbursed_amount),
+            outstanding_amount=self._format_money(
+                voucher.currency, self._money(voucher.approved_amount - voucher.disbursed_amount)
+            ),
+            reason=reason,
+        )
+        return EmailTemplateRegistry.render(template_key, data, sender.branding)
+
+    @staticmethod
+    def _format_money(currency: str, amount: Decimal) -> str:
+        return f"{currency} {amount:,.2f}"
+
+    def _record_delivery_failure(
+        self, voucher: Voucher, actor: User, event_type: str, error: Exception
+    ) -> None:
+        """Audit the outcome safely; provider messages can contain sensitive detail."""
+        self.session.add(
+            AuditLog(
+                organization_id=voucher.organization_id,
+                user_id=actor.id,
+                action="voucher.delivery.failed",
+                resource="voucher",
+                resource_id=voucher.id,
+                audit_metadata={
+                    "event_type": event_type,
+                    "channel": "email",
+                    "error_type": type(error).__name__,
+                },
+            )
+        )
 
     async def _meeting(self, actor: User, meeting_id: uuid.UUID | None) -> None:
         if meeting_id is None:

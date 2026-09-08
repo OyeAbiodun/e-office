@@ -11,7 +11,9 @@ from sqlalchemy import select
 from meetinghq_api.core.config import get_settings
 from meetinghq_api.modules.auth.infrastructure.tokens import AccessTokenService
 from meetinghq_api.modules.finance.models import FinanceTransaction, VoucherHistory
+from meetinghq_api.modules.notifications.email_templates import RenderedEmail
 from meetinghq_api.modules.notifications.models import Notification
+from meetinghq_api.modules.notifications.service import MeetingEmailSender
 from meetinghq_api.modules.users.models import Role, User, UserStatus
 from tests.organization.test_tenant_isolation import _register_tenant
 
@@ -77,9 +79,24 @@ async def create(
 
 
 async def test_finance_complete_workflow_and_replay(
-    organization_client: AsyncClient, admin_headers: dict[str, str]
+    organization_client: AsyncClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     c = organization_client
+    deliveries: list[tuple[str, str, str | None]] = []
+
+    async def capture_delivery(
+        self: MeetingEmailSender,
+        recipient: str,
+        rendered: RenderedEmail,
+        ics: str | None = None,
+        message_key: str | None = None,
+    ) -> str:
+        deliveries.append((recipient, rendered.key, message_key))
+        return f"<{message_key}@meetinghq>"
+
+    monkeypatch.setattr(MeetingEmailSender, "send_rendered", capture_delivery)
     manager, manager_id = await identity(c, "manager", "Team Manager")
     staff, _ = await identity(c, "requester", "Employee", manager_id)
     accountant, _ = await identity(c, "accountant", "Accountant")
@@ -204,6 +221,17 @@ async def test_finance_complete_workflow_and_replay(
         assert events.count("voucher_disbursed") == 1
         history = list((await session.scalars(select(VoucherHistory.event_type))).all())
         assert history.count("disbursed") == 1
+    delivered_keys = {key for _, key, _ in deliveries}
+    assert {
+        "voucher.submitted",
+        "voucher.approved",
+        "voucher.partially_disbursed",
+        "voucher.disbursed",
+        "voucher.reversed",
+    } <= delivered_keys
+    assert all(
+        message_key and message_key.startswith("voucher-") for _, _, message_key in deliveries
+    )
 
 
 async def test_document_authorization_and_validation(
