@@ -174,3 +174,15 @@ async def withdraw_request(
     return LeaveRequestResponse.model_validate(
         await LeaveService(session).withdraw(user, request_id)
     )
+
+
+@router.post("/requests/{request_id}/cancel", response_model=LeaveRequestResponse)
+async def cancel_request(
+    request_id: uuid.UUID,
+    body: ReviewInput,
+    session: Session,
+    user: Annotated[User, require_permission("leave.withdraw_own")],
+) -> LeaveRequestResponse:
+    return LeaveRequestResponse.model_validate(
+        await LeaveService(session).cancel(user, request_id, body.comment)
+    )

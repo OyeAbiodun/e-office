@@ -9,8 +9,16 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from meetinghq_api.core.config import get_settings
 from meetinghq_api.modules.audit.models import AuditLog
-from meetinghq_api.modules.calendar.models import Holiday
+from meetinghq_api.modules.calendar.models import (
+    Calendar,
+    CalendarEvent,
+    CalendarType,
+    EventStatus,
+    Holiday,
+    Visibility,
+)
 from meetinghq_api.modules.leave.models import (
     LeaveBalanceLedgerEntry,
     LeaveEntitlement,
@@ -28,6 +36,7 @@ from meetinghq_api.modules.leave.schemas import (
     LeaveTypeInput,
     WorkingDayResult,
 )
+from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.users.models import User, UserStatus
 from meetinghq_api.shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 
@@ -388,6 +397,82 @@ class LeaveService:
             )
         )
 
+    async def _notify_best_effort(
+        self,
+        recipient_id: uuid.UUID,
+        notification_type: str,
+        title: str,
+        body: str,
+        request: LeaveRequest,
+    ) -> None:
+        """Notification routing must never roll back an otherwise valid leave transition."""
+        try:
+            await NotificationService(self.session, get_settings()).create_notification(
+                organization_id=request.organization_id,
+                user_id=recipient_id,
+                notification_type=notification_type,
+                category="leave",
+                priority="normal",
+                title=title,
+                body=body,
+                action_url=f"/leave/requests/{request.id}",
+                metadata={"leave_request_id": str(request.id)},
+            )
+        except Exception:  # routing/push delivery must not corrupt the leave workflow
+            return
+
+    async def _upsert_calendar_event(self, actor: User, request: LeaveRequest) -> None:
+        calendar = await self.session.scalar(
+            select(Calendar).where(
+                Calendar.organization_id == actor.organization_id,
+                Calendar.owner_id == request.employee_id,
+                Calendar.type == CalendarType.PERSONAL,
+                Calendar.deleted_at.is_(None),
+            )
+        )
+        if calendar is None:
+            return
+        start = datetime.combine(request.start_date, datetime.min.time(), UTC)
+        end = datetime.combine(request.end_date + timedelta(days=1), datetime.min.time(), UTC)
+        event = None
+        if request.calendar_event_id:
+            event = await self.session.scalar(
+                select(CalendarEvent).where(
+                    CalendarEvent.id == request.calendar_event_id,
+                    CalendarEvent.calendar_id == calendar.id,
+                )
+            )
+        if event is None:
+            event = CalendarEvent(
+                calendar_id=calendar.id,
+                title="Away",
+                description=None,
+                start_datetime=start,
+                end_datetime=end,
+                timezone="UTC",
+                status=EventStatus.CONFIRMED,
+                visibility=Visibility.MEMBERS,
+                all_day=True,
+                created_by=actor.id,
+                updated_by=actor.id,
+            )
+            self.session.add(event)
+            await self.session.flush()
+            request.calendar_event_id = event.id
+        else:
+            event.title, event.description = "Away", None
+            event.start_datetime, event.end_datetime = start, end
+            event.status, event.updated_by = EventStatus.CONFIRMED, actor.id
+
+    async def _remove_calendar_event(self, actor: User, request: LeaveRequest) -> None:
+        if request.calendar_event_id is None:
+            return
+        event = await self.session.scalar(
+            select(CalendarEvent).where(CalendarEvent.id == request.calendar_event_id)
+        )
+        if event is not None and event.deleted_at is None:
+            event.soft_delete(actor.id)
+
     async def create_request(self, user: User, body: LeaveRequestInput) -> LeaveRequest:
         employee = await self._employee(user, user.id)
         if employee.status != UserStatus.ACTIVE or employee.employment_status in {
@@ -397,6 +482,8 @@ class LeaveService:
             raise ValidationError("Inactive employees cannot request leave")
         kind = await self._type(user, body.leave_type_id, True)
         period = await self._period(user, on_date=body.start_date)
+        if body.half_day and not kind.half_day_supported:
+            raise ValidationError("This leave type does not support half-day requests")
         if body.end_date > period.end_date:
             raise ValidationError("Leave must be within the active leave period")
         if (
@@ -458,6 +545,15 @@ class LeaveService:
         item.status = "submitted"
         await self._history(user, item, "submitted")
         self._audit(user, "leave.request.submitted", item.id)
+        employee = await self._employee(user, item.employee_id)
+        if employee.manager_id:
+            await self._notify_best_effort(
+                employee.manager_id,
+                "leave.submitted",
+                "Leave request awaiting review",
+                "A direct report submitted a leave request.",
+                item,
+            )
         return item
 
     async def review(
@@ -501,6 +597,15 @@ class LeaveService:
         item.review_comment = comment
         await self._history(user, item, action, comment)
         self._audit(user, f"leave.request.{action}", item.id)
+        if action == "approved":
+            await self._upsert_calendar_event(user, item)
+        await self._notify_best_effort(
+            item.employee_id,
+            f"leave.{action}",
+            f"Leave request {action}",
+            comment or f"Your leave request was {action}.",
+            item,
+        )
         return item
 
     async def withdraw(self, user: User, request_id: uuid.UUID) -> LeaveRequest:
@@ -512,4 +617,55 @@ class LeaveService:
         item.status = "withdrawn"
         await self._history(user, item, "withdrawn")
         self._audit(user, "leave.request.withdrawn", item.id)
+        employee = await self._employee(user, item.employee_id)
+        if employee.manager_id:
+            await self._notify_best_effort(
+                employee.manager_id,
+                "leave.withdrawn",
+                "Leave request withdrawn",
+                "A direct report withdrew a leave request.",
+                item,
+            )
+        return item
+
+    async def cancel(
+        self, user: User, request_id: uuid.UUID, comment: str | None = None
+    ) -> LeaveRequest:
+        item = await self._request(user, request_id, True)
+        if item.status != "approved":
+            raise ValidationError("Only approved leave requests can be cancelled")
+        if item.employee_id != user.id and not self._manage(user):
+            raise AuthorizationError("You are not authorized to cancel this leave request")
+        entitlement = await self.session.scalar(
+            select(LeaveEntitlement)
+            .where(
+                LeaveEntitlement.organization_id == user.organization_id,
+                LeaveEntitlement.employee_id == item.employee_id,
+                LeaveEntitlement.leave_type_id == item.leave_type_id,
+                LeaveEntitlement.leave_period_id == item.leave_period_id,
+            )
+            .with_for_update()
+        )
+        if entitlement is None:
+            raise ValidationError("Leave entitlement is unavailable")
+        await self._ledger(
+            user,
+            entitlement,
+            "reversal",
+            item.duration_days,
+            date.today(),
+            comment or "Approved leave cancelled",
+            item.id,
+        )
+        item.status = "cancelled"
+        await self._history(user, item, "cancelled", comment)
+        await self._remove_calendar_event(user, item)
+        self._audit(user, "leave.request.cancelled", item.id)
+        await self._notify_best_effort(
+            item.employee_id,
+            "leave.cancelled",
+            "Leave request cancelled",
+            comment or "Your approved leave request was cancelled.",
+            item,
+        )
         return item
