@@ -19,6 +19,7 @@ from meetinghq_api.modules.events import models as event_models  # noqa: F401
 from meetinghq_api.modules.finance import models as finance_models  # noqa: F401
 from meetinghq_api.modules.help_center import models as help_models  # noqa: F401
 from meetinghq_api.modules.invitations import models as invitation_models  # noqa: F401
+from meetinghq_api.modules.leave import models as leave_models  # noqa: F401
 from meetinghq_api.modules.mail import models as mail_models  # noqa: F401
 from meetinghq_api.modules.meetings import models as meeting_models  # noqa: F401
 from meetinghq_api.modules.notifications import models as notification_models  # noqa: F401

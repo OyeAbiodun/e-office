@@ -86,6 +86,20 @@ class Permissions:
     FINANCE_TRANSACTIONS_MANAGE = "finance.transactions.manage"
     FINANCE_REVERSE = "finance.reverse"
     FINANCE_RECONCILE = "finance.reconcile"
+    LEAVE_VIEW_OWN = "leave.view_own"
+    LEAVE_REQUEST = "leave.request"
+    LEAVE_WITHDRAW_OWN = "leave.withdraw_own"
+    LEAVE_VIEW_TEAM = "leave.view_team"
+    LEAVE_REVIEW = "leave.review"
+    LEAVE_APPROVE = "leave.approve"
+    LEAVE_REJECT = "leave.reject"
+    LEAVE_TYPES_VIEW = "leave.types.view"
+    LEAVE_TYPES_MANAGE = "leave.types.manage"
+    LEAVE_BALANCES_VIEW = "leave.balances.view"
+    LEAVE_BALANCES_ADJUST = "leave.balances.adjust"
+    LEAVE_HOLIDAYS_MANAGE = "leave.holidays.manage"
+    LEAVE_REPORTS_VIEW = "leave.reports.view"
+    LEAVE_EXPORT = "leave.export"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -199,6 +213,26 @@ _FINANCE_PERMISSION_CATALOG = tuple(
     )
 )
 
+_LEAVE_PERMISSION_CATALOG = tuple(
+    PermissionDefinition(name, "leave", action, description)
+    for name, action, description in (
+        (Permissions.LEAVE_VIEW_OWN, "view_own", "View own leave records"),
+        (Permissions.LEAVE_REQUEST, "request", "Create leave requests"),
+        (Permissions.LEAVE_WITHDRAW_OWN, "withdraw_own", "Withdraw own leave requests"),
+        (Permissions.LEAVE_VIEW_TEAM, "view_team", "View direct-report leave"),
+        (Permissions.LEAVE_REVIEW, "review", "Review authorized leave requests"),
+        (Permissions.LEAVE_APPROVE, "approve", "Approve authorized leave requests"),
+        (Permissions.LEAVE_REJECT, "reject", "Reject authorized leave requests"),
+        (Permissions.LEAVE_TYPES_VIEW, "types_view", "View leave policy types"),
+        (Permissions.LEAVE_TYPES_MANAGE, "types_manage", "Manage leave policy types"),
+        (Permissions.LEAVE_BALANCES_VIEW, "balances_view", "View authorized leave balances"),
+        (Permissions.LEAVE_BALANCES_ADJUST, "balances_adjust", "Adjust leave balances"),
+        (Permissions.LEAVE_HOLIDAYS_MANAGE, "holidays_manage", "Manage leave holidays"),
+        (Permissions.LEAVE_REPORTS_VIEW, "reports_view", "View leave reports"),
+        (Permissions.LEAVE_EXPORT, "export", "Export leave data"),
+    )
+)
+
 MVP_PERMISSION_RESOURCES = (
     "dashboard",
     "calendar",
@@ -229,6 +263,7 @@ PERMISSION_CATALOG = tuple(
         for item in (
             *_LEGACY_PERMISSION_CATALOG,
             *_FINANCE_PERMISSION_CATALOG,
+            *_LEAVE_PERMISSION_CATALOG,
             *MVP_PERMISSION_CATALOG,
         )
     }.values()
@@ -242,6 +277,7 @@ def _matrix(resources: set[str], actions: set[str] | None = None) -> frozenset[s
 
 _legacy_admin = frozenset(item.name for item in _LEGACY_PERMISSION_CATALOG)
 _finance_admin = frozenset(item.name for item in _FINANCE_PERMISSION_CATALOG)
+_leave_admin = frozenset(item.name for item in _LEAVE_PERMISSION_CATALOG)
 _task_employee = frozenset(
     {
         Permissions.TASKS_VIEW_OWN,
@@ -286,7 +322,7 @@ _meeting_operator = frozenset(
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "Super Admin": frozenset(item.name for item in PERMISSION_CATALOG),
-    "Admin": _legacy_admin | _finance_admin | _matrix(set(MVP_PERMISSION_RESOURCES)),
+    "Admin": _legacy_admin | _finance_admin | _leave_admin | _matrix(set(MVP_PERMISSION_RESOURCES)),
     "Meeting Organizer": _meeting_operator
     | _matrix({"dashboard"}, {"view"})
     | _matrix({"calendar", "meetings"})
@@ -326,6 +362,15 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     | _task_employee
     | frozenset(
         {
+            Permissions.LEAVE_VIEW_OWN,
+            Permissions.LEAVE_REQUEST,
+            Permissions.LEAVE_WITHDRAW_OWN,
+            Permissions.LEAVE_TYPES_VIEW,
+            Permissions.LEAVE_BALANCES_VIEW,
+        }
+    )
+    | frozenset(
+        {
             Permissions.VOUCHERS_VIEW_OWN,
             Permissions.VOUCHERS_CREATE,
             Permissions.VOUCHERS_EDIT_DRAFT,
@@ -353,6 +398,19 @@ ROLE_PERMISSIONS["Team Manager"] |= (
 )
 ROLE_PERMISSIONS["Team Manager"] |= _task_manager
 ROLE_PERMISSIONS["Meeting Organizer"] |= _task_manager
+ROLE_PERMISSIONS["Team Manager"] |= frozenset(
+    {
+        Permissions.LEAVE_VIEW_OWN,
+        Permissions.LEAVE_REQUEST,
+        Permissions.LEAVE_WITHDRAW_OWN,
+        Permissions.LEAVE_TYPES_VIEW,
+        Permissions.LEAVE_BALANCES_VIEW,
+        Permissions.LEAVE_VIEW_TEAM,
+        Permissions.LEAVE_REVIEW,
+        Permissions.LEAVE_APPROVE,
+        Permissions.LEAVE_REJECT,
+    }
+)
 
 _voucher_employee = frozenset(
     {

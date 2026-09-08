@@ -16,6 +16,7 @@ from meetinghq_api.modules.finance.router import router as finance_router
 from meetinghq_api.modules.help_center.router import router as help_router
 from meetinghq_api.modules.integrations.router import router as integrations_router
 from meetinghq_api.modules.invitations.router import router as invitations_router
+from meetinghq_api.modules.leave.router import router as leave_router
 from meetinghq_api.modules.mail.router import router as mail_router
 from meetinghq_api.modules.meetings.router import router as meetings_router
 from meetinghq_api.modules.notifications.router import router as notifications_router
@@ -40,6 +41,7 @@ router.include_router(teams_router)
 router.include_router(users_router)
 router.include_router(invitations_router)
 router.include_router(integrations_router)
+router.include_router(leave_router)
 router.include_router(help_router)
 router.include_router(mail_router)
 router.include_router(meetings_router)
