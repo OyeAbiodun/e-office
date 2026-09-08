@@ -58,6 +58,18 @@ test('startup restoration is single-flight and resolves the current user once', 
   expect(currentUserCalls).toBe(0)
 })
 
+test('a public first visit does not issue an expected failing refresh request', async () => {
+  vi.resetModules()
+  document.cookie = 'meetinghq_csrf=; Max-Age=0; path=/'
+  const fetchMock = vi.spyOn(globalThis, 'fetch')
+  const { authApi, ApiError } = await import('@/features/auth/api')
+
+  await expect(authApi.restoreSession()).rejects.toEqual(
+    new ApiError('No refresh session is available', 401),
+  )
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
 test('surfaces a safe field-level validation message instead of a generic mutation error', async () => {
   vi.resetModules()
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(

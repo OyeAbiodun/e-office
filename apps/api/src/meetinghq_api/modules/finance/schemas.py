@@ -276,7 +276,15 @@ class VoucherFilters(InputModel):
     sort: Literal["created", "submitted", "amount", "status", "number"] = "created"
     direction: Literal["asc", "desc"] = "desc"
     page: int = Field(default=1, ge=1)
-    page_size: Literal[10, 25, 50, 100] = 25
+    page_size: int = Field(default=25, ge=10, le=100)
+
+    @field_validator("page_size")
+    @classmethod
+    def supported_page_size(cls, value: int) -> int:
+        """Accept HTTP query strings while preserving the supported page-size set."""
+        if value not in {10, 25, 50, 100}:
+            raise ValueError("page_size must be one of 10, 25, 50, or 100")
+        return value
 
 
 class AttachmentResponse(OrmResponse):

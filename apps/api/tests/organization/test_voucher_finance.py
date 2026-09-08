@@ -500,4 +500,5 @@ async def test_return_edit_resubmit_and_review_reasons(
         await c.post(base + "/reject", headers=admin_headers, json={"comment": "Outside policy"})
     ).status_code == 200
     assert (await c.patch(base, headers=staff, json={"title": "Again"})).status_code == 403
+    assert (await c.get("/api/v1/vouchers?page=1&page_size=25", headers=staff)).status_code == 200
     assert (await c.get("/api/v1/vouchers?page_size=11", headers=staff)).status_code == 422

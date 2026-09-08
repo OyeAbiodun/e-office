@@ -302,6 +302,13 @@ async function restoreSession(): Promise<AuthUser> {
     authLog('session_restore_joined_existing_request')
     return restorePromise
   }
+  // A refresh requires the double-submit CSRF cookie. Avoid an intentional
+  // unauthenticated request on first visits to public routes; it produces a
+  // misleading browser-console 401 without offering a recoverable session.
+  if (!cookieCsrfToken()) {
+    authLog('session_restore_skipped', { reason: 'no_csrf_cookie' })
+    return Promise.reject(new ApiError('No refresh session is available', 401))
+  }
   restorePromise = refreshSession()
     .then((session) => {
       const user = session.user
