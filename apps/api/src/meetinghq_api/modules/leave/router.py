@@ -125,6 +125,14 @@ async def get_balance(
     return await LeaveService(session).balance(user, entitlement_id)
 
 
+@router.get("/my/balances", response_model=list[BalanceResponse])
+async def my_balances(
+    session: Session,
+    user: Annotated[User, require_permission("leave.view_own")],
+) -> list[BalanceResponse]:
+    return await LeaveService(session).my_balances(user)
+
+
 @router.post("/balances/{entitlement_id}/adjustments", response_model=BalanceResponse)
 async def adjust_balance(
     entitlement_id: uuid.UUID,

@@ -528,6 +528,24 @@ class LeaveService:
             available_after_pending=available - pending,
         )
 
+    async def my_balances(self, user: User) -> list[BalanceResponse]:
+        """Self-service balances limited to the authenticated employee's entitlements."""
+        entitlements = list(
+            (
+                await self.session.scalars(
+                    select(LeaveEntitlement)
+                    .join(LeavePeriod, LeavePeriod.id == LeaveEntitlement.leave_period_id)
+                    .where(
+                        LeaveEntitlement.organization_id == user.organization_id,
+                        LeaveEntitlement.employee_id == user.id,
+                        LeavePeriod.status == "open",
+                    )
+                    .order_by(LeavePeriod.end_date.desc())
+                )
+            ).all()
+        )
+        return [await self.balance(user, entitlement.id) for entitlement in entitlements]
+
     async def adjust(
         self, user: User, entitlement_id: uuid.UUID, body: AdjustmentInput
     ) -> BalanceResponse:
