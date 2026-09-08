@@ -71,6 +71,7 @@ class EntitlementInput(InputModel):
 
 
 class AdjustmentInput(InputModel):
+    operation: Literal["add", "deduct", "correction"] = "correction"
     amount: Decimal = Field(max_digits=18, decimal_places=2)
     effective_date: date
     reason: str = Field(min_length=1, max_length=2000)
@@ -79,6 +80,31 @@ class AdjustmentInput(InputModel):
     def nonzero(self) -> AdjustmentInput:
         if not self.amount:
             raise ValueError("Adjustment amount cannot be zero")
+        if self.operation in {"add", "deduct"} and self.amount < 0:
+            raise ValueError("Add and deduct operations require a positive amount")
+        return self
+
+
+class ControlledAdjustmentInput(AdjustmentInput):
+    employee_id: uuid.UUID
+    leave_type_id: uuid.UUID
+    leave_period_id: uuid.UUID
+
+
+class PeriodStatusInput(InputModel):
+    status: Literal["open", "closed"]
+
+
+class WorkingWeekInput(InputModel):
+    weekdays: list[int] = Field(min_length=1, max_length=7)
+    exclude_holidays: bool = True
+
+    @model_validator(mode="after")
+    def valid_weekdays(self) -> WorkingWeekInput:
+        if len(set(self.weekdays)) != len(self.weekdays) or any(
+            day < 0 or day > 6 for day in self.weekdays
+        ):
+            raise ValueError("Weekdays must be unique values from 0 (Monday) to 6 (Sunday)")
         return self
 
 
@@ -133,6 +159,8 @@ class LeaveTypeResponse(OrmResponse):
     maximum_consecutive_days: int | None
     attachment_required: bool
     half_day_supported: bool
+    eligible_employment_types: str | None
+    probation_eligible: bool
     color: str | None
 
 
@@ -184,6 +212,12 @@ class LeaveRequestResponse(OrmResponse):
     reviewed_at: datetime | None
     review_comment: str | None
     calendar_event_id: uuid.UUID | None
+    employee_number: str | None = None
+    employee_name: str | None = None
+    department_name: str | None = None
+    leave_type_name: str | None = None
+    leave_type_code: str | None = None
+    leave_period_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -202,3 +236,118 @@ class LeaveAttachmentResponse(OrmResponse):
     size: int
     uploaded_by_id: uuid.UUID
     created_at: datetime
+
+
+class AdjustmentResponse(BaseModel):
+    previous_balance: BalanceResponse
+    adjustment: LedgerEntryResponse
+    resulting_balance: BalanceResponse
+
+
+class WorkingWeekResponse(BaseModel):
+    weekdays: list[int]
+    exclude_holidays: bool
+
+
+class LeaveHistoryResponse(OrmResponse):
+    id: uuid.UUID
+    actor_id: uuid.UUID | None
+    event_type: str
+    comment: str | None
+    created_at: datetime
+
+
+class LeaveRequestDetail(LeaveRequestResponse):
+    employee_number: str | None
+    employee_name: str
+    department_name: str | None
+    manager_id: uuid.UUID | None
+    manager_name: str | None
+    leave_type_name: str
+    leave_type_code: str
+    leave_period_name: str
+    reviewer_name: str | None
+    balance_effect: Decimal
+    attachments: list[LeaveAttachmentResponse]
+    history: list[LeaveHistoryResponse]
+
+
+class BalanceListItem(BalanceResponse):
+    employee_number: str | None
+    employee_name: str
+    department_id: uuid.UUID | None
+    department_name: str | None
+    leave_type_name: str
+    leave_type_code: str
+    period_name: str
+
+
+class BalancePage(BaseModel):
+    items: list[BalanceListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class LedgerEntryResponse(OrmResponse):
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    leave_type_id: uuid.UUID
+    leave_period_id: uuid.UUID
+    entry_type: str
+    amount: Decimal
+    effective_date: date
+    reason: str | None
+    reference_id: uuid.UUID | None
+    actor_id: uuid.UUID | None
+    created_at: datetime
+
+
+class LedgerPage(BaseModel):
+    items: list[LedgerEntryResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class LeaveRequestPage(BaseModel):
+    items: list[LeaveRequestResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class LeaveAvailabilityItem(BaseModel):
+    employee_id: uuid.UUID
+    employee_name: str
+    start_date: date
+    end_date: date
+    status: Literal["away"] = "away"
+
+
+class LeaveSummaryResponse(BaseModel):
+    balances: list[BalanceResponse]
+    pending_requests: list[LeaveRequestResponse]
+    upcoming_approved: list[LeaveRequestResponse]
+    recent_history: list[LeaveRequestResponse]
+
+
+class ManagerLeaveSummary(BaseModel):
+    pending_count: int
+    pending: list[LeaveRequestResponse]
+    away_today: list[LeaveAvailabilityItem]
+    upcoming: list[LeaveAvailabilityItem]
+    recently_reviewed: list[LeaveRequestResponse]
+
+
+class LeaveStatusSummary(BaseModel):
+    status: str
+    request_count: int
+    total_days: Decimal
+
+
+class LeaveReportRow(BaseModel):
+    key: str
+    label: str
+    request_count: int
+    total_days: Decimal

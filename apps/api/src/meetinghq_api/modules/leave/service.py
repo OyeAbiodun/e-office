@@ -5,9 +5,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import get_settings
@@ -31,15 +32,38 @@ from meetinghq_api.modules.leave.models import (
 )
 from meetinghq_api.modules.leave.schemas import (
     AdjustmentInput,
+    AdjustmentResponse,
+    BalanceListItem,
+    BalancePage,
     BalanceResponse,
+    ControlledAdjustmentInput,
     EntitlementInput,
+    LeaveAttachmentResponse,
+    LeaveAvailabilityItem,
+    LeaveHistoryResponse,
     LeavePeriodInput,
+    LeaveReportRow,
+    LeaveRequestDetail,
     LeaveRequestInput,
+    LeaveRequestPage,
+    LeaveRequestResponse,
+    LeaveStatusSummary,
+    LeaveSummaryResponse,
     LeaveTypeInput,
+    LedgerEntryResponse,
+    LedgerPage,
+    ManagerLeaveSummary,
     WorkingDayResult,
+    WorkingWeekInput,
+    WorkingWeekResponse,
 )
-from meetinghq_api.modules.notifications.service import NotificationService
-from meetinghq_api.modules.organizations.models import Organization
+from meetinghq_api.modules.notifications.email_templates import (
+    EmailTemplateRegistry,
+    LeaveEmailData,
+    TemplateKey,
+)
+from meetinghq_api.modules.notifications.service import MeetingEmailSender, NotificationService
+from meetinghq_api.modules.organizations.models import Organization, OrganizationUnit
 from meetinghq_api.modules.users.models import User, UserStatus
 from meetinghq_api.shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 
@@ -69,8 +93,37 @@ class LeaveService:
             if actor is None:
                 continue
             try:
-                processed += await self.process_accruals(actor, when)
-                processed += await self.process_expiry(actor, when)
+                tenant_processed = 0
+                async with self.session.begin_nested():
+                    tenant_processed += await self.process_accruals(actor, when)
+                    current = await self.session.scalar(
+                        select(LeavePeriod)
+                        .where(
+                            LeavePeriod.organization_id == organization.id,
+                            LeavePeriod.status == "open",
+                            LeavePeriod.start_date <= when,
+                            LeavePeriod.end_date >= when,
+                        )
+                        .order_by(LeavePeriod.start_date.desc())
+                        .limit(1)
+                    )
+                    previous = None
+                    if current is not None:
+                        previous = await self.session.scalar(
+                            select(LeavePeriod)
+                            .where(
+                                LeavePeriod.organization_id == organization.id,
+                                LeavePeriod.end_date < current.start_date,
+                            )
+                            .order_by(LeavePeriod.end_date.desc())
+                            .limit(1)
+                        )
+                    if current is not None and previous is not None:
+                        tenant_processed += await self.process_carryover(
+                            actor, previous.id, current.id, when
+                        )
+                    tenant_processed += await self.process_expiry(actor, when)
+                processed += tenant_processed
             except Exception:
                 # Each tenant is isolated; a malformed policy cannot halt others.
                 await logger.aexception(
@@ -84,7 +137,7 @@ class LeaveService:
         return {p.name for role in user.roles for p in role.permissions}
 
     def _manage(self, user: User) -> bool:
-        return bool({"leave.types.manage", "leave.balances.adjust"} & self.permissions(user))
+        return bool({"leave.balances.adjust", "admin.manage"} & self.permissions(user))
 
     async def _can_review(self, actor: User, request: LeaveRequest) -> bool:
         """Administrators review broadly; managers are restricted to direct reports."""
@@ -157,19 +210,27 @@ class LeaveService:
             raise NotFoundError("Employee not found")
         return item
 
-    async def list_types(self, user: User) -> list[LeaveType]:
-        return list(
-            (
-                await self.session.scalars(
-                    select(LeaveType)
-                    .where(
-                        LeaveType.organization_id == user.organization_id,
-                        LeaveType.deleted_at.is_(None),
-                    )
-                    .order_by(LeaveType.name)
-                )
-            ).all()
+    async def list_types(
+        self, user: User, *, search: str | None = None, active: bool | None = None
+    ) -> list[LeaveType]:
+        query = select(LeaveType).where(
+            LeaveType.organization_id == user.organization_id,
+            LeaveType.deleted_at.is_(None),
         )
+        if search:
+            term = f"%{search.strip()}%"
+            query = query.where(or_(LeaveType.name.ilike(term), LeaveType.code.ilike(term)))
+        if active is not None:
+            query = query.where(LeaveType.is_active.is_(active))
+        return list((await self.session.scalars(query.order_by(LeaveType.name))).all())
+
+    async def set_type_active(self, user: User, type_id: uuid.UUID, active: bool) -> LeaveType:
+        item = await self._type(user, type_id)
+        item.is_active = active
+        self._audit(user, "leave.type.activated" if active else "leave.type.deactivated", item.id)
+        await self.session.flush()
+        await self.session.refresh(item)
+        return item
 
     async def create_type(self, user: User, body: LeaveTypeInput) -> LeaveType:
         code = body.code.upper()
@@ -183,7 +244,7 @@ class LeaveService:
             raise ValidationError("A leave type with this code already exists")
         item = LeaveType(
             organization_id=user.organization_id,
-            **body.model_dump(exclude={"eligible_employment_types"}),
+            **body.model_dump(exclude={"code", "eligible_employment_types"}),
             code=code,
             eligible_employment_types=",".join(body.eligible_employment_types) or None,
         )
@@ -226,6 +287,13 @@ class LeaveService:
         if await self.session.scalar(
             select(LeavePeriod.id).where(
                 LeavePeriod.organization_id == user.organization_id,
+                func.lower(LeavePeriod.name) == body.name.lower(),
+            )
+        ):
+            raise ValidationError("A leave period with this name already exists")
+        if await self.session.scalar(
+            select(LeavePeriod.id).where(
+                LeavePeriod.organization_id == user.organization_id,
                 LeavePeriod.status == "open",
                 LeavePeriod.start_date <= body.end_date,
                 LeavePeriod.end_date >= body.start_date,
@@ -236,6 +304,33 @@ class LeaveService:
         self.session.add(item)
         await self.session.flush()
         self._audit(user, "leave.period.created", item.id)
+        return item
+
+    async def current_period(self, user: User, on_date: date | None = None) -> LeavePeriod:
+        return await self._period(user, on_date=on_date or date.today())
+
+    async def period_detail(self, user: User, period_id: uuid.UUID) -> LeavePeriod:
+        return await self._period(user, period_id=period_id)
+
+    async def set_period_status(self, user: User, period_id: uuid.UUID, status: str) -> LeavePeriod:
+        item = await self._period(user, period_id=period_id)
+        if item.status == status:
+            return item
+        if status == "open":
+            overlap = await self.session.scalar(
+                select(LeavePeriod.id).where(
+                    LeavePeriod.organization_id == user.organization_id,
+                    LeavePeriod.id != item.id,
+                    LeavePeriod.status == "open",
+                    LeavePeriod.start_date <= item.end_date,
+                    LeavePeriod.end_date >= item.start_date,
+                )
+            )
+            if overlap:
+                raise ValidationError("This period overlaps an existing open leave period")
+        item.status = status
+        self._audit(user, f"leave.period.{status}", item.id)
+        await self.session.flush()
         return item
 
     async def entitlement(self, user: User, body: EntitlementInput) -> LeaveEntitlement:
@@ -275,45 +370,48 @@ class LeaveService:
         reason: str | None,
         reference_id: uuid.UUID | None = None,
         idempotency_key: str | None = None,
-    ) -> None:
+    ) -> LeaveBalanceLedgerEntry | None:
         if idempotency_key and await self.session.scalar(
             select(LeaveBalanceLedgerEntry.id).where(
                 LeaveBalanceLedgerEntry.organization_id == actor.organization_id,
                 LeaveBalanceLedgerEntry.idempotency_key == idempotency_key,
             )
         ):
-            return
-        self.session.add(
-            LeaveBalanceLedgerEntry(
-                organization_id=actor.organization_id,
-                entitlement_id=entitlement.id,
-                employee_id=entitlement.employee_id,
-                leave_type_id=entitlement.leave_type_id,
-                leave_period_id=entitlement.leave_period_id,
-                entry_type=entry_type,
-                amount=amount,
-                effective_date=effective,
-                reason=reason,
-                reference_id=reference_id,
-                idempotency_key=idempotency_key,
-                actor_id=actor.id,
-            )
+            return None
+        entry = LeaveBalanceLedgerEntry(
+            organization_id=actor.organization_id,
+            entitlement_id=entitlement.id,
+            employee_id=entitlement.employee_id,
+            leave_type_id=entitlement.leave_type_id,
+            leave_period_id=entitlement.leave_period_id,
+            entry_type=entry_type,
+            amount=amount,
+            effective_date=effective,
+            reason=reason,
+            reference_id=reference_id,
+            idempotency_key=idempotency_key,
+            actor_id=actor.id,
         )
+        self.session.add(entry)
+        await self.session.flush()
+        return entry
 
     async def process_accruals(self, actor: User, effective_date: date) -> int:
         """Apply a single policy cycle; stable keys make retried worker runs safe."""
-        entitlements = list(
-            (
-                await self.session.scalars(
-                    select(LeaveEntitlement).where(
-                        LeaveEntitlement.organization_id == actor.organization_id
-                    )
+        entitlements = (
+            await self.session.execute(
+                select(LeaveEntitlement, LeaveType)
+                .join(LeaveType, LeaveType.id == LeaveEntitlement.leave_type_id)
+                .where(
+                    LeaveEntitlement.organization_id == actor.organization_id,
+                    LeaveType.organization_id == actor.organization_id,
+                    LeaveType.is_active.is_(True),
+                    LeaveType.deleted_at.is_(None),
                 )
-            ).all()
-        )
+            )
+        ).all()
         count = 0
-        for entitlement in entitlements:
-            leave_type = await self._type(actor, entitlement.leave_type_id, active=True)
+        for entitlement, leave_type in entitlements:
             if not leave_type.accrual_enabled or not leave_type.default_entitlement:
                 continue
             cycle = (
@@ -530,25 +628,656 @@ class LeaveService:
 
     async def my_balances(self, user: User) -> list[BalanceResponse]:
         """Self-service balances limited to the authenticated employee's entitlements."""
-        entitlements = list(
+        current_period_id = await self.session.scalar(
+            select(LeavePeriod.id)
+            .where(
+                LeavePeriod.organization_id == user.organization_id,
+                LeavePeriod.status == "open",
+                LeavePeriod.start_date <= date.today(),
+                LeavePeriod.end_date >= date.today(),
+            )
+            .order_by(LeavePeriod.start_date.desc())
+            .limit(1)
+        )
+        if current_period_id is None:
+            return []
+        page = await self.list_balances(
+            user,
+            employee_id=user.id,
+            leave_period_id=current_period_id,
+            page=1,
+            page_size=100,
+            self_service=True,
+        )
+        return [BalanceResponse.model_validate(item) for item in page.items]
+
+    async def list_balances(
+        self,
+        user: User,
+        *,
+        employee_id: uuid.UUID | None = None,
+        department_id: uuid.UUID | None = None,
+        leave_type_id: uuid.UUID | None = None,
+        leave_period_id: uuid.UUID | None = None,
+        search: str | None = None,
+        sort_by: str = "employee",
+        sort_order: str = "asc",
+        page: int = 1,
+        page_size: int = 25,
+        self_service: bool = False,
+    ) -> BalancePage:
+        if self_service and employee_id != user.id:
+            raise AuthorizationError("Self-service balances must be scoped to the current user")
+        if (
+            not self_service
+            and not self._manage(user)
+            and not ({"leave.reports.view", "leave.export"} & self.permissions(user))
+        ):
+            raise AuthorizationError("You cannot view organization leave balances")
+        zero = Decimal("0")
+        ledger = (
+            select(
+                LeaveBalanceLedgerEntry.entitlement_id.label("eid"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LeaveBalanceLedgerEntry.entry_type == "accrual",
+                                LeaveBalanceLedgerEntry.amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("accrued"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LeaveBalanceLedgerEntry.entry_type == "carryover",
+                                LeaveBalanceLedgerEntry.amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("carried"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LeaveBalanceLedgerEntry.entry_type == "adjustment",
+                                LeaveBalanceLedgerEntry.amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("adjustments"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LeaveBalanceLedgerEntry.entry_type.in_(("usage", "reversal")),
+                                LeaveBalanceLedgerEntry.amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("usage_net"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LeaveBalanceLedgerEntry.entry_type == "expiry",
+                                LeaveBalanceLedgerEntry.amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("expiry_net"),
+            )
+            .where(LeaveBalanceLedgerEntry.organization_id == user.organization_id)
+            .group_by(LeaveBalanceLedgerEntry.entitlement_id)
+            .subquery()
+        )
+        pending = (
+            select(
+                LeaveRequest.employee_id.label("employee_id"),
+                LeaveRequest.leave_type_id.label("type_id"),
+                LeaveRequest.leave_period_id.label("period_id"),
+                func.sum(LeaveRequest.duration_days).label("pending"),
+            )
+            .where(
+                LeaveRequest.organization_id == user.organization_id,
+                LeaveRequest.status == "submitted",
+            )
+            .group_by(
+                LeaveRequest.employee_id, LeaveRequest.leave_type_id, LeaveRequest.leave_period_id
+            )
+            .subquery()
+        )
+        query = (
+            select(
+                LeaveEntitlement,
+                User,
+                OrganizationUnit,
+                LeaveType,
+                LeavePeriod,
+                ledger.c.accrued,
+                ledger.c.carried,
+                ledger.c.adjustments,
+                ledger.c.usage_net,
+                ledger.c.expiry_net,
+                pending.c.pending,
+            )
+            .join(User, User.id == LeaveEntitlement.employee_id)
+            .outerjoin(OrganizationUnit, OrganizationUnit.id == User.department_id)
+            .join(LeaveType, LeaveType.id == LeaveEntitlement.leave_type_id)
+            .join(LeavePeriod, LeavePeriod.id == LeaveEntitlement.leave_period_id)
+            .outerjoin(ledger, ledger.c.eid == LeaveEntitlement.id)
+            .outerjoin(
+                pending,
+                (pending.c.employee_id == LeaveEntitlement.employee_id)
+                & (pending.c.type_id == LeaveEntitlement.leave_type_id)
+                & (pending.c.period_id == LeaveEntitlement.leave_period_id),
+            )
+            .where(LeaveEntitlement.organization_id == user.organization_id)
+        )
+        if employee_id:
+            query = query.where(LeaveEntitlement.employee_id == employee_id)
+        if department_id:
+            query = query.where(User.department_id == department_id)
+        if leave_type_id:
+            query = query.where(LeaveEntitlement.leave_type_id == leave_type_id)
+        if leave_period_id:
+            query = query.where(LeaveEntitlement.leave_period_id == leave_period_id)
+        if search:
+            term = f"%{search.strip()}%"
+            query = query.where(
+                or_(
+                    User.display_name.ilike(term),
+                    User.employee_number.ilike(term),
+                    LeaveType.name.ilike(term),
+                )
+            )
+        total = int(
+            await self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        )
+        balance_sorts = {
+            "employee": User.display_name,
+            "department": OrganizationUnit.name,
+            "leave_type": LeaveType.name,
+            "period": LeavePeriod.start_date,
+            "available": LeaveEntitlement.allocated_days
+            + func.coalesce(ledger.c.accrued, 0)
+            + func.coalesce(ledger.c.carried, 0)
+            + func.coalesce(ledger.c.adjustments, 0)
+            + func.coalesce(ledger.c.usage_net, 0)
+            + func.coalesce(ledger.c.expiry_net, 0),
+        }
+        sort_column = balance_sorts.get(sort_by, User.display_name)
+        ordering = sort_column.desc() if sort_order == "desc" else sort_column.asc()
+        rows = (
+            await self.session.execute(
+                query.order_by(ordering, LeaveType.name, LeaveEntitlement.id)
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        ).all()
+        items: list[BalanceListItem] = []
+        for (
+            entitlement,
+            employee,
+            department,
+            kind,
+            period,
+            accrued_value,
+            carried_value,
+            adjustment_value,
+            usage_value,
+            expiry_value,
+            pending_value,
+        ) in rows:
+            accrued = Decimal(str(accrued_value or zero))
+            carried = Decimal(str(carried_value or zero))
+            adjustments = Decimal(str(adjustment_value or zero))
+            used = -Decimal(str(usage_value or zero))
+            expired = -Decimal(str(expiry_value or zero))
+            pending_days = Decimal(str(pending_value or zero))
+            available = (
+                entitlement.allocated_days + accrued + carried + adjustments - used - expired
+            )
+            items.append(
+                BalanceListItem(
+                    entitlement_id=entitlement.id,
+                    employee_id=employee.id,
+                    leave_type_id=kind.id,
+                    leave_period_id=period.id,
+                    employee_number=employee.employee_number,
+                    employee_name=employee.display_name,
+                    department_id=employee.department_id,
+                    department_name=department.name if department else None,
+                    leave_type_name=kind.name,
+                    leave_type_code=kind.code,
+                    period_name=period.name,
+                    entitled=entitlement.allocated_days,
+                    accrued=accrued,
+                    carried_forward=carried,
+                    adjustments=adjustments,
+                    used=used,
+                    pending=pending_days,
+                    expired=expired,
+                    available=available,
+                    available_after_pending=available - pending_days,
+                )
+            )
+        return BalancePage(items=items, total=total, page=page, page_size=page_size)
+
+    async def balance_history(
+        self,
+        user: User,
+        *,
+        employee_id: uuid.UUID | None,
+        leave_type_id: uuid.UUID | None,
+        leave_period_id: uuid.UUID | None,
+        page: int,
+        page_size: int,
+    ) -> LedgerPage:
+        target = employee_id or user.id
+        if target != user.id and not self._manage(user):
+            raise AuthorizationError("You cannot view this balance history")
+        query = select(LeaveBalanceLedgerEntry).where(
+            LeaveBalanceLedgerEntry.organization_id == user.organization_id,
+            LeaveBalanceLedgerEntry.employee_id == target,
+        )
+        if leave_type_id:
+            query = query.where(LeaveBalanceLedgerEntry.leave_type_id == leave_type_id)
+        if leave_period_id:
+            query = query.where(LeaveBalanceLedgerEntry.leave_period_id == leave_period_id)
+        total = int(
+            await self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        )
+        rows = list(
             (
                 await self.session.scalars(
-                    select(LeaveEntitlement)
-                    .join(LeavePeriod, LeavePeriod.id == LeaveEntitlement.leave_period_id)
-                    .where(
-                        LeaveEntitlement.organization_id == user.organization_id,
-                        LeaveEntitlement.employee_id == user.id,
-                        LeavePeriod.status == "open",
+                    query.order_by(
+                        LeaveBalanceLedgerEntry.effective_date.desc(),
+                        LeaveBalanceLedgerEntry.id.desc(),
                     )
-                    .order_by(LeavePeriod.end_date.desc())
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
                 )
             ).all()
         )
-        return [await self.balance(user, entitlement.id) for entitlement in entitlements]
+        return LedgerPage(
+            items=[LedgerEntryResponse.model_validate(row) for row in rows],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def list_requests(
+        self,
+        user: User,
+        *,
+        scope: str,
+        employee_id: uuid.UUID | None = None,
+        department_id: uuid.UUID | None = None,
+        leave_type_id: uuid.UUID | None = None,
+        request_status: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        search: str | None = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        page: int = 1,
+        page_size: int = 25,
+    ) -> LeaveRequestPage:
+        query = select(LeaveRequest).where(
+            LeaveRequest.organization_id == user.organization_id, LeaveRequest.deleted_at.is_(None)
+        )
+        if scope == "mine":
+            query = query.where(LeaveRequest.employee_id == user.id)
+        elif scope == "team":
+            direct_reports = select(User.id).where(
+                User.organization_id == user.organization_id, User.manager_id == user.id
+            )
+            query = query.where(LeaveRequest.employee_id.in_(direct_reports))
+        elif scope in {"pending", "recently_reviewed"}:
+            direct_reports = select(User.id).where(
+                User.organization_id == user.organization_id, User.manager_id == user.id
+            )
+            query = query.where(LeaveRequest.employee_id.in_(direct_reports))
+            if scope == "pending":
+                query = query.where(LeaveRequest.status == "submitted")
+            else:
+                query = query.where(LeaveRequest.status.in_(("approved", "rejected")))
+        elif scope == "organization" and not self._manage(user):
+            raise AuthorizationError("You cannot view organization leave requests")
+        if employee_id:
+            query = query.where(LeaveRequest.employee_id == employee_id)
+        if department_id:
+            query = query.where(LeaveRequest.department_id == department_id)
+        if leave_type_id:
+            query = query.where(LeaveRequest.leave_type_id == leave_type_id)
+        if request_status:
+            query = query.where(LeaveRequest.status == request_status)
+        if start_date:
+            query = query.where(LeaveRequest.end_date >= start_date)
+        if end_date:
+            query = query.where(LeaveRequest.start_date <= end_date)
+        if search:
+            term = f"%{search.strip()}%"
+            query = query.join(User, User.id == LeaveRequest.employee_id).join(
+                LeaveType, LeaveType.id == LeaveRequest.leave_type_id
+            )
+            query = query.where(
+                or_(
+                    User.display_name.ilike(term),
+                    User.employee_number.ilike(term),
+                    LeaveType.name.ilike(term),
+                )
+            )
+        total = int(
+            await self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        )
+        request_sorts = {
+            "created_at": LeaveRequest.created_at,
+            "start_date": LeaveRequest.start_date,
+            "end_date": LeaveRequest.end_date,
+            "status": LeaveRequest.status,
+            "duration": LeaveRequest.duration_days,
+        }
+        sort_column = request_sorts.get(sort_by, LeaveRequest.created_at)
+        ordering = sort_column.desc() if sort_order == "desc" else sort_column.asc()
+        rows = list(
+            (
+                await self.session.scalars(
+                    query.order_by(ordering, LeaveRequest.id.desc())
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).all()
+        )
+        reveal_reason = scope in {"mine", "team", "pending"} or self._manage(user)
+        employee_ids = {row.employee_id for row in rows}
+        department_ids = {row.department_id for row in rows if row.department_id}
+        type_ids = {row.leave_type_id for row in rows}
+        period_ids = {row.leave_period_id for row in rows}
+        employees = {
+            item.id: item
+            for item in (
+                await self.session.scalars(
+                    select(User).where(
+                        User.organization_id == user.organization_id,
+                        User.id.in_(employee_ids),
+                    )
+                )
+            ).all()
+        }
+        departments = {
+            item.id: item
+            for item in (
+                await self.session.scalars(
+                    select(OrganizationUnit).where(
+                        OrganizationUnit.organization_id == user.organization_id,
+                        OrganizationUnit.id.in_(department_ids),
+                    )
+                )
+            ).all()
+        }
+        leave_types = {
+            item.id: item
+            for item in (
+                await self.session.scalars(
+                    select(LeaveType).where(
+                        LeaveType.organization_id == user.organization_id,
+                        LeaveType.id.in_(type_ids),
+                    )
+                )
+            ).all()
+        }
+        periods = {
+            item.id: item
+            for item in (
+                await self.session.scalars(
+                    select(LeavePeriod).where(
+                        LeavePeriod.organization_id == user.organization_id,
+                        LeavePeriod.id.in_(period_ids),
+                    )
+                )
+            ).all()
+        }
+        items: list[LeaveRequestResponse] = []
+        for row in rows:
+            employee = employees[row.employee_id]
+            leave_type = leave_types[row.leave_type_id]
+            period = periods[row.leave_period_id]
+            department = departments.get(row.department_id) if row.department_id else None
+            items.append(
+                LeaveRequestResponse.model_validate(row).model_copy(
+                    update={
+                        "employee_number": employee.employee_number,
+                        "employee_name": employee.display_name,
+                        "department_name": department.name if department else None,
+                        "leave_type_name": leave_type.name,
+                        "leave_type_code": leave_type.code,
+                        "leave_period_name": period.name,
+                    }
+                )
+            )
+        if not reveal_reason:
+            items = [
+                item.model_copy(update={"reason": None, "review_comment": None}) for item in items
+            ]
+        return LeaveRequestPage(items=items, total=total, page=page, page_size=page_size)
+
+    async def request_detail(self, user: User, request_id: uuid.UUID) -> LeaveRequestDetail:
+        request = await self._request(user, request_id)
+        if not await self._can_view_request(user, request):
+            raise NotFoundError("Leave request not found")
+        employee = await self._employee(user, request.employee_id)
+        manager = await self._employee(user, employee.manager_id) if employee.manager_id else None
+        reviewer = (
+            await self._employee(user, request.reviewed_by_id) if request.reviewed_by_id else None
+        )
+        department = (
+            await self.session.scalar(
+                select(OrganizationUnit).where(
+                    OrganizationUnit.id == request.department_id,
+                    OrganizationUnit.organization_id == user.organization_id,
+                )
+            )
+            if request.department_id
+            else None
+        )
+        leave_type = await self._type(user, request.leave_type_id)
+        period = await self._period(user, period_id=request.leave_period_id)
+        attachments = await self.list_attachments(user, request.id)
+        history = list(
+            (
+                await self.session.scalars(
+                    select(LeaveRequestHistory)
+                    .where(
+                        LeaveRequestHistory.organization_id == user.organization_id,
+                        LeaveRequestHistory.leave_request_id == request.id,
+                    )
+                    .order_by(LeaveRequestHistory.created_at, LeaveRequestHistory.id)
+                )
+            ).all()
+        )
+        can_view_private = request.employee_id == user.id or await self._can_review(user, request)
+        data = LeaveRequestResponse.model_validate(request).model_dump()
+        if not can_view_private:
+            data["reason"] = None
+            data["review_comment"] = None
+            attachments = []
+            history = []
+        data.update(
+            {
+                "employee_number": employee.employee_number,
+                "employee_name": employee.display_name,
+                "department_name": department.name if department else None,
+                "manager_id": manager.id if manager else None,
+                "manager_name": manager.display_name if manager else None,
+                "leave_type_name": leave_type.name,
+                "leave_type_code": leave_type.code,
+                "leave_period_name": period.name,
+                "reviewer_name": reviewer.display_name if reviewer else None,
+                "balance_effect": (
+                    -request.duration_days if request.status == "approved" else Decimal("0")
+                ),
+                "attachments": [
+                    LeaveAttachmentResponse.model_validate(item) for item in attachments
+                ],
+                "history": [LeaveHistoryResponse.model_validate(item) for item in history],
+            }
+        )
+        return LeaveRequestDetail.model_validate(data)
+
+    async def my_summary(self, user: User) -> LeaveSummaryResponse:
+        balances = await self.my_balances(user)
+        pending = await self.list_requests(
+            user, scope="mine", request_status="submitted", page_size=10
+        )
+        upcoming = await self.list_requests(
+            user, scope="mine", request_status="approved", start_date=date.today(), page_size=10
+        )
+        recent = await self.list_requests(user, scope="mine", page_size=10)
+        return LeaveSummaryResponse(
+            balances=balances,
+            pending_requests=pending.items,
+            upcoming_approved=upcoming.items,
+            recent_history=recent.items,
+        )
+
+    async def manager_summary(self, user: User) -> ManagerLeaveSummary:
+        pending = await self.list_requests(user, scope="pending", page=1, page_size=10)
+        recently_reviewed = await self.list_requests(
+            user, scope="recently_reviewed", page=1, page_size=10
+        )
+        today = date.today()
+        away = await self.team_availability(user, today, today)
+        upcoming = await self.team_availability(
+            user, today + timedelta(days=1), today + timedelta(days=30)
+        )
+        return ManagerLeaveSummary(
+            pending_count=pending.total,
+            pending=pending.items,
+            away_today=away,
+            upcoming=upcoming,
+            recently_reviewed=recently_reviewed.items,
+        )
+
+    async def status_report(self, user: User, category: str) -> list[LeaveStatusSummary]:
+        if not ({"leave.reports.view", "leave.export"} & self.permissions(user)):
+            raise AuthorizationError("You cannot view leave reports")
+        today = date.today()
+        query = select(
+            LeaveRequest.status,
+            func.count(LeaveRequest.id),
+            func.coalesce(func.sum(LeaveRequest.duration_days), 0),
+        ).where(
+            LeaveRequest.organization_id == user.organization_id,
+            LeaveRequest.deleted_at.is_(None),
+        )
+        if category == "pending":
+            query = query.where(LeaveRequest.status == "submitted")
+        elif category == "current":
+            query = query.where(
+                LeaveRequest.status == "approved",
+                LeaveRequest.start_date <= today,
+                LeaveRequest.end_date >= today,
+            )
+        elif category == "upcoming":
+            query = query.where(LeaveRequest.status == "approved", LeaveRequest.start_date > today)
+        query = query.group_by(LeaveRequest.status).order_by(LeaveRequest.status)
+        rows = (await self.session.execute(query)).all()
+        return [
+            LeaveStatusSummary(
+                status=status, request_count=int(count), total_days=Decimal(str(days))
+            )
+            for status, count, days in rows
+        ]
+
+    async def team_availability(
+        self, user: User, start_date: date, end_date: date
+    ) -> list[LeaveAvailabilityItem]:
+        if "leave.view_team" not in self.permissions(user) and not self._manage(user):
+            raise AuthorizationError("You cannot view team leave availability")
+        query = (
+            select(LeaveRequest, User)
+            .join(User, User.id == LeaveRequest.employee_id)
+            .where(
+                LeaveRequest.organization_id == user.organization_id,
+                LeaveRequest.status == "approved",
+                LeaveRequest.start_date <= end_date,
+                LeaveRequest.end_date >= start_date,
+                LeaveRequest.deleted_at.is_(None),
+            )
+        )
+        if not self._manage(user):
+            query = query.where(User.manager_id == user.id)
+        rows = (await self.session.execute(query.order_by(LeaveRequest.start_date))).all()
+        return [
+            LeaveAvailabilityItem(
+                employee_id=employee.id,
+                employee_name=employee.display_name,
+                start_date=request.start_date,
+                end_date=request.end_date,
+            )
+            for request, employee in rows
+        ]
+
+    async def usage_report(self, user: User, group_by: str) -> list[LeaveReportRow]:
+        if not (
+            {"leave.reports.view", "leave.export"} & self.permissions(user)
+        ) and not self._manage(user):
+            raise AuthorizationError("You cannot view leave reports")
+        if group_by == "department":
+            query = (
+                select(
+                    OrganizationUnit.id,
+                    OrganizationUnit.name,
+                    func.count(LeaveRequest.id),
+                    func.coalesce(func.sum(LeaveRequest.duration_days), 0),
+                )
+                .join(LeaveRequest, LeaveRequest.department_id == OrganizationUnit.id)
+                .where(
+                    LeaveRequest.organization_id == user.organization_id,
+                    LeaveRequest.status == "approved",
+                )
+                .group_by(OrganizationUnit.id, OrganizationUnit.name)
+            )
+        else:
+            query = (
+                select(
+                    LeaveType.id,
+                    LeaveType.name,
+                    func.count(LeaveRequest.id),
+                    func.coalesce(func.sum(LeaveRequest.duration_days), 0),
+                )
+                .join(LeaveRequest, LeaveRequest.leave_type_id == LeaveType.id)
+                .where(
+                    LeaveRequest.organization_id == user.organization_id,
+                    LeaveRequest.status == "approved",
+                )
+                .group_by(LeaveType.id, LeaveType.name)
+            )
+        rows = (await self.session.execute(query)).all()
+        return [
+            LeaveReportRow(
+                key=str(key), label=label, request_count=int(count), total_days=Decimal(str(days))
+            )
+            for key, label, count, days in rows
+        ]
 
     async def adjust(
         self, user: User, entitlement_id: uuid.UUID, body: AdjustmentInput
-    ) -> BalanceResponse:
+    ) -> AdjustmentResponse:
         item = await self.session.scalar(
             select(LeaveEntitlement)
             .where(
@@ -559,14 +1288,85 @@ class LeaveService:
         )
         if item is None:
             raise NotFoundError("Leave entitlement not found")
-        await self._ledger(user, item, "adjustment", body.amount, body.effective_date, body.reason)
-        self._audit(user, "leave.balance.adjusted", item.id)
+        previous = await self.balance(user, item.id)
+        amount = -body.amount if body.operation == "deduct" else body.amount
+        entry = await self._ledger(
+            user, item, "adjustment", amount, body.effective_date, body.reason
+        )
+        if entry is None:  # adjustments do not use idempotency keys
+            raise RuntimeError("Leave adjustment was not persisted")
+        self._audit(
+            user,
+            "leave.balance.adjusted",
+            item.id,
+            {"operation": body.operation, "amount": str(amount), "reason": body.reason},
+        )
         await self.session.flush()
-        return await self.balance(user, item.id)
+        resulting = await self.balance(user, item.id)
+        return AdjustmentResponse(
+            previous_balance=previous,
+            adjustment=LedgerEntryResponse.model_validate(entry),
+            resulting_balance=resulting,
+        )
+
+    async def adjust_by_dimensions(
+        self, user: User, body: ControlledAdjustmentInput
+    ) -> AdjustmentResponse:
+        await self._employee(user, body.employee_id)
+        entitlement_id = await self.session.scalar(
+            select(LeaveEntitlement.id).where(
+                LeaveEntitlement.organization_id == user.organization_id,
+                LeaveEntitlement.employee_id == body.employee_id,
+                LeaveEntitlement.leave_type_id == body.leave_type_id,
+                LeaveEntitlement.leave_period_id == body.leave_period_id,
+            )
+        )
+        if entitlement_id is None:
+            raise NotFoundError("Leave entitlement not found")
+        return await self.adjust(
+            user,
+            entitlement_id,
+            AdjustmentInput(
+                operation=body.operation,
+                amount=body.amount,
+                effective_date=body.effective_date,
+                reason=body.reason,
+            ),
+        )
+
+    async def working_week(self, user: User) -> WorkingWeekResponse:
+        organization = await self.session.get(Organization, user.organization_id)
+        settings = organization.settings if organization else {}
+        weekdays = settings.get("leave_working_weekdays", [0, 1, 2, 3, 4])
+        exclude = settings.get("leave_exclude_holidays", True)
+        safe_weekdays = (
+            [int(day) for day in weekdays if isinstance(day, int) and 0 <= day <= 6]
+            if isinstance(weekdays, list)
+            else [0, 1, 2, 3, 4]
+        )
+        return WorkingWeekResponse(
+            weekdays=safe_weekdays or [0, 1, 2, 3, 4], exclude_holidays=bool(exclude)
+        )
+
+    async def update_working_week(self, user: User, body: WorkingWeekInput) -> WorkingWeekResponse:
+        organization = await self.session.get(Organization, user.organization_id)
+        if organization is None:
+            raise NotFoundError("Organization not found")
+        organization.settings = {
+            **(organization.settings or {}),
+            "leave_working_weekdays": sorted(body.weekdays),
+            "leave_exclude_holidays": body.exclude_holidays,
+        }
+        self._audit(user, "leave.working_week.updated", organization.id)
+        await self.session.flush()
+        return WorkingWeekResponse(
+            weekdays=sorted(body.weekdays), exclude_holidays=body.exclude_holidays
+        )
 
     async def working_days(
         self, user: User, start: date, end: date, half_day: bool = False
     ) -> WorkingDayResult:
+        policy = await self.working_week(user)
         holidays = set(
             (
                 await self.session.scalars(
@@ -578,11 +1378,13 @@ class LeaveService:
                 )
             ).all()
         )
+        if not policy.exclude_holidays:
+            holidays.clear()
         current = start
         weekends = holidays_count = 0
         chargeable = Decimal("0")
         while current <= end:
-            if current.weekday() >= 5:
+            if current.weekday() not in policy.weekdays:
                 weekends += 1
             elif current in holidays:
                 holidays_count += 1
@@ -666,6 +1468,22 @@ class LeaveService:
         self._audit(actor, "leave.attachment.added", request.id, {"attachment_id": str(item.id)})
         return item
 
+    async def list_attachments(self, actor: User, request_id: uuid.UUID) -> list[LeaveAttachment]:
+        await self.ensure_attachment_access(actor, request_id)
+        return list(
+            (
+                await self.session.scalars(
+                    select(LeaveAttachment)
+                    .where(
+                        LeaveAttachment.organization_id == actor.organization_id,
+                        LeaveAttachment.leave_request_id == request_id,
+                        LeaveAttachment.deleted_at.is_(None),
+                    )
+                    .order_by(LeaveAttachment.created_at, LeaveAttachment.id)
+                )
+            ).all()
+        )
+
     async def attachment_for_download(
         self, actor: User, request_id: uuid.UUID, attachment_id: uuid.UUID
     ) -> LeaveAttachment:
@@ -726,7 +1544,83 @@ class LeaveService:
                 metadata={"leave_request_id": str(request.id)},
             )
         except Exception:  # routing/push delivery must not corrupt the leave workflow
-            return
+            await logger.aexception("leave_notification_failed", leave_request_id=str(request.id))
+        try:
+            recipient = await self.session.scalar(
+                select(User).where(
+                    User.id == recipient_id,
+                    User.organization_id == request.organization_id,
+                    User.removed_at.is_(None),
+                )
+            )
+            if recipient is None:
+                raise NotFoundError("Notification recipient not found")
+            employee = await self.session.scalar(
+                select(User).where(
+                    User.id == request.employee_id,
+                    User.organization_id == request.organization_id,
+                )
+            )
+            if employee is None:
+                raise NotFoundError("Leave employee not found")
+            leave_type = await self.session.get(LeaveType, request.leave_type_id)
+            sender = await MeetingEmailSender.for_organization(
+                self.session, get_settings(), request.organization_id
+            )
+            template_key = cast(TemplateKey, notification_type)
+            rendered = EmailTemplateRegistry.render(
+                template_key,
+                LeaveEmailData(
+                    leave_url=f"{get_settings().web_app_url.rstrip('/')}/leave/requests/{request.id}",
+                    employee_name=employee.display_name,
+                    leave_type=leave_type.name if leave_type else "Leave",
+                    date_range=(
+                        f"{request.start_date.isoformat()} to {request.end_date.isoformat()}"
+                    ),
+                    working_days=str(request.duration_days),
+                    note=body,
+                ),
+                sender.branding,
+            )
+            transport_id = await sender.send_rendered(
+                recipient.email,
+                rendered,
+                message_key=f"leave-{request.id}-{notification_type}-{recipient.id}",
+            )
+            self.session.add(
+                AuditLog(
+                    organization_id=request.organization_id,
+                    user_id=None,
+                    action=(
+                        "leave.delivery.accepted"
+                        if sender.delivery_mode == "smtp"
+                        else "leave.delivery.local_outbox"
+                    ),
+                    resource="leave",
+                    resource_id=request.id,
+                    audit_metadata={
+                        "event_type": notification_type,
+                        "recipient_domain": recipient.email.rpartition("@")[2].lower(),
+                        "transport_id": transport_id if sender.delivery_mode == "smtp" else None,
+                        "template_key": rendered.key,
+                        "template_version": rendered.version,
+                    },
+                )
+            )
+        except Exception as error:
+            self.session.add(
+                AuditLog(
+                    organization_id=request.organization_id,
+                    user_id=None,
+                    action="leave.delivery.failed",
+                    resource="leave",
+                    resource_id=request.id,
+                    audit_metadata={
+                        "event_type": notification_type,
+                        "error_type": type(error).__name__,
+                    },
+                )
+            )
 
     async def _upsert_calendar_event(self, actor: User, request: LeaveRequest) -> None:
         calendar = await self.session.scalar(
@@ -798,9 +1692,22 @@ class LeaveService:
             and employee.employment_type not in kind.eligible_employment_types.split(",")
         ):
             raise ValidationError("This leave type is not available for your employment type")
+        if employee.employment_status == "probation" and not kind.probation_eligible:
+            raise ValidationError("This leave type is not available during probation")
+        if (body.start_date - date.today()).days < kind.minimum_notice_days:
+            raise ValidationError(
+                f"This leave type requires {kind.minimum_notice_days} days' notice"
+            )
         result = await self.working_days(user, body.start_date, body.end_date, body.half_day)
         if not result.chargeable_days:
             raise ValidationError("The selected dates contain no working days")
+        if (
+            kind.maximum_consecutive_days is not None
+            and result.chargeable_days > kind.maximum_consecutive_days
+        ):
+            raise ValidationError(
+                f"This leave type permits at most {kind.maximum_consecutive_days} consecutive days"
+            )
         item = LeaveRequest(
             organization_id=user.organization_id,
             employee_id=user.id,
@@ -868,6 +1775,8 @@ class LeaveService:
                 "A direct report submitted a leave request.",
                 item,
             )
+        await self.session.flush()
+        await self.session.refresh(item)
         return item
 
     async def review(
@@ -920,6 +1829,8 @@ class LeaveService:
             comment or f"Your leave request was {action}.",
             item,
         )
+        await self.session.flush()
+        await self.session.refresh(item)
         return item
 
     async def withdraw(self, user: User, request_id: uuid.UUID) -> LeaveRequest:
@@ -940,6 +1851,8 @@ class LeaveService:
                 "A direct report withdrew a leave request.",
                 item,
             )
+        await self.session.flush()
+        await self.session.refresh(item)
         return item
 
     async def cancel(
@@ -982,4 +1895,6 @@ class LeaveService:
             comment or "Your approved leave request was cancelled.",
             item,
         )
+        await self.session.flush()
+        await self.session.refresh(item)
         return item

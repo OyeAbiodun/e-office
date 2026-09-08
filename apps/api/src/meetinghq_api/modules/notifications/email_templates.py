@@ -33,6 +33,11 @@ TemplateKey = Literal[
     "voucher.partially_disbursed",
     "voucher.disbursed",
     "voucher.reversed",
+    "leave.submitted",
+    "leave.approved",
+    "leave.rejected",
+    "leave.withdrawn",
+    "leave.cancelled",
     "smtp.test",
 ]
 
@@ -144,6 +149,16 @@ class VoucherEmailData:
     reason: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class LeaveEmailData:
+    leave_url: str
+    employee_name: str
+    leave_type: str
+    date_range: str
+    working_days: str
+    note: str | None = None
+
+
 EmailTemplateData = (
     PasswordResetEmailData
     | VerificationEmailData
@@ -152,6 +167,7 @@ EmailTemplateData = (
     | MeetingEmailData
     | SmtpTestEmailData
     | VoucherEmailData
+    | LeaveEmailData
 )
 
 
@@ -193,6 +209,14 @@ class EmailTemplateRegistry:
             "voucher.reversed",
         } and isinstance(data, VoucherEmailData):
             return cls._voucher(key, data, brand)
+        if key in {
+            "leave.submitted",
+            "leave.approved",
+            "leave.rejected",
+            "leave.withdrawn",
+            "leave.cancelled",
+        } and isinstance(data, LeaveEmailData):
+            return cls._leave(key, data, brand)
         raise TypeError(f"Template {key} received incompatible data")
 
     @classmethod
@@ -578,6 +602,45 @@ class EmailTemplateRegistry:
             body,
             brand,
         )
+
+    @staticmethod
+    def _leave(key: TemplateKey, data: LeaveEmailData, brand: EmailBranding) -> RenderedEmail:
+        leave_url = _required_url(data.leave_url)
+        labels = {
+            "leave.submitted": ("Leave request submitted", "A leave request is ready for review."),
+            "leave.approved": ("Leave request approved", "The leave request has been approved."),
+            "leave.rejected": ("Leave request rejected", "The leave request was not approved."),
+            "leave.withdrawn": ("Leave request withdrawn", "The leave request has been withdrawn."),
+            "leave.cancelled": (
+                "Approved leave cancelled",
+                "The approved leave has been cancelled.",
+            ),
+        }
+        heading, lead = labels[key]
+        rows: list[tuple[str, str | None]] = [
+            ("Employee", data.employee_name),
+            ("Leave type", data.leave_type),
+            ("Dates", data.date_range),
+            ("Working days", data.working_days),
+        ]
+        text = "\n".join(
+            [
+                heading,
+                "",
+                lead,
+                *(f"{label}: {_safe_text(value, '—', 240)}" for label, value in rows),
+                *(["", f"Note: {_safe_text(data.note, '', 2000)}"] if data.note else []),
+                "",
+                f"View leave request: {leave_url}",
+            ]
+        )
+        body = _heading(heading) + _paragraph(lead) + _detail_rows(rows)
+        if data.note:
+            body += _section("Note", data.note)
+        body += _button(leave_url, "View leave request", brand) + _fallback_link(
+            leave_url, "View leave request"
+        )
+        return _render(key, f"MeetingHQ | {heading}", text, body, brand)
 
 
 def _render(
