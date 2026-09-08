@@ -187,6 +187,31 @@ class LeaveRequest(SoftDeleteMixin, Base):
     )
 
 
+class LeaveAttachment(SoftDeleteMixin, Base):
+    """Private supporting document reference; storage access is always authenticated."""
+
+    __tablename__ = "leave_attachments"
+    __table_args__ = (
+        Index("ix_leave_attachments_request_created", "leave_request_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    leave_request_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("leave_requests.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(255))
+    size: Mapped[int] = mapped_column()
+    storage_key: Mapped[str] = mapped_column(String(1000), unique=True)
+    uploaded_by_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class LeaveRequestHistory(Base):
     __tablename__ = "leave_request_history"
     __table_args__ = (Index("ix_leave_history_request_created", "leave_request_id", "created_at"),)

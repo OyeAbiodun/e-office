@@ -193,3 +193,12 @@ class WorkingDayResult(BaseModel):
     excluded_non_working_days: int
     excluded_holidays: int
     chargeable_days: Decimal
+
+
+class LeaveAttachmentResponse(OrmResponse):
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    size: int
+    uploaded_by_id: uuid.UUID
+    created_at: datetime

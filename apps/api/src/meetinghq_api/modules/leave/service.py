@@ -20,6 +20,7 @@ from meetinghq_api.modules.calendar.models import (
     Visibility,
 )
 from meetinghq_api.modules.leave.models import (
+    LeaveAttachment,
     LeaveBalanceLedgerEntry,
     LeaveEntitlement,
     LeavePeriod,
@@ -397,6 +398,86 @@ class LeaveService:
             )
         )
 
+    async def _can_view_request(self, actor: User, request: LeaveRequest) -> bool:
+        if request.employee_id == actor.id or self._manage(actor):
+            return True
+        employee = await self._employee(actor, request.employee_id)
+        return employee.manager_id == actor.id and bool(
+            {"leave.view_team", "leave.review", "leave.approve", "leave.reject"}
+            & self.permissions(actor)
+        )
+
+    async def ensure_attachment_access(self, actor: User, request_id: uuid.UUID) -> LeaveRequest:
+        request = await self._request(actor, request_id)
+        if not await self._can_view_request(actor, request):
+            raise AuthorizationError("You are not authorized to access this leave document")
+        return request
+
+    async def add_attachment(
+        self,
+        actor: User,
+        request_id: uuid.UUID,
+        *,
+        filename: str,
+        content_type: str,
+        size: int,
+        storage_key: str,
+    ) -> LeaveAttachment:
+        request = await self.ensure_attachment_access(actor, request_id)
+        if request.status in {"cancelled", "rejected", "withdrawn"}:
+            raise ValidationError("Documents cannot be added to a closed leave request")
+        item = LeaveAttachment(
+            organization_id=actor.organization_id,
+            leave_request_id=request.id,
+            filename=filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1][:255],
+            content_type=content_type,
+            size=size,
+            storage_key=storage_key,
+            uploaded_by_id=actor.id,
+        )
+        self.session.add(item)
+        await self.session.flush()
+        self._audit(actor, "leave.attachment.added", request.id, {"attachment_id": str(item.id)})
+        return item
+
+    async def attachment_for_download(
+        self, actor: User, request_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> LeaveAttachment:
+        await self.ensure_attachment_access(actor, request_id)
+        item = await self.session.scalar(
+            select(LeaveAttachment).where(
+                LeaveAttachment.id == attachment_id,
+                LeaveAttachment.leave_request_id == request_id,
+                LeaveAttachment.organization_id == actor.organization_id,
+                LeaveAttachment.deleted_at.is_(None),
+            )
+        )
+        if item is None:
+            raise NotFoundError("Leave attachment not found")
+        return item
+
+    async def delete_attachment(
+        self, actor: User, request_id: uuid.UUID, attachment_id: uuid.UUID
+    ) -> str:
+        request = await self.ensure_attachment_access(actor, request_id)
+        item = await self.attachment_for_download(actor, request_id, attachment_id)
+        if item.uploaded_by_id != actor.id and not self._manage(actor):
+            raise AuthorizationError("You are not authorized to remove this leave document")
+        item.soft_delete(actor.id)
+        self._audit(actor, "leave.attachment.removed", request.id, {"attachment_id": str(item.id)})
+        return item.storage_key
+
+    async def has_attachments(self, organization_id: uuid.UUID, request_id: uuid.UUID) -> bool:
+        return bool(
+            await self.session.scalar(
+                select(LeaveAttachment.id).where(
+                    LeaveAttachment.organization_id == organization_id,
+                    LeaveAttachment.leave_request_id == request_id,
+                    LeaveAttachment.deleted_at.is_(None),
+                )
+            )
+        )
+
     async def _notify_best_effort(
         self,
         recipient_id: uuid.UUID,
@@ -518,6 +599,13 @@ class LeaveService:
             raise AuthorizationError("You can only submit your own leave request")
         if item.status != "draft":
             raise ValidationError("Only draft leave requests can be submitted")
+        leave_type = await self._type(user, item.leave_type_id, active=True)
+        if leave_type.attachment_required and not await self.has_attachments(
+            user.organization_id, item.id
+        ):
+            raise ValidationError(
+                "Supporting documentation is required before submitting this leave request"
+            )
         overlap = await self.session.scalar(
             select(LeaveRequest.id).where(
                 LeaveRequest.organization_id == user.organization_id,
