@@ -317,6 +317,122 @@ class LeaveService:
             count += 1
         return count
 
+    async def process_carryover(
+        self,
+        actor: User,
+        source_period_id: uuid.UUID,
+        destination_period_id: uuid.UUID,
+        effective_date: date,
+    ) -> int:
+        """Copy capped unused balances forward without modifying the source period."""
+        source = await self._period(actor, period_id=source_period_id)
+        destination = await self._period(actor, period_id=destination_period_id)
+        if destination.start_date <= source.end_date:
+            raise ValidationError("Carryover destination must follow the source period")
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(LeaveEntitlement).where(
+                        LeaveEntitlement.organization_id == actor.organization_id,
+                        LeaveEntitlement.leave_period_id == source.id,
+                    )
+                )
+            ).all()
+        )
+        created = 0
+        for entitlement in rows:
+            leave_type = await self._type(actor, entitlement.leave_type_id)
+            if not leave_type.carryover_enabled or not leave_type.carryover_limit:
+                continue
+            target = await self.session.scalar(
+                select(LeaveEntitlement).where(
+                    LeaveEntitlement.organization_id == actor.organization_id,
+                    LeaveEntitlement.employee_id == entitlement.employee_id,
+                    LeaveEntitlement.leave_type_id == entitlement.leave_type_id,
+                    LeaveEntitlement.leave_period_id == destination.id,
+                )
+            )
+            if target is None:
+                target = LeaveEntitlement(
+                    organization_id=actor.organization_id,
+                    employee_id=entitlement.employee_id,
+                    leave_type_id=entitlement.leave_type_id,
+                    leave_period_id=destination.id,
+                    allocated_days=Decimal("0"),
+                )
+                self.session.add(target)
+                await self.session.flush()
+            available = (await self.balance(actor, entitlement.id)).available
+            amount = min(max(available, Decimal("0")), leave_type.carryover_limit)
+            key = f"carryover:{entitlement.id}:{destination.id}"
+            if amount and not await self.session.scalar(
+                select(LeaveBalanceLedgerEntry.id).where(
+                    LeaveBalanceLedgerEntry.organization_id == actor.organization_id,
+                    LeaveBalanceLedgerEntry.idempotency_key == key,
+                )
+            ):
+                await self._ledger(
+                    actor,
+                    target,
+                    "carryover",
+                    amount,
+                    effective_date,
+                    f"Carryover from {source.name}",
+                    entitlement.id,
+                    key,
+                )
+                self._audit(
+                    actor,
+                    "leave.carryover",
+                    target.id,
+                    {"source_entitlement_id": str(entitlement.id)},
+                )
+                created += 1
+        return created
+
+    async def process_expiry(self, actor: User, effective_date: date) -> int:
+        """Expire only carry-forward entries whose policy expiry date has arrived."""
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(LeaveBalanceLedgerEntry).where(
+                        LeaveBalanceLedgerEntry.organization_id == actor.organization_id,
+                        LeaveBalanceLedgerEntry.entry_type == "carryover",
+                    )
+                )
+            ).all()
+        )
+        expired = 0
+        for row in rows:
+            leave_type = await self._type(actor, row.leave_type_id)
+            if not leave_type.carryover_expiry_months:
+                continue
+            expiry = row.effective_date + timedelta(days=30 * leave_type.carryover_expiry_months)
+            key = f"expiry:{row.id}:{expiry.isoformat()}"
+            if expiry <= effective_date and not await self.session.scalar(
+                select(LeaveBalanceLedgerEntry.id).where(
+                    LeaveBalanceLedgerEntry.organization_id == actor.organization_id,
+                    LeaveBalanceLedgerEntry.idempotency_key == key,
+                )
+            ):
+                entitlement = await self.session.get(LeaveEntitlement, row.entitlement_id)
+                if entitlement:
+                    await self._ledger(
+                        actor,
+                        entitlement,
+                        "expiry",
+                        -row.amount,
+                        effective_date,
+                        "Carryover expiry",
+                        row.id,
+                        key,
+                    )
+                    self._audit(
+                        actor, "leave.expiry", entitlement.id, {"source_ledger_id": str(row.id)}
+                    )
+                    expired += 1
+        return expired
+
     async def balance(self, user: User, entitlement_id: uuid.UUID) -> BalanceResponse:
         item = await self.session.scalar(
             select(LeaveEntitlement).where(
