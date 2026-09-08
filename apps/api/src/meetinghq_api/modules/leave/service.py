@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,13 +39,45 @@ from meetinghq_api.modules.leave.schemas import (
     WorkingDayResult,
 )
 from meetinghq_api.modules.notifications.service import NotificationService
+from meetinghq_api.modules.organizations.models import Organization
 from meetinghq_api.modules.users.models import User, UserStatus
 from meetinghq_api.shared.exceptions import AuthorizationError, NotFoundError, ValidationError
+
+logger = structlog.get_logger(__name__)
 
 
 class LeaveService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def process_scheduled_policies(self, effective_date: date | None = None) -> int:
+        """Run tenant-isolated policy maintenance through the shared worker."""
+        when = effective_date or date.today()
+        processed = 0
+        organizations = list((await self.session.scalars(select(Organization))).all())
+        for organization in organizations:
+            actor = await self.session.scalar(
+                select(User)
+                .where(
+                    User.organization_id == organization.id,
+                    User.status == UserStatus.ACTIVE,
+                    User.employment_status != "terminated",
+                )
+                .order_by(User.created_at)
+                .limit(1)
+            )
+            if actor is None:
+                continue
+            try:
+                processed += await self.process_accruals(actor, when)
+                processed += await self.process_expiry(actor, when)
+            except Exception:
+                # Each tenant is isolated; a malformed policy cannot halt others.
+                await logger.aexception(
+                    "leave_policy_tenant_processing_failed", organization_id=str(organization.id)
+                )
+                continue
+        return processed
 
     @staticmethod
     def permissions(user: User) -> set[str]:

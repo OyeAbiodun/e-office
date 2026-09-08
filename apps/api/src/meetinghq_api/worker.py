@@ -8,6 +8,7 @@ from meetinghq_api.core.config import get_settings
 from meetinghq_api.core.logging import configure_logging
 from meetinghq_api.infrastructure.database import engine, session_factory
 from meetinghq_api.infrastructure.redis import redis_client
+from meetinghq_api.modules.leave.service import LeaveService
 from meetinghq_api.modules.mail.service import MailService
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.tasks.service import TaskService
@@ -27,6 +28,7 @@ async def run_once() -> int:
             delivered += await service.process_due_browser_pushes()
             delivered += await TaskService(session, service).process_due_reminders()
             delivered += await MailService(session, settings).process_due_deliveries()
+            delivered += await LeaveService(session).process_scheduled_policies()
             await session.commit()
         await logger.ainfo("scheduled_worker_completed", delivered=delivered)
         return delivered
