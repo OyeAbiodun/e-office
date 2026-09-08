@@ -9,6 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from meetinghq_api.core.config import get_settings
+from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.auth.infrastructure.tokens import AccessTokenService
 from meetinghq_api.modules.finance.models import FinanceTransaction, VoucherHistory
 from meetinghq_api.modules.notifications.email_templates import RenderedEmail
@@ -229,6 +230,20 @@ async def test_finance_complete_workflow_and_replay(
         "voucher.disbursed",
         "voucher.reversed",
     } <= delivered_keys
+    async with factory() as session:
+        local_outbox_audits = list(
+            (
+                await session.scalars(
+                    select(AuditLog).where(AuditLog.action == "voucher.delivery.local_outbox")
+                )
+            ).all()
+        )
+        assert local_outbox_audits
+        assert all(
+            audit.audit_metadata["channel"] == "local_outbox"
+            and audit.audit_metadata["transport_id"] is None
+            for audit in local_outbox_audits
+        )
     assert all(
         message_key and message_key.startswith("voucher-") for _, _, message_key in deliveries
     )

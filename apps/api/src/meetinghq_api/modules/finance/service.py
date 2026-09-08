@@ -308,18 +308,23 @@ class FinanceService:
                     rendered,
                     message_key=f"voucher-{voucher.id}-{event_type}-{recipient.id}",
                 )
+                externally_accepted = sender.delivery_mode == "smtp"
                 self.session.add(
                     AuditLog(
                         organization_id=voucher.organization_id,
                         user_id=actor.id,
-                        action="voucher.delivery.accepted",
+                        action=(
+                            "voucher.delivery.accepted"
+                            if externally_accepted
+                            else "voucher.delivery.local_outbox"
+                        ),
                         resource="voucher",
                         resource_id=voucher.id,
                         audit_metadata={
                             "event_type": event_type,
-                            "channel": "email",
+                            "channel": "email" if externally_accepted else "local_outbox",
                             "recipient_domain": recipient.email.rpartition("@")[2].lower(),
-                            "transport_id": transport_id,
+                            "transport_id": transport_id if externally_accepted else None,
                             "template_key": rendered.key,
                             "template_version": rendered.version,
                         },

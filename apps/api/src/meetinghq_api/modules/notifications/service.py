@@ -206,6 +206,17 @@ class MeetingEmailSender:
         """Return whether configured outbound delivery is enabled."""
         return self._enabled()
 
+    @property
+    def delivery_mode(self) -> Literal["smtp", "local_outbox"]:
+        """Identify whether a send reaches an SMTP provider or only local storage.
+
+        A local outbox is useful for development inspection, but it is not an
+        externally delivered message. Callers use this distinction in user-visible
+        and audit outcomes rather than presenting a local file write as SMTP
+        acceptance.
+        """
+        return "smtp" if self.configured else "local_outbox"
+
     async def _send_with_retry(self, message: EmailMessage) -> None:
         max_attempts = self._max_attempts()
         for attempt in range(1, max_attempts + 1):
