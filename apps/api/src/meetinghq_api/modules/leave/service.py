@@ -241,7 +241,15 @@ class LeaveService:
         effective: date,
         reason: str | None,
         reference_id: uuid.UUID | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
+        if idempotency_key and await self.session.scalar(
+            select(LeaveBalanceLedgerEntry.id).where(
+                LeaveBalanceLedgerEntry.organization_id == actor.organization_id,
+                LeaveBalanceLedgerEntry.idempotency_key == idempotency_key,
+            )
+        ):
+            return
         self.session.add(
             LeaveBalanceLedgerEntry(
                 organization_id=actor.organization_id,
@@ -254,9 +262,60 @@ class LeaveService:
                 effective_date=effective,
                 reason=reason,
                 reference_id=reference_id,
+                idempotency_key=idempotency_key,
                 actor_id=actor.id,
             )
         )
+
+    async def process_accruals(self, actor: User, effective_date: date) -> int:
+        """Apply a single policy cycle; stable keys make retried worker runs safe."""
+        entitlements = list(
+            (
+                await self.session.scalars(
+                    select(LeaveEntitlement).where(
+                        LeaveEntitlement.organization_id == actor.organization_id
+                    )
+                )
+            ).all()
+        )
+        count = 0
+        for entitlement in entitlements:
+            leave_type = await self._type(actor, entitlement.leave_type_id, active=True)
+            if not leave_type.accrual_enabled or not leave_type.default_entitlement:
+                continue
+            cycle = (
+                effective_date.strftime("%Y-%m")
+                if leave_type.accrual_frequency == "monthly"
+                else (
+                    effective_date.strftime("%Y-Q") + str((effective_date.month - 1) // 3 + 1)
+                    if leave_type.accrual_frequency == "quarterly"
+                    else str(effective_date.year)
+                )
+            )
+            key = f"accrual:{entitlement.id}:{cycle}"
+            exists = await self.session.scalar(
+                select(LeaveBalanceLedgerEntry.id).where(
+                    LeaveBalanceLedgerEntry.organization_id == actor.organization_id,
+                    LeaveBalanceLedgerEntry.idempotency_key == key,
+                )
+            )
+            if exists:
+                continue
+            divisor = {"monthly": Decimal("12"), "quarterly": Decimal("4")}.get(
+                leave_type.accrual_frequency or "", Decimal("1")
+            )
+            await self._ledger(
+                actor,
+                entitlement,
+                "accrual",
+                leave_type.default_entitlement / divisor,
+                effective_date,
+                "Policy accrual",
+                idempotency_key=key,
+            )
+            self._audit(actor, "leave.accrual", entitlement.id, {"cycle": cycle})
+            count += 1
+        return count
 
     async def balance(self, user: User, entitlement_id: uuid.UUID) -> BalanceResponse:
         item = await self.session.scalar(

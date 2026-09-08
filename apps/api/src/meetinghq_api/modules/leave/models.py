@@ -115,6 +115,9 @@ class LeaveBalanceLedgerEntry(Base):
             "leave_type_id",
             "leave_period_id",
         ),
+        UniqueConstraint(
+            "organization_id", "idempotency_key", name="uq_leave_ledger_org_idempotency"
+        ),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -137,6 +140,7 @@ class LeaveBalanceLedgerEntry(Base):
     effective_date: Mapped[date] = mapped_column(Date)
     reason: Mapped[str | None] = mapped_column(Text)
     reference_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160))
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
