@@ -218,4 +218,5 @@ async def test_unassigned_custom_role_can_be_deleted(
     deleted = await organization_client.delete(
         f"/api/v1/roles/{created.json()['data']['id']}", headers=admin_headers
     )
-    assert deleted.status_code == 204, deleted.text
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["message"] == "Role deleted"

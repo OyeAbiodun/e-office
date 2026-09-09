@@ -100,6 +100,22 @@ class Permissions:
     LEAVE_HOLIDAYS_MANAGE = "leave.holidays.manage"
     LEAVE_REPORTS_VIEW = "leave.reports.view"
     LEAVE_EXPORT = "leave.export"
+    PAYROLL_VIEW_OWN = "payroll.view_own"
+    PAYROLL_PAYSLIP_DOWNLOAD_OWN = "payroll.payslip.download_own"
+    PAYROLL_PERIODS_VIEW = "payroll.periods.view"
+    PAYROLL_PERIODS_MANAGE = "payroll.periods.manage"
+    PAYROLL_PREPARE = "payroll.prepare"
+    PAYROLL_REVIEW = "payroll.review"
+    PAYROLL_APPROVE = "payroll.approve"
+    PAYROLL_PAY = "payroll.pay"
+    PAYROLL_VIEW_EMPLOYEE = "payroll.view_employee"
+    PAYROLL_SALARY_STRUCTURE_VIEW = "payroll.salary_structure.view"
+    PAYROLL_SALARY_STRUCTURE_MANAGE = "payroll.salary_structure.manage"
+    PAYROLL_COMPONENTS_MANAGE = "payroll.components.manage"
+    PAYROLL_STATUTORY_MANAGE = "payroll.statutory.manage"
+    PAYROLL_LOANS_MANAGE = "payroll.loans.manage"
+    PAYROLL_REPORTS_VIEW = "payroll.reports.view"
+    PAYROLL_EXPORT = "payroll.export"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -233,6 +249,44 @@ _LEAVE_PERMISSION_CATALOG = tuple(
     )
 )
 
+_PAYROLL_PERMISSION_CATALOG = tuple(
+    PermissionDefinition(name, "payroll", action, description)
+    for name, action, description in (
+        (Permissions.PAYROLL_VIEW_OWN, "view_own", "View own Payroll and payslips"),
+        (
+            Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN,
+            "payslip_download_own",
+            "Download own secure payslips",
+        ),
+        (Permissions.PAYROLL_PERIODS_VIEW, "periods_view", "View Payroll periods"),
+        (Permissions.PAYROLL_PERIODS_MANAGE, "periods_manage", "Manage Payroll periods"),
+        (Permissions.PAYROLL_PREPARE, "prepare", "Prepare and submit Payroll"),
+        (Permissions.PAYROLL_REVIEW, "review", "Review and return Payroll"),
+        (Permissions.PAYROLL_APPROVE, "approve", "Approve Payroll"),
+        (Permissions.PAYROLL_PAY, "pay", "Pay, post, close, and reverse Payroll"),
+        (Permissions.PAYROLL_VIEW_EMPLOYEE, "view_employee", "View employee Payroll details"),
+        (
+            Permissions.PAYROLL_SALARY_STRUCTURE_VIEW,
+            "salary_structure_view",
+            "View salary structures and statutory configuration",
+        ),
+        (
+            Permissions.PAYROLL_SALARY_STRUCTURE_MANAGE,
+            "salary_structure_manage",
+            "Manage employee salary structures",
+        ),
+        (Permissions.PAYROLL_COMPONENTS_MANAGE, "components_manage", "Manage salary components"),
+        (
+            Permissions.PAYROLL_STATUTORY_MANAGE,
+            "statutory_manage",
+            "Manage effective-dated statutory rules",
+        ),
+        (Permissions.PAYROLL_LOANS_MANAGE, "loans_manage", "Manage Payroll loans and advances"),
+        (Permissions.PAYROLL_REPORTS_VIEW, "reports_view", "View Payroll reports"),
+        (Permissions.PAYROLL_EXPORT, "export", "Export tenant-scoped Payroll data"),
+    )
+)
+
 MVP_PERMISSION_RESOURCES = (
     "dashboard",
     "calendar",
@@ -264,6 +318,7 @@ PERMISSION_CATALOG = tuple(
             *_LEGACY_PERMISSION_CATALOG,
             *_FINANCE_PERMISSION_CATALOG,
             *_LEAVE_PERMISSION_CATALOG,
+            *_PAYROLL_PERMISSION_CATALOG,
             *MVP_PERMISSION_CATALOG,
         )
     }.values()
@@ -278,6 +333,7 @@ def _matrix(resources: set[str], actions: set[str] | None = None) -> frozenset[s
 _legacy_admin = frozenset(item.name for item in _LEGACY_PERMISSION_CATALOG)
 _finance_admin = frozenset(item.name for item in _FINANCE_PERMISSION_CATALOG)
 _leave_admin = frozenset(item.name for item in _LEAVE_PERMISSION_CATALOG)
+_payroll_admin = frozenset(item.name for item in _PAYROLL_PERMISSION_CATALOG)
 _task_employee = frozenset(
     {
         Permissions.TASKS_VIEW_OWN,
@@ -322,7 +378,11 @@ _meeting_operator = frozenset(
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "Super Admin": frozenset(item.name for item in PERMISSION_CATALOG),
-    "Admin": _legacy_admin | _finance_admin | _leave_admin | _matrix(set(MVP_PERMISSION_RESOURCES)),
+    "Admin": _legacy_admin
+    | _finance_admin
+    | _leave_admin
+    | _payroll_admin
+    | _matrix(set(MVP_PERMISSION_RESOURCES)),
     "Meeting Organizer": _meeting_operator
     | _matrix({"dashboard"}, {"view"})
     | _matrix({"calendar", "meetings"})
@@ -423,6 +483,9 @@ _voucher_employee = frozenset(
     }
 )
 ROLE_PERMISSIONS["Employee"] |= _voucher_employee
+ROLE_PERMISSIONS["Employee"] |= frozenset(
+    {Permissions.PAYROLL_VIEW_OWN, Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN}
+)
 ROLE_PERMISSIONS["Team Manager"] |= _voucher_employee | frozenset(
     {"vouchers.approve", "vouchers.return", "vouchers.reject"}
 )
@@ -437,6 +500,13 @@ ROLE_PERMISSIONS["Accountant"] = _matrix({"dashboard", "notifications"}, {"view"
         "finance.export",
         "finance.reconcile",
         "finance.reverse",
+        Permissions.PAYROLL_VIEW_OWN,
+        Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN,
+        Permissions.PAYROLL_PERIODS_VIEW,
+        Permissions.PAYROLL_PAY,
+        Permissions.PAYROLL_VIEW_EMPLOYEE,
+        Permissions.PAYROLL_REPORTS_VIEW,
+        Permissions.PAYROLL_EXPORT,
     }
 )
 ROLE_PERMISSIONS["Auditor"] = _matrix({"dashboard", "notifications"}, {"view"}) | frozenset(
@@ -447,5 +517,44 @@ ROLE_PERMISSIONS["Auditor"] = _matrix({"dashboard", "notifications"}, {"view"}) 
         "finance.accounts.view",
         "finance.transactions.view",
         "finance.export",
+        Permissions.PAYROLL_VIEW_OWN,
+        Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN,
+        Permissions.PAYROLL_PERIODS_VIEW,
+        Permissions.PAYROLL_VIEW_EMPLOYEE,
+        Permissions.PAYROLL_REPORTS_VIEW,
+        Permissions.PAYROLL_EXPORT,
+    }
+)
+
+ROLE_PERMISSIONS["Payroll Officer"] = _matrix({"dashboard", "notifications"}, {"view"}) | frozenset(
+    {
+        Permissions.PAYROLL_VIEW_OWN,
+        Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN,
+        Permissions.PAYROLL_PERIODS_VIEW,
+        Permissions.PAYROLL_PERIODS_MANAGE,
+        Permissions.PAYROLL_PREPARE,
+        Permissions.PAYROLL_VIEW_EMPLOYEE,
+        Permissions.PAYROLL_SALARY_STRUCTURE_VIEW,
+        Permissions.PAYROLL_SALARY_STRUCTURE_MANAGE,
+        Permissions.PAYROLL_COMPONENTS_MANAGE,
+        Permissions.PAYROLL_STATUTORY_MANAGE,
+        Permissions.PAYROLL_LOANS_MANAGE,
+        Permissions.PAYROLL_REPORTS_VIEW,
+        Permissions.PAYROLL_EXPORT,
+        Permissions.FINANCE_ACCOUNTS_VIEW,
+    }
+)
+ROLE_PERMISSIONS["Payroll Approver"] = _matrix(
+    {"dashboard", "notifications"}, {"view"}
+) | frozenset(
+    {
+        Permissions.PAYROLL_VIEW_OWN,
+        Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN,
+        Permissions.PAYROLL_PERIODS_VIEW,
+        Permissions.PAYROLL_REVIEW,
+        Permissions.PAYROLL_APPROVE,
+        Permissions.PAYROLL_VIEW_EMPLOYEE,
+        Permissions.PAYROLL_REPORTS_VIEW,
+        Permissions.PAYROLL_EXPORT,
     }
 )

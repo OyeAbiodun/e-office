@@ -34,6 +34,7 @@ from meetinghq_api.modules.notifications.service import MeetingEmailSender
         "voucher.partially_disbursed",
         "voucher.disbursed",
         "voucher.reversed",
+        "payroll.payslip_available",
         "smtp.test",
     ],
 )

@@ -38,6 +38,7 @@ TemplateKey = Literal[
     "leave.rejected",
     "leave.withdrawn",
     "leave.cancelled",
+    "payroll.payslip_available",
     "smtp.test",
 ]
 
@@ -159,6 +160,14 @@ class LeaveEmailData:
     note: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PayrollEmailData:
+    payslip_url: str
+    period_name: str
+    net_pay: str
+    currency: str
+
+
 EmailTemplateData = (
     PasswordResetEmailData
     | VerificationEmailData
@@ -168,6 +177,7 @@ EmailTemplateData = (
     | SmtpTestEmailData
     | VoucherEmailData
     | LeaveEmailData
+    | PayrollEmailData
 )
 
 
@@ -217,6 +227,8 @@ class EmailTemplateRegistry:
             "leave.cancelled",
         } and isinstance(data, LeaveEmailData):
             return cls._leave(key, data, brand)
+        if key == "payroll.payslip_available" and isinstance(data, PayrollEmailData):
+            return cls._payroll(data, brand)
         raise TypeError(f"Template {key} received incompatible data")
 
     @classmethod
@@ -343,6 +355,9 @@ class EmailTemplateRegistry:
             ),
             "smtp.test": SmtpTestEmailData(
                 datetime.now(UTC).strftime("%B %d, %Y · %H:%M UTC"), "development"
+            ),
+            "payroll.payslip_available": PayrollEmailData(
+                f"{app}/payroll/my", "September 2026", "425,000.00", "NGN"
             ),
         }
         return cls.render(key, samples[key], branding)
@@ -641,6 +656,45 @@ class EmailTemplateRegistry:
             leave_url, "View leave request"
         )
         return _render(key, f"MeetingHQ | {heading}", text, body, brand)
+
+    @staticmethod
+    def _payroll(data: PayrollEmailData, brand: EmailBranding) -> RenderedEmail:
+        payslip_url = _required_url(data.payslip_url)
+        period_name = _safe_text(data.period_name, "Payroll period", 120)
+        currency = _safe_text(data.currency, "", 3)
+        net_pay = _safe_text(data.net_pay, "0.00", 64)
+        heading = "Your payslip is available"
+        rows: list[tuple[str, str | None]] = [
+            ("Payroll period", period_name),
+            ("Net pay", f"{currency} {net_pay}"),
+        ]
+        text = "\n".join(
+            [
+                heading,
+                "",
+                f"Payroll period: {period_name}",
+                f"Net pay: {currency} {net_pay}",
+                "",
+                "Sign in to view and download your payslip securely:",
+                payslip_url,
+            ]
+        )
+        body = (
+            _heading(heading)
+            + _paragraph("Your payroll has been processed and your payslip is ready.")
+            + _detail_rows(rows)
+            + _button(payslip_url, "View payslip", brand)
+            + _notice("For your privacy, your payslip is not attached to this email.")
+            + _fallback_link(payslip_url, "View payslip")
+        )
+        return _render(
+            "payroll.payslip_available",
+            f"MeetingHQ | {period_name} payslip available",
+            text,
+            body,
+            brand,
+            security=True,
+        )
 
 
 def _render(

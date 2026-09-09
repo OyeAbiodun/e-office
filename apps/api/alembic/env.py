@@ -24,6 +24,7 @@ from meetinghq_api.modules.mail import models as mail_models  # noqa: F401
 from meetinghq_api.modules.meetings import models as meeting_models  # noqa: F401
 from meetinghq_api.modules.notifications import models as notification_models  # noqa: F401
 from meetinghq_api.modules.organizations import models as organization_models  # noqa: F401
+from meetinghq_api.modules.payroll import models as payroll_models  # noqa: F401
 from meetinghq_api.modules.system_health import models as system_health_models  # noqa: F401
 from meetinghq_api.modules.tasks import models as task_models  # noqa: F401
 from meetinghq_api.modules.teams import models as team_models  # noqa: F401

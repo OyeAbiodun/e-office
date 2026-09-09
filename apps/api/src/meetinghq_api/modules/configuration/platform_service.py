@@ -29,6 +29,7 @@ FEATURES = (
     "vouchers",
     "finance",
     "leave",
+    "payroll",
     "help-center",
     "reports",
     "teams",
@@ -83,6 +84,7 @@ IMPLEMENTED_CAPABILITIES: dict[str, str] = {
     "vouchers": "/vouchers",
     "finance": "/finance",
     "leave": "/leave",
+    "payroll": "/payroll",
 }
 COMING_SOON_CAPABILITIES = {
     "reports": ("4.0", "Sprint 4", ["search", "files"]),
@@ -102,6 +104,7 @@ DEFAULT_MENUS = (
     ("dashboard", "Dashboard", "/", "layout-dashboard", "dashboard.view", None, "work"),
     ("tasks", "My Work", "/tasks", "check-square", "tasks.view_own", "tasks", "work"),
     ("leave", "Leave", "/leave", "calendar-range", "leave.view_own", "leave", "work"),
+    ("payroll", "My Payroll", "/payroll", "wallet-cards", "payroll.view_own", "payroll", "work"),
     ("vouchers", "Vouchers", "/vouchers", "file-clock", "vouchers.view_own", "vouchers", "work"),
     (
         "finance",
