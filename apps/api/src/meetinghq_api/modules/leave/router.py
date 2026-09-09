@@ -5,6 +5,7 @@ import csv
 import io
 import uuid
 from datetime import date
+from enum import IntEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -65,6 +66,13 @@ ALLOWED_ATTACHMENT_TYPES = {
     "image/png",
     "image/webp",
 }
+
+
+class LeavePageSize(IntEnum):
+    TEN = 10
+    TWENTY_FIVE = 25
+    FIFTY = 50
+    ONE_HUNDRED = 100
 
 
 def _attachment_path(storage_root: str, storage_key: str) -> Path | None:
@@ -212,7 +220,7 @@ async def list_balances(
     sort_by: Literal["employee", "department", "leave_type", "period", "available"] = "employee",
     sort_order: Literal["asc", "desc"] = "asc",
     page: int = Query(default=1, ge=1),
-    page_size: Literal[10, 25, 50, 100] = 25,
+    page_size: LeavePageSize = LeavePageSize.TWENTY_FIVE,
 ) -> BalancePage:
     return await LeaveService(session).list_balances(
         user,
@@ -224,7 +232,7 @@ async def list_balances(
         sort_by=sort_by,
         sort_order=sort_order,
         page=page,
-        page_size=page_size,
+        page_size=int(page_size),
     )
 
 
@@ -236,7 +244,7 @@ async def balance_history(
     leave_type_id: uuid.UUID | None = None,
     leave_period_id: uuid.UUID | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: Literal[10, 25, 50, 100] = 25,
+    page_size: LeavePageSize = LeavePageSize.TWENTY_FIVE,
 ) -> LedgerPage:
     return await LeaveService(session).balance_history(
         user,
@@ -244,7 +252,7 @@ async def balance_history(
         leave_type_id=leave_type_id,
         leave_period_id=leave_period_id,
         page=page,
-        page_size=page_size,
+        page_size=int(page_size),
     )
 
 
@@ -263,7 +271,7 @@ async def list_requests(
     sort_by: Literal["created_at", "start_date", "end_date", "status", "duration"] = "created_at",
     sort_order: Literal["asc", "desc"] = "desc",
     page: int = Query(default=1, ge=1),
-    page_size: Literal[10, 25, 50, 100] = 25,
+    page_size: LeavePageSize = LeavePageSize.TWENTY_FIVE,
 ) -> LeaveRequestPage:
     return await LeaveService(session).list_requests(
         user,
@@ -278,7 +286,7 @@ async def list_requests(
         sort_by=sort_by,
         sort_order=sort_order,
         page=page,
-        page_size=page_size,
+        page_size=int(page_size),
     )
 
 
@@ -345,7 +353,7 @@ async def balance_report(
     leave_period_id: uuid.UUID | None = None,
     search: str | None = Query(default=None, max_length=160),
     page: int = Query(default=1, ge=1),
-    page_size: Literal[10, 25, 50, 100] = 25,
+    page_size: LeavePageSize = LeavePageSize.TWENTY_FIVE,
 ) -> BalancePage:
     return await LeaveService(session).list_balances(
         user,
@@ -355,7 +363,7 @@ async def balance_report(
         leave_period_id=leave_period_id,
         search=search,
         page=page,
-        page_size=page_size,
+        page_size=int(page_size),
     )
 
 

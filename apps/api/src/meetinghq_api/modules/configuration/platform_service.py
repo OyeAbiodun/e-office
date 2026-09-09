@@ -28,6 +28,7 @@ FEATURES = (
     "tasks",
     "vouchers",
     "finance",
+    "leave",
     "help-center",
     "reports",
     "teams",
@@ -81,6 +82,7 @@ IMPLEMENTED_CAPABILITIES: dict[str, str] = {
     "tasks": "/tasks",
     "vouchers": "/vouchers",
     "finance": "/finance",
+    "leave": "/leave",
 }
 COMING_SOON_CAPABILITIES = {
     "reports": ("4.0", "Sprint 4", ["search", "files"]),
@@ -99,6 +101,7 @@ PROVIDER_NAVIGATION_ALIASES = {
 DEFAULT_MENUS = (
     ("dashboard", "Dashboard", "/", "layout-dashboard", "dashboard.view", None, "work"),
     ("tasks", "My Work", "/tasks", "check-square", "tasks.view_own", "tasks", "work"),
+    ("leave", "Leave", "/leave", "calendar-range", "leave.view_own", "leave", "work"),
     ("vouchers", "Vouchers", "/vouchers", "file-clock", "vouchers.view_own", "vouchers", "work"),
     (
         "finance",

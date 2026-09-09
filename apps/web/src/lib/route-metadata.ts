@@ -7,6 +7,8 @@ export interface BreadcrumbItem {
 const labels: Record<string, string> = {
   vouchers: 'Vouchers',
   finance: 'Finance Center',
+  leave: 'Leave',
+  team: 'Team Leave',
   accounts: 'Accounts',
   calendar: 'Calendar',
   meetings: 'Meetings',
@@ -50,6 +52,7 @@ const icons: Record<string, string> = {
   mail: 'mail',
   notifications: 'bell',
   profile: 'user',
+  leave: 'calendar-range',
 }
 
 const administrationRoutes = new Set([

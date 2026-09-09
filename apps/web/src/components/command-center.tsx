@@ -4,6 +4,7 @@ import {
   Activity,
   Bell,
   CalendarPlus,
+  CalendarRange,
   CircleHelp,
   FileClock,
   FileText,
@@ -33,6 +34,7 @@ const resultIcons = {
   activity: Activity,
   bell: Bell,
   'calendar-days': CalendarPlus,
+  'calendar-range': CalendarRange,
   'circle-help': CircleHelp,
   'file-clock': FileClock,
   'layout-dashboard': LayoutDashboard,
@@ -48,6 +50,7 @@ const createActions = [
   { label: 'Schedule meeting', to: '/meetings/new', icon: Video },
   { label: 'Start conversation', to: '/chat/new', icon: MessageSquarePlus },
   { label: 'Compose mail', to: '/mail/compose', icon: MailPlus },
+  { label: 'Request leave', to: '/leave', icon: CalendarRange },
   { label: 'Invite teammate', to: '/invitations', icon: MailPlus },
   { label: 'Create workspace', to: '/workspaces', icon: FileText },
 ] as const

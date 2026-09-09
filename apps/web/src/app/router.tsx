@@ -216,6 +216,26 @@ const TasksPage = lazy(() =>
     default: module.TasksPage,
   })),
 )
+const LeavePage = lazy(() =>
+  import('@/features/leave/leave-page').then((module) => ({
+    default: module.LeavePage,
+  })),
+)
+const LeaveRequestDetailPage = lazy(() =>
+  import('@/features/leave/leave-page').then((module) => ({
+    default: module.LeaveRequestDetailPage,
+  })),
+)
+const LeaveManagerPage = lazy(() =>
+  import('@/features/leave/leave-manager-page').then((module) => ({
+    default: module.LeaveManagerPage,
+  })),
+)
+const LeaveAdminPage = lazy(() =>
+  import('@/features/leave/leave-admin-page').then((module) => ({
+    default: module.LeaveAdminPage,
+  })),
+)
 
 const rootRoute = createRootRoute({ component: RouteOutlet })
 const VouchersPage = lazy(() =>
@@ -294,6 +314,26 @@ const protectedPages = [
     getParentRoute: () => appShellRoute,
     path: '/tasks',
     component: TasksPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/leave',
+    component: LeavePage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/leave/team',
+    component: LeaveManagerPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/leave/admin',
+    component: LeaveAdminPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/leave/requests/$requestId',
+    component: LeaveRequestDetailPage,
   }),
   createRoute({
     getParentRoute: () => appShellRoute,

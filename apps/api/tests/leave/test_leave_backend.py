@@ -152,7 +152,9 @@ async def test_leave_type_period_entitlement_and_balances(
     response = await organization_client.get("/api/v1/leave/my/balances", headers=admin_headers)
     assert response.status_code == 200
     assert response.json()["data"][0]["available"] == "20.00"
-    admin = await organization_client.get("/api/v1/leave/balances", headers=admin_headers)
+    admin = await organization_client.get(
+        "/api/v1/leave/balances", headers=admin_headers, params={"page_size": 10}
+    )
     assert admin.status_code == 200
     assert admin.json()["data"]["items"][0]["entitlement_id"] == entitlement["id"]
 
@@ -420,20 +422,6 @@ async def test_employee_manager_lifecycle_calendar_notifications_and_summaries(
     )
     assert entitlement.status_code == 201
     factory = organization_client._meetinghq_session_factory  # type: ignore[attr-defined]
-    async with factory() as session:
-        admin = await session.get(User, manager_id)
-        assert admin
-        session.add(
-            Calendar(
-                organization_id=admin.organization_id,
-                owner_id=employee_id,
-                name="Employee calendar",
-                type=CalendarType.PERSONAL,
-                timezone="UTC",
-                is_default=True,
-            )
-        )
-        await session.commit()
     draft = await organization_client.post(
         "/api/v1/leave/requests",
         headers=employee_headers,
@@ -482,6 +470,12 @@ async def test_employee_manager_lifecycle_calendar_notifications_and_summaries(
     )
     assert manager_summary.status_code == 200
     async with factory() as session:
+        calendar = await session.scalar(
+            select(Calendar).where(
+                Calendar.owner_id == employee_id,
+                Calendar.type == CalendarType.PERSONAL,
+            )
+        )
         event = await session.scalar(select(CalendarEvent).where(CalendarEvent.title == "Away"))
         notifications = list((await session.scalars(select(Notification))).all())
         delivery_events = list(
@@ -496,7 +490,8 @@ async def test_employee_manager_lifecycle_calendar_notifications_and_summaries(
                 )
             ).all()
         )
-        assert event and event.description is None
+        assert calendar and calendar.is_default is True
+        assert event and event.calendar_id == calendar.id and event.description is None
         assert len(notifications) >= 2
         assert {row.audit_metadata["template_key"] for row in delivery_events} >= {
             "leave.submitted",

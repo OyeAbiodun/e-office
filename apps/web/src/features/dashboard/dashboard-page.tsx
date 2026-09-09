@@ -14,6 +14,7 @@ import {
 
 import { getDashboard } from '@/features/dashboard/api'
 import { FinanceWidget } from '@/features/finance/finance-widget'
+import { leaveApi } from '@/features/leave/api'
 import { meetingApi } from '@/features/meetings/api'
 import { notificationApi } from '@/features/notifications/api'
 import { tasksApi } from '@/features/tasks/api'
@@ -158,6 +159,10 @@ export function DashboardPage() {
           </Link>
         </div>
       </header>
+
+      {permissions.has('leave.view_own') && (
+        <LeaveDashboardStrip manager={permissions.has('leave.view_team')} />
+      )}
 
       {canViewWork && work.data && (
         <section className="grid gap-5 lg:grid-cols-[1.55fr_1fr]">
@@ -492,5 +497,70 @@ export function DashboardPage() {
         </div>
       </section>
     </div>
+  )
+}
+
+function LeaveDashboardStrip({ manager }: { manager: boolean }) {
+  const summary = useQuery({
+    queryKey: ['leave', 'dashboard-summary'],
+    queryFn: leaveApi.mySummary,
+  })
+  const team = useQuery({
+    queryKey: ['leave', 'dashboard-team-summary'],
+    queryFn: leaveApi.managerSummary,
+    enabled: manager,
+  })
+  if (summary.isError || summary.isLoading || !summary.data) return null
+  const available = summary.data.balances.reduce(
+    (total, balance) => total + Number(balance.available_after_pending),
+    0,
+  )
+  return (
+    <section
+      aria-label="Leave overview"
+      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+    >
+      <Link
+        className="rounded-2xl border bg-card p-4 shadow-sm transition hover:border-primary/50"
+        to="/leave"
+      >
+        <p className="text-sm text-muted-foreground">Available leave</p>
+        <p className="mt-2 text-2xl font-semibold">
+          {available.toLocaleString(undefined, { maximumFractionDigits: 1 })}{' '}
+          days
+        </p>
+      </Link>
+      <Link
+        className="rounded-2xl border bg-card p-4 shadow-sm transition hover:border-primary/50"
+        to="/leave"
+      >
+        <p className="text-sm text-muted-foreground">Pending leave</p>
+        <p className="mt-2 text-2xl font-semibold">
+          {summary.data.pending_requests.length}
+        </p>
+      </Link>
+      <Link
+        className="rounded-2xl border bg-card p-4 shadow-sm transition hover:border-primary/50"
+        to="/leave"
+      >
+        <p className="text-sm text-muted-foreground">Upcoming leave</p>
+        <p className="mt-2 text-2xl font-semibold">
+          {summary.data.upcoming_approved.length}
+        </p>
+      </Link>
+      {manager && team.data && (
+        <Link
+          className="rounded-2xl border bg-card p-4 shadow-sm transition hover:border-primary/50"
+          to="/leave/team"
+        >
+          <p className="text-sm text-muted-foreground">
+            Team approvals · Away today
+          </p>
+          <p className="mt-2 text-2xl font-semibold">
+            {team.data.pending_count} · {team.data.away_today.length}
+          </p>
+        </Link>
+      )}
+    </section>
   )
 }

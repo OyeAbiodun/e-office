@@ -1623,6 +1623,7 @@ class LeaveService:
             )
 
     async def _upsert_calendar_event(self, actor: User, request: LeaveRequest) -> None:
+        employee = await self._employee(actor, request.employee_id)
         calendar = await self.session.scalar(
             select(Calendar).where(
                 Calendar.organization_id == actor.organization_id,
@@ -1632,7 +1633,18 @@ class LeaveService:
             )
         )
         if calendar is None:
-            return
+            calendar = Calendar(
+                organization_id=request.organization_id,
+                workspace_id=employee.workspace_id,
+                owner_id=request.employee_id,
+                name="My Calendar",
+                type=CalendarType.PERSONAL,
+                timezone=employee.timezone,
+                visibility=Visibility.PRIVATE,
+                is_default=True,
+            )
+            self.session.add(calendar)
+            await self.session.flush()
         start = datetime.combine(request.start_date, datetime.min.time(), UTC)
         end = datetime.combine(request.end_date + timedelta(days=1), datetime.min.time(), UTC)
         event = None

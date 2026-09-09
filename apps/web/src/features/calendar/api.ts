@@ -164,6 +164,23 @@ export const calendarApi = {
       true,
     ),
   holidays: () => apiRequest<Holiday[]>('/holidays', {}, true),
+  createHoliday: (body: { name: string; date: string; recurring: boolean }) =>
+    apiRequest<Holiday>(
+      '/holidays',
+      { method: 'POST', body: JSON.stringify(body) },
+      true,
+    ),
+  updateHoliday: (
+    id: string,
+    body: { name: string; date: string; recurring: boolean },
+  ) =>
+    apiRequest<Holiday>(
+      `/holidays/${id}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+      true,
+    ),
+  deleteHoliday: (id: string) =>
+    apiRequest(`/holidays/${id}`, { method: 'DELETE' }, true),
   importIcs: async (calendarId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
