@@ -912,8 +912,33 @@ class LeaveService:
                 )
             ).all()
         )
+        actor_ids = {row.actor_id for row in rows if row.actor_id is not None}
+        actor_names: dict[uuid.UUID, str] = {}
+        if actor_ids:
+            actors = list(
+                (
+                    await self.session.scalars(
+                        select(User).where(
+                            User.organization_id == user.organization_id,
+                            User.id.in_(actor_ids),
+                        )
+                    )
+                ).all()
+            )
+            actor_names = {
+                actor.id: f"{actor.first_name} {actor.last_name}".strip() for actor in actors
+            }
         return LedgerPage(
-            items=[LedgerEntryResponse.model_validate(row) for row in rows],
+            items=[
+                LedgerEntryResponse.model_validate(row).model_copy(
+                    update={
+                        "actor_name": (
+                            actor_names.get(row.actor_id) if row.actor_id is not None else None
+                        )
+                    }
+                )
+                for row in rows
+            ],
             total=total,
             page=page,
             page_size=page_size,

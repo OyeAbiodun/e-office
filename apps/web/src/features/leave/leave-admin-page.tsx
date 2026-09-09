@@ -1156,13 +1156,18 @@ function AdminBalanceHistoryDialog({
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b text-xs uppercase text-muted-foreground">
-                {['Date', 'Entry type', 'Amount', 'Reason', 'Recorded'].map(
-                  (label) => (
-                    <th className="px-3 py-2" key={label}>
-                      {label}
-                    </th>
-                  ),
-                )}
+                {[
+                  'Date',
+                  'Entry type',
+                  'Amount',
+                  'Reason',
+                  'Actor',
+                  'Recorded',
+                ].map((label) => (
+                  <th className="px-3 py-2" key={label}>
+                    {label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -1182,6 +1187,9 @@ function AdminBalanceHistoryDialog({
                   </td>
                   <td className="max-w-72 px-3 py-3 text-muted-foreground">
                     {entry.reason || '—'}
+                  </td>
+                  <td className="px-3 py-3 text-muted-foreground">
+                    {entry.actor_name || 'System'}
                   </td>
                   <td className="px-3 py-3 text-muted-foreground">
                     {formatDateTime(entry.created_at)}

@@ -361,6 +361,11 @@ async def test_controlled_adjustment_and_immutable_ledger(
         "allocation",
         "adjustment",
     }
+    adjustment_row = next(
+        row for row in ledger.json()["data"]["items"] if row["entry_type"] == "adjustment"
+    )
+    assert adjustment_row["actor_name"]
+    assert adjustment_row["actor_name"] != employee_id
     filtered = await organization_client.get(
         "/api/v1/leave/balances",
         headers=admin_headers,
@@ -503,6 +508,11 @@ async def test_employee_manager_lifecycle_calendar_notifications_and_summaries(
         json={"comment": "Plans changed"},
     )
     assert cancelled.status_code == 200, cancelled.text
+    async with factory() as session:
+        cancelled_event = await session.scalar(
+            select(CalendarEvent).where(CalendarEvent.id == event.id)
+        )
+        assert cancelled_event and cancelled_event.deleted_at is not None
     balance = await organization_client.get(
         f"/api/v1/leave/balances/{entitlement.json()['data']['id']}", headers=employee_headers
     )

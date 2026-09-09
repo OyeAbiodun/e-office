@@ -343,6 +343,17 @@ test('enforces required supporting documents before submission', async () => {
     await screen.findByText('required', { selector: 'span' }),
   ).toBeVisible()
   expect(screen.getByRole('button', { name: 'Submit request' })).toBeDisabled()
+  const document = new File(['supporting evidence'], 'support.pdf', {
+    type: 'application/pdf',
+  })
+  fireEvent.change(screen.getByLabelText(/Supporting document/), {
+    target: { files: [document] },
+  })
+  expect(screen.getByText(/support\.pdf/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Submit request' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Remove support.pdf' }))
+  expect(screen.queryByText(/support\.pdf/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Submit request' })).toBeDisabled()
 })
 
 test('manager workspace exposes only manager views and pending reviews', async () => {
@@ -429,6 +440,27 @@ test('admin exposes balance history, periods, and data-driven reports', async ()
     'leave.reports.view',
     'leave.export',
   ]
+  mocks.ledger.mockResolvedValueOnce({
+    items: [
+      {
+        id: 'ledger-1',
+        employee_id: 'employee-1',
+        leave_type_id: 'type-1',
+        leave_period_id: 'period-1',
+        entry_type: 'adjustment',
+        amount: 1,
+        effective_date: '2026-09-08',
+        reason: 'Annual allocation correction',
+        reference_id: null,
+        actor_id: 'manager-1',
+        actor_name: 'Morgan Manager',
+        created_at: '2026-09-08T10:00:00Z',
+      },
+    ],
+    total: 1,
+    page: 1,
+    page_size: 25,
+  })
   renderPage(<LeaveAdminPage />)
   await screen.findByRole('heading', { name: 'Leave Administration' })
 
@@ -441,7 +473,8 @@ test('admin exposes balance history, periods, and data-driven reports', async ()
   expect(
     await screen.findByRole('heading', { name: 'Balance history' }),
   ).toBeVisible()
-  expect(await screen.findByText('No balance history')).toBeVisible()
+  expect(await screen.findByText('Morgan Manager')).toBeVisible()
+  expect(screen.getByText('Annual allocation correction')).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
 
   fireEvent.click(screen.getByRole('button', { name: /Leave Periods/ }))

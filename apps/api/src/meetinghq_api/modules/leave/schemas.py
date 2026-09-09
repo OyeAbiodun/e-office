@@ -300,6 +300,7 @@ class LedgerEntryResponse(OrmResponse):
     reason: str | None
     reference_id: uuid.UUID | None
     actor_id: uuid.UUID | None
+    actor_name: str | None = None
     created_at: datetime
 
 

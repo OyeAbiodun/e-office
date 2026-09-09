@@ -161,6 +161,7 @@ export interface LedgerEntry {
   reason: string | null
   reference_id: string | null
   actor_id: string | null
+  actor_name: string | null
   created_at: string
 }
 

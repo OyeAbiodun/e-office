@@ -613,11 +613,30 @@ function RequestLeaveDialog({
             type="file"
           />
           {file && (
-            <span className="mt-2 block text-xs text-muted-foreground">
-              {file.name} · {(file.size / 1024).toFixed(0)} KB
+            <span className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-muted/55 px-3 py-2 text-xs text-muted-foreground">
+              <span className="min-w-0 truncate">
+                {file.name} · {(file.size / 1024).toFixed(0)} KB
+              </span>
+              <button
+                aria-label={`Remove ${file.name}`}
+                className="shrink-0 font-semibold text-destructive"
+                disabled={save.isPending}
+                onClick={(event) => {
+                  event.preventDefault()
+                  setFile(null)
+                }}
+                type="button"
+              >
+                Remove
+              </button>
             </span>
           )}
         </label>
+        {save.isPending && file && (
+          <p aria-live="polite" className="text-sm text-muted-foreground">
+            Uploading supporting document and saving your request…
+          </p>
+        )}
         {save.error && (
           <p
             className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive"
@@ -714,6 +733,9 @@ function BalanceHistoryDialog({
                 <p className="mt-1 text-sm text-muted-foreground">
                   {entry.reason || 'No additional note'} ·{' '}
                   {formatDay(entry.effective_date)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Recorded by {entry.actor_name || 'System'}
                 </p>
               </div>
             </div>
