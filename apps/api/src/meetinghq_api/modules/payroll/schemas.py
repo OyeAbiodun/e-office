@@ -394,3 +394,12 @@ class PayrollReportRow(BaseModel):
     deductions: Money
     net_pay: Money
     employer_cost: Money
+
+
+class PayrollEmployeeOption(BaseModel):
+    id: uuid.UUID
+    display_name: str
+    employee_number: str | None
+    department: str | None
+    job_title: str | None
+    employment_status: str

@@ -190,6 +190,27 @@ async def payroll_foundation(
     return period.json()["data"]["id"], account.json()["data"]["id"], structure.json()["data"]["id"]
 
 
+async def test_payroll_employee_picker_is_permission_and_tenant_scoped(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    client = organization_client
+    employee_headers, employee_id = await identity(
+        client, "picker-employee", ["Employee"], employee=True
+    )
+    _foreign_headers, foreign_id = await _register_tenant(
+        client, slug="payroll-picker-foreign", email="admin@payroll-picker-foreign.example"
+    )
+
+    response = await client.get("/api/v1/payroll/employees", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    identifiers = {row["id"] for row in response.json()["data"]}
+    assert str(employee_id) in identifiers
+    assert str(foreign_id) not in identifiers
+    assert (
+        await client.get("/api/v1/payroll/employees", headers=employee_headers)
+    ).status_code == 403
+
+
 async def test_complete_payroll_lifecycle_finance_payslip_and_reversal(
     organization_client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:

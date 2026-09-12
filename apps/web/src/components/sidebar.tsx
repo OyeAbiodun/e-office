@@ -21,6 +21,7 @@ import {
   UserRoundCog,
   Users,
   Video,
+  WalletCards,
   X,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -47,6 +48,7 @@ const icons = {
   'user-cog': UserRoundCog,
   users: Users,
   video: Video,
+  'wallet-cards': WalletCards,
 }
 
 interface SidebarProps {

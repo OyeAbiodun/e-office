@@ -263,6 +263,11 @@ const AccountDetailPage = lazy(() =>
     default: m.AccountDetailPage,
   })),
 )
+const PayrollPage = lazy(() =>
+  import('@/features/payroll/payroll-page').then((m) => ({
+    default: m.PayrollPage,
+  })),
+)
 const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_protected',
@@ -275,6 +280,11 @@ const appShellRoute = createRoute({
 })
 
 const protectedPages = [
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/payroll',
+    component: PayrollPage,
+  }),
   createRoute({
     getParentRoute: () => appShellRoute,
     path: '/vouchers',

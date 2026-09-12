@@ -19,6 +19,7 @@ from meetinghq_api.modules.payroll.models import PayrollRun
 from meetinghq_api.modules.payroll.queries import PayrollQueries
 from meetinghq_api.modules.payroll.schemas import (
     PayrollAdjustmentInput,
+    PayrollEmployeeOption,
     PayrollLoanInput,
     PayrollLoanResponse,
     PayrollPaymentInput,
@@ -63,6 +64,37 @@ def download(data: bytes, filename: str, media_type: str) -> Response:
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get("/employees", response_model=list[PayrollEmployeeOption])
+async def payroll_employees(
+    session: Session,
+    user: Annotated[User, require_permission("payroll.salary_structure.view")],
+) -> list[PayrollEmployeeOption]:
+    rows = list(
+        (
+            await session.scalars(
+                select(User)
+                .where(
+                    User.organization_id == user.organization_id,
+                    User.removed_at.is_(None),
+                    User.employment_status.in_(("active", "probation", "on_leave")),
+                )
+                .order_by(User.first_name, User.last_name, User.email)
+            )
+        ).all()
+    )
+    return [
+        PayrollEmployeeOption(
+            id=row.id,
+            display_name=row.display_name,
+            employee_number=row.employee_number,
+            department=row.department,
+            job_title=row.job_title,
+            employment_status=row.employment_status,
+        )
+        for row in rows
+    ]
 
 
 @router.get("/components", response_model=list[SalaryComponentResponse])
