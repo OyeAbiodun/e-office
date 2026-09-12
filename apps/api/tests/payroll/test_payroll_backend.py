@@ -328,10 +328,17 @@ async def test_complete_payroll_lifecycle_finance_payslip_and_reversal(
     payslips = await client.get("/api/v1/payroll/my/payslips", headers=employee_headers)
     assert payslips.status_code == 200, payslips.text
     result_id = payslips.json()["data"][0]["id"]
+    reviewer_result = await client.get(f"/api/v1/payroll/results/{result_id}", headers=approver)
+    assert reviewer_result.status_code == 200, reviewer_result.text
+    assert reviewer_result.json()["data"]["employee_id"] == str(employee_id)
     pdf = await client.get(f"/api/v1/payroll/results/{result_id}/payslip", headers=employee_headers)
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF-")
     assert pdf.headers["cache-control"] == "private, no-store"
     assert str(employee_id) not in pdf.content.decode("latin-1", errors="ignore")
+    reviewer_pdf = await client.get(
+        f"/api/v1/payroll/results/{result_id}/payslip", headers=approver
+    )
+    assert reviewer_pdf.status_code == 200 and reviewer_pdf.content.startswith(b"%PDF-")
     assert (
         await client.get(f"/api/v1/payroll/results/{result_id}/payslip", headers=stranger_headers)
     ).status_code == 404

@@ -12,6 +12,7 @@ export interface SalaryComponent {
   id: string
   code: string
   name: string
+  description: string | null
   component_kind: 'earning' | 'deduction'
   calculation_type: 'fixed' | 'percentage'
   taxable: boolean
@@ -70,9 +71,33 @@ export interface PayrollResult {
   currency: string
   status: string
   gross_pay: string
+  basic_salary: string
+  allowances: string
+  variable_earnings: string
+  taxable_pay: string
+  paye: string
+  pension_employee: string
+  pension_employer: string
+  nhf: string
+  loan_deductions: string
+  other_deductions: string
   total_deductions: string
   net_pay: string
+  employer_cost: string
+  proration_factor: string
+  calculation_snapshot: Record<string, unknown>
   exceptions: Array<Record<string, unknown>>
+  items: Array<{
+    id: string
+    code: string
+    name: string
+    category: string
+    amount: string
+    taxable: boolean
+    pensionable: boolean
+    basis: string | null
+    position: number
+  }>
 }
 export interface RunDetail {
   run: PayrollRun
@@ -115,6 +140,26 @@ export interface StatutoryConfiguration {
   is_active: boolean
   change_reason: string
 }
+export interface PayrollReportRow {
+  group: string
+  employee_count: number
+  gross_pay: string
+  paye: string
+  pension: string
+  nhf: string
+  deductions: string
+  net_pay: string
+  employer_cost: string
+}
+
+export interface PayrollRunFilters {
+  page?: number
+  pageSize?: number
+  search?: string
+  exceptionOnly?: boolean
+  sort?: 'employee' | 'gross' | 'net' | 'department' | 'status'
+  direction?: 'asc' | 'desc'
+}
 
 const get = <T>(path: string) => apiRequest<T>(path, {}, true)
 const post = <T>(path: string, body: unknown = {}) =>
@@ -124,19 +169,44 @@ export const payrollApi = {
   components: () => get<SalaryComponent[]>('/payroll/components'),
   createComponent: (body: unknown) =>
     post<SalaryComponent>('/payroll/components', body),
+  updateComponent: (id: string, body: unknown) =>
+    apiRequest<SalaryComponent>(
+      `/payroll/components/${id}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+      true,
+    ),
   structures: () => get<SalaryStructure[]>('/payroll/salary-structures'),
   createStructure: (body: unknown) =>
     post<SalaryStructure>('/payroll/salary-structures', body),
   previewStructure: (body: unknown) =>
     post<Record<string, string>>('/payroll/salary-structures/preview', body),
+  endStructure: (id: string, body: unknown) =>
+    post<SalaryStructure>(`/payroll/salary-structures/${id}/end`, body),
   periods: () => get<PayrollPeriod[]>('/payroll/periods'),
   createPeriod: (body: unknown) =>
     post<PayrollPeriod>('/payroll/periods', body),
   prepare: (periodId: string) =>
     post<PayrollRun>(`/payroll/periods/${periodId}/prepare`),
+  createAdjustment: (periodId: string, body: unknown) =>
+    post<{ id: string; status: string; amount: string }>(
+      `/payroll/periods/${periodId}/adjustments`,
+      body,
+    ),
   runs: () => get<PayrollRun[]>('/payroll/runs'),
-  run: (id: string, page = 1) =>
-    get<RunDetail>(`/payroll/runs/${id}?page=${page}&page_size=25`),
+  run: (id: string, filters: PayrollRunFilters = {}) => {
+    const params = new URLSearchParams({
+      page: String(filters.page ?? 1),
+      page_size: String(filters.pageSize ?? 25),
+      sort: filters.sort ?? 'employee',
+      direction: filters.direction ?? 'asc',
+    })
+    if (filters.search?.trim()) params.set('search', filters.search.trim())
+    if (filters.exceptionOnly) params.set('exception_only', 'true')
+    return get<RunDetail>(`/payroll/runs/${id}?${params}`)
+  },
+  result: (id: string) => get<PayrollResult>(`/payroll/results/${id}`),
+  reports: (id: string) =>
+    get<PayrollReportRow[]>(`/payroll/runs/${id}/reports`),
   action: (id: string, action: string, body: unknown = {}) =>
     post<PayrollRun>(`/payroll/runs/${id}/${action}`, body),
   statutory: () => get<StatutoryConfiguration[]>('/payroll/statutory'),

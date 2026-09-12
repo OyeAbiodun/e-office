@@ -46,6 +46,24 @@ test('authorized payroll user can navigate the secure payroll workspace', async 
   await expect(
     page.getByRole('heading', { name: 'Effective-dated salary structures' }),
   ).toBeVisible()
+  await page.getByRole('button', { name: 'Components' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Salary components' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Statutory rules' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Statutory and payroll policy' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Loans' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Employee loans' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Reports' }).click()
+  await expect(
+    page.getByRole('heading', {
+      name: 'Payroll reports and statutory exports',
+    }),
+  ).toBeVisible()
   await page.reload()
   await expect(
     page.getByRole('heading', { name: 'Payroll', exact: true }),

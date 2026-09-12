@@ -94,3 +94,40 @@ def require_permission(permission: str) -> object:
         return user
 
     return Depends(permission_dependency)
+
+
+def require_any_permission(*permissions: str) -> object:
+    """Require at least one permission from a deliberately small access set."""
+    if not permissions:
+        raise ValueError("At least one permission is required")
+
+    async def permission_dependency(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+        user: CurrentUser,
+        settings: AppSettings,
+    ) -> User:
+        if credentials is None:
+            raise AuthenticationError("Authentication is required")
+        try:
+            claims = AccessTokenService(settings).decode(credentials.credentials)
+        except jwt.InvalidTokenError as error:
+            raise AuthenticationError("Access token is invalid or expired") from error
+        claim_permissions = claims.get("permissions")
+        granted = set(claim_permissions) if isinstance(claim_permissions, list) else set()
+        if not granted.intersection(permissions):
+            if settings.environment == "local":
+                await logger.awarning(
+                    "auth_permission_denied",
+                    user_id=str(user.id),
+                    any_permission=list(permissions),
+                )
+            raise AuthorizationError(f"One permission required: {', '.join(permissions)}")
+        if settings.environment == "local":
+            await logger.ainfo(
+                "auth_permission_granted",
+                user_id=str(user.id),
+                any_permission=list(permissions),
+            )
+        return user
+
+    return Depends(permission_dependency)

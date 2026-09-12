@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
 from meetinghq_api.infrastructure.database import get_database_session
-from meetinghq_api.modules.auth.presentation.dependencies import require_permission
+from meetinghq_api.modules.auth.presentation.dependencies import (
+    require_any_permission,
+    require_permission,
+)
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.organizations.models import Organization
 from meetinghq_api.modules.payroll import documents
@@ -388,7 +391,10 @@ async def result_detail(
     result_id: uuid.UUID,
     session: Session,
     settings: AppSettings,
-    user: Annotated[User, require_permission("payroll.view_own")],
+    user: Annotated[
+        User,
+        require_any_permission("payroll.view_own", "payroll.view_employee"),
+    ],
 ) -> PayrollResultResponse:
     svc = service(session, settings)
     return await PayrollQueries(svc).result_response(
@@ -433,7 +439,13 @@ async def download_payslip(
     result_id: uuid.UUID,
     session: Session,
     settings: AppSettings,
-    user: Annotated[User, require_permission("payroll.payslip.download_own")],
+    user: Annotated[
+        User,
+        require_any_permission(
+            "payroll.payslip.download_own",
+            "payroll.view_employee",
+        ),
+    ],
 ) -> Response:
     data, filename = await payslip_bytes(service(session, settings), user, result_id)
     return download(data, filename, "application/pdf")

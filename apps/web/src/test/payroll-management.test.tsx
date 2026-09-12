@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   components: vi.fn(),
   statutory: vi.fn(),
   loans: vi.fn(),
+  reports: vi.fn(),
 }))
 
 vi.mock('@/features/auth/auth-store', () => ({
@@ -46,8 +47,13 @@ vi.mock('@/features/payroll/api', async (original) => {
       createStructure: vi.fn(),
       previewStructure: vi.fn(),
       createComponent: vi.fn(),
+      updateComponent: vi.fn(),
       createStatutory: vi.fn(),
       createLoan: vi.fn(),
+      endStructure: vi.fn(),
+      createAdjustment: vi.fn(),
+      result: vi.fn(),
+      reports: mocks.reports,
     },
     downloadPayroll: vi.fn(),
   }
@@ -82,6 +88,7 @@ beforeEach(() => {
   mocks.components.mockResolvedValue([])
   mocks.statutory.mockResolvedValue([])
   mocks.loans.mockResolvedValue([])
+  mocks.reports.mockResolvedValue([])
 })
 
 it('shows employees only their own secure payslips', async () => {
@@ -114,4 +121,14 @@ it('formats decimal payroll amounts without floating point loss', () => {
   expect(payrollMoney('9007199254740993.5', 'NGN')).toBe(
     'NGN 9,007,199,254,740,993.50',
   )
+})
+
+it('shows payroll reports only when the report permission is granted', async () => {
+  mocks.permissions = ['payroll.periods.view', 'payroll.reports.view']
+  renderPage(<PayrollPage />)
+  await screen.findByText(/no payroll periods yet/i)
+  fireEvent.click(screen.getByRole('button', { name: 'Reports' }))
+  expect(
+    await screen.findByText(/select a payroll run to view/i),
+  ).toBeInTheDocument()
 })
