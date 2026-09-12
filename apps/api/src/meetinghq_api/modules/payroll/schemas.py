@@ -301,6 +301,10 @@ class PayrollResultResponse(OrmResponse):
     employee_number: str | None
     department_name: str | None
     job_title: str | None
+    period_name: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    payment_date: date | None = None
     currency: str
     status: str
     basic_salary: Money

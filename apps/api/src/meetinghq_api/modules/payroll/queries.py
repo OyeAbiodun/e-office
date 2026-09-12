@@ -11,6 +11,9 @@ from meetinghq_api.modules.payroll.models import (
     EmployeeSalaryStructure,
     PayrollEmployeeResult,
     PayrollHistory,
+    PayrollPeriod,
+    PayrollResultItem,
+    PayrollRun,
 )
 from meetinghq_api.modules.payroll.schemas import (
     PayrollPeriodResponse,
@@ -96,10 +99,68 @@ class PayrollQueries:
     async def result_response(
         self, actor: User, result: PayrollEmployeeResult
     ) -> PayrollResultResponse:
-        items = await self.service.result_items(actor, result)
-        return PayrollResultResponse.model_validate(result).model_copy(
-            update={"items": [PayrollResultItemResponse.model_validate(item) for item in items]}
+        return (await self.result_responses(actor, [result]))[0]
+
+    async def result_responses(
+        self, actor: User, results: list[PayrollEmployeeResult]
+    ) -> list[PayrollResultResponse]:
+        """Build result projections with two bulk queries, avoiding per-employee loading."""
+        if not results:
+            return []
+        result_ids = [row.id for row in results]
+        item_rows = list(
+            (
+                await self.session.scalars(
+                    select(PayrollResultItem)
+                    .where(
+                        PayrollResultItem.organization_id == actor.organization_id,
+                        PayrollResultItem.payroll_result_id.in_(result_ids),
+                    )
+                    .order_by(PayrollResultItem.position, PayrollResultItem.id)
+                )
+            ).all()
         )
+        items_by_result: dict[uuid.UUID, list[PayrollResultItemResponse]] = {}
+        for item in item_rows:
+            items_by_result.setdefault(item.payroll_result_id, []).append(
+                PayrollResultItemResponse.model_validate(item)
+            )
+        run_ids = {row.payroll_run_id for row in results}
+        period_rows = (
+            await self.session.execute(
+                select(
+                    PayrollRun.id,
+                    PayrollPeriod.name,
+                    PayrollPeriod.start_date,
+                    PayrollPeriod.end_date,
+                    PayrollPeriod.payment_date,
+                )
+                .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+                .where(
+                    PayrollRun.organization_id == actor.organization_id,
+                    PayrollPeriod.organization_id == actor.organization_id,
+                    PayrollRun.id.in_(run_ids),
+                )
+            )
+        ).all()
+        periods = {
+            row[0]: {
+                "period_name": row[1],
+                "period_start": row[2],
+                "period_end": row[3],
+                "payment_date": row[4],
+            }
+            for row in period_rows
+        }
+        return [
+            PayrollResultResponse.model_validate(result).model_copy(
+                update={
+                    "items": items_by_result.get(result.id, []),
+                    **periods.get(result.payroll_run_id, {}),
+                }
+            )
+            for result in results
+        ]
 
     async def result_page(
         self, actor: User, run_id: uuid.UUID, filters: PayrollResultFilters
@@ -160,7 +221,7 @@ class PayrollQueries:
             ).all()
         )
         return PayrollResultPage(
-            items=[await self.result_response(actor, row) for row in rows],
+            items=await self.result_responses(actor, rows),
             total=total,
             page=filters.page,
             page_size=filters.page_size,
@@ -272,7 +333,7 @@ class PayrollQueries:
                 )
             ).all()
         )
-        return [await self.result_response(actor, row) for row in rows]
+        return await self.result_responses(actor, rows)
 
     async def report(self, actor: User, run_id: uuid.UUID) -> list[PayrollReportRow]:
         self.service.require(actor, "payroll.reports.view")

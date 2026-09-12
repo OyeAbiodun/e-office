@@ -93,6 +93,8 @@ beforeEach(() => {
 
 it('shows employees only their own secure payslips', async () => {
   renderPage(<PayrollPage />)
+  expect(await screen.findByText('Latest payslip')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'My payslips' }))
   expect(await screen.findByText('Ada Employee')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument()
   expect(
@@ -107,6 +109,8 @@ it('shows permission-aware payroll administration sections', async () => {
     'payroll.salary_structure.view',
   ]
   renderPage(<PayrollPage />)
+  expect(await screen.findByText('Payroll overview')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Payroll runs' }))
   expect(await screen.findByText(/no payroll periods yet/i)).toBeInTheDocument()
   expect(
     screen.getByRole('button', { name: /new period/i }),
@@ -126,7 +130,7 @@ it('formats decimal payroll amounts without floating point loss', () => {
 it('shows payroll reports only when the report permission is granted', async () => {
   mocks.permissions = ['payroll.periods.view', 'payroll.reports.view']
   renderPage(<PayrollPage />)
-  await screen.findByText(/no payroll periods yet/i)
+  await screen.findByText('Payroll overview')
   fireEvent.click(screen.getByRole('button', { name: 'Reports' }))
   expect(
     await screen.findByText(/select a payroll run to view/i),

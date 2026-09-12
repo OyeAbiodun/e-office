@@ -327,6 +327,8 @@ async def test_complete_payroll_lifecycle_finance_payslip_and_reversal(
     assert replay.json()["data"]["id"] == paid.json()["data"]["id"]
     payslips = await client.get("/api/v1/payroll/my/payslips", headers=employee_headers)
     assert payslips.status_code == 200, payslips.text
+    assert payslips.json()["data"][0]["period_name"] == "September 2026"
+    assert payslips.json()["data"][0]["period_start"] == "2026-09-01"
     result_id = payslips.json()["data"][0]["id"]
     reviewer_result = await client.get(f"/api/v1/payroll/results/{result_id}", headers=approver)
     assert reviewer_result.status_code == 200, reviewer_result.text

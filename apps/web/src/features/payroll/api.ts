@@ -33,6 +33,8 @@ export interface SalaryStructure {
   effective_end: string | null
   status: string
   change_reason: string
+  changed_by_name: string | null
+  created_at: string
   items: Array<{
     id: string
     component_name: string | null
@@ -68,6 +70,11 @@ export interface PayrollResult {
   employee_name: string
   employee_number: string | null
   department_name: string | null
+  job_title: string | null
+  period_name: string | null
+  period_start: string | null
+  period_end: string | null
+  payment_date: string | null
   currency: string
   status: string
   gross_pay: string
@@ -107,6 +114,12 @@ export interface RunDetail {
     exception_count: number
     currency: string
     gross_payroll: string
+    paye: string
+    pension_employee: string
+    pension_employer: string
+    nhf: string
+    loan_deductions: string
+    other_deductions: string
     total_deductions: string
     net_payroll: string
     employer_cost: string

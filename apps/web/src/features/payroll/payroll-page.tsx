@@ -24,6 +24,7 @@ import {
 import { downloadPayroll, payrollApi, payrollMoney } from './api'
 
 type Tab =
+  | 'overview'
   | 'runs'
   | 'payslips'
   | 'structures'
@@ -37,10 +38,9 @@ const input = (form: HTMLFormElement) => Object.fromEntries(new FormData(form))
 export function PayrollPage() {
   const { user } = useAuth()
   const permissions = useMemo(() => new Set(user?.permissions ?? []), [user])
-  const [tab, setTab] = useState<Tab>(
-    permissions.has('payroll.periods.view') ? 'runs' : 'payslips',
-  )
+  const [tab, setTab] = useState<Tab>('overview')
   const tabs: Array<[Tab, string, string]> = [
+    ['overview', 'Overview', ''],
     ['runs', 'Payroll runs', 'payroll.periods.view'],
     ['payslips', 'My payslips', 'payroll.view_own'],
     ['structures', 'Salary structures', 'payroll.salary_structure.view'],
@@ -69,7 +69,10 @@ export function PayrollPage() {
     >
       <nav aria-label="Payroll sections" className="finance-tabs">
         {tabs
-          .filter(([, , permission]) => permissions.has(permission))
+          .filter(
+            ([key, , permission]) =>
+              key === 'overview' || permissions.has(permission),
+          )
           .map(([key, label]) => (
             <button
               key={key}
@@ -80,6 +83,7 @@ export function PayrollPage() {
             </button>
           ))}
       </nav>
+      {tab === 'overview' && <PayrollOverview permissions={permissions} />}
       {tab === 'runs' && <Runs permissions={permissions} />}
       {tab === 'payslips' && <Payslips />}
       {tab === 'structures' && (
@@ -96,6 +100,126 @@ export function PayrollPage() {
       {tab === 'loans' && <Loans />}
       {tab === 'reports' && <Reports />}
     </FinanceLayout>
+  )
+}
+
+function PayrollOverview({ permissions }: { permissions: Set<string> }) {
+  const canViewPeriods = permissions.has('payroll.periods.view')
+  const canViewOwn = permissions.has('payroll.view_own')
+  const periods = useQuery({
+    queryKey: ['payroll', 'periods'],
+    queryFn: payrollApi.periods,
+    enabled: canViewPeriods,
+  })
+  const runs = useQuery({
+    queryKey: ['payroll', 'runs'],
+    queryFn: payrollApi.runs,
+    enabled: canViewPeriods,
+  })
+  const payslips = useQuery({
+    queryKey: ['payroll', 'payslips'],
+    queryFn: payrollApi.payslips,
+    enabled: canViewOwn,
+  })
+  const error = periods.error ?? runs.error ?? payslips.error
+  if (periods.isLoading || runs.isLoading || payslips.isLoading)
+    return <Loading />
+  if (error)
+    return (
+      <ErrorState
+        error={error}
+        retry={() =>
+          void Promise.all([
+            periods.refetch(),
+            runs.refetch(),
+            payslips.refetch(),
+          ])
+        }
+      />
+    )
+  const runRows = runs.data ?? []
+  const latestRun = runRows[0]
+  const pendingReview = runRows.filter(
+    (row) => row.status === 'under_review',
+  ).length
+  const awaitingPayment = runRows.filter(
+    (row) => row.status === 'approved',
+  ).length
+  const completed = runRows.filter((row) =>
+    ['paid', 'closed'].includes(row.status),
+  ).length
+  const latestPayslip = payslips.data?.[0]
+  return (
+    <Section title="Payroll overview">
+      <div className="finance-summary" aria-label="Live payroll summary">
+        {canViewPeriods && (
+          <>
+            <Metric
+              label="Payroll periods"
+              value={String(periods.data?.length ?? 0)}
+            />
+            <Metric label="Pending review" value={String(pendingReview)} />
+            <Metric label="Awaiting payment" value={String(awaitingPayment)} />
+            <Metric label="Paid or closed" value={String(completed)} />
+          </>
+        )}
+        {canViewOwn && (
+          <Metric
+            label="Available payslips"
+            value={String(payslips.data?.length ?? 0)}
+          />
+        )}
+      </div>
+      <div className="finance-grid">
+        {canViewPeriods && (
+          <article className="finance-card">
+            <h3>Current processing state</h3>
+            {latestRun ? (
+              <>
+                <Status value={latestRun.status} />
+                <p className="text-muted-foreground">
+                  Version {latestRun.version}. Review exceptions before any
+                  controlled approval or payment transition.
+                </p>
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                No payroll run has been prepared yet.
+              </p>
+            )}
+          </article>
+        )}
+        {canViewOwn && (
+          <article className="finance-card">
+            <h3>Latest payslip</h3>
+            {latestPayslip ? (
+              <>
+                <strong>
+                  {payrollMoney(latestPayslip.net_pay, latestPayslip.currency)}
+                </strong>
+                <p className="text-muted-foreground">
+                  {latestPayslip.period_name ?? 'Latest paid payroll period'}
+                </p>
+                <button
+                  onClick={() =>
+                    void downloadPayroll(
+                      `/payroll/results/${latestPayslip.id}/payslip`,
+                      'payslip.pdf',
+                    )
+                  }
+                >
+                  <Download size={16} /> Download secure PDF
+                </button>
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                No paid payslip is available yet.
+              </p>
+            )}
+          </article>
+        )}
+      </div>
+    </Section>
   )
 }
 
@@ -369,6 +493,35 @@ function RunPanel({
           label="Deductions"
           value={payrollMoney(
             data.summary.total_deductions,
+            data.summary.currency,
+          )}
+        />
+        <Metric
+          label="PAYE"
+          value={payrollMoney(data.summary.paye, data.summary.currency)}
+        />
+        <Metric
+          label="Employee pension"
+          value={payrollMoney(
+            data.summary.pension_employee,
+            data.summary.currency,
+          )}
+        />
+        <Metric
+          label="Employer pension"
+          value={payrollMoney(
+            data.summary.pension_employer,
+            data.summary.currency,
+          )}
+        />
+        <Metric
+          label="NHF"
+          value={payrollMoney(data.summary.nhf, data.summary.currency)}
+        />
+        <Metric
+          label="Employer cost"
+          value={payrollMoney(
+            data.summary.employer_cost,
             data.summary.currency,
           )}
         />
@@ -719,7 +872,7 @@ function Payslips() {
         <table className="finance-table">
           <thead>
             <tr>
-              <th>Employee</th>
+              <th>Payroll period</th>
               <th>Gross</th>
               <th>Deductions</th>
               <th>Net pay</th>
@@ -729,7 +882,14 @@ function Payslips() {
           <tbody>
             {query.data?.map((row) => (
               <tr key={row.id}>
-                <td>{row.employee_name}</td>
+                <td>
+                  {row.period_name ?? 'Paid payroll'}
+                  <small>
+                    {row.period_start && row.period_end
+                      ? `${row.period_start} – ${row.period_end}`
+                      : row.employee_name}
+                  </small>
+                </td>
                 <td>{payrollMoney(row.gross_pay, row.currency)}</td>
                 <td>{payrollMoney(row.total_deductions, row.currency)}</td>
                 <td>
@@ -1059,6 +1219,8 @@ function Structures({ canManage }: { canManage: boolean }) {
               <th>Gross</th>
               <th>Effective</th>
               <th>Status</th>
+              <th>Changed by</th>
+              <th>Reason</th>
               {canManage && <th>Action</th>}
             </tr>
           </thead>
@@ -1075,6 +1237,8 @@ function Structures({ canManage }: { canManage: boolean }) {
                 <td>
                   <Status value={row.status} />
                 </td>
+                <td>{row.changed_by_name ?? 'Payroll administrator'}</td>
+                <td>{row.change_reason}</td>
                 {canManage && (
                   <td>
                     {row.status === 'active' && !row.effective_end ? (
