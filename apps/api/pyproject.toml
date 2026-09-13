@@ -59,6 +59,24 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "T20"]
 ignore = ["S101", "S105"]
 
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/4a920ac8fc35_add_leave_ledger_idempotency.py" = ["I001"]
+"alembic/versions/60232000eebe_add_leave_management_foundation.py" = ["I001"]
+"alembic/versions/c8d1e9a4b702_add_finance_transfer_groups.py" = ["I001"]
+"alembic/versions/d9e2f0a5c103_add_voucher_task_link.py" = ["I001"]
+"alembic/versions/de70f82cef35_add_leave_supporting_attachments.py" = ["I001"]
+"alembic/versions/f3cb669e64ff_add_voucher_finance_foundation.py" = ["E501", "I001"]
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+extend-exclude = '''
+(
+  /alembic/versions/(0013_workspace_product|0014_team_product|0031_chat_push_notification_hardening|0032_backfill_direct_member_keys|4a920ac8fc35_add_leave_ledger_idempotency|60232000eebe_add_leave_management_foundation|b73c8f51a902_finance_integrity_guards|c8d1e9a4b702_add_finance_transfer_groups|d9e2f0a5c103_add_voucher_task_link|de70f82cef35_add_leave_supporting_attachments|f3cb669e64ff_add_voucher_finance_foundation)\.py$
+  | /\.test-temp-[^/]+/
+)
+'''
+
 [tool.mypy]
 python_version = "3.13"
 strict = true
