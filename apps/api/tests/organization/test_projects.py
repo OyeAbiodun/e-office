@@ -275,6 +275,7 @@ async def test_project_manager_transfer_updates_membership_roles(
 async def test_projects_and_secure_files_are_tenant_isolated(
     organization_client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
+    admin_id, workspace_id = await _identity(organization_client, admin_headers)
     other_headers, other_identity = await _register_tenant(
         organization_client, slug="project-contoso", email="admin@project-contoso.example"
     )
@@ -311,6 +312,68 @@ async def test_projects_and_secure_files_are_tenant_isolated(
         ),
     ):
         response = await organization_client.request(method, path, headers=admin_headers, json=body)
+        assert response.status_code == 404, response.text
+        assert "Contoso" not in response.text
+
+    nested_probes = (
+        (
+            "post",
+            f"/api/v1/projects/{project_id}/members",
+            {"user_id": admin_id, "role": "member"},
+            None,
+        ),
+        (
+            "post",
+            f"/api/v1/projects/{project_id}/milestones",
+            {"name": "Tenant probe milestone"},
+            None,
+        ),
+        ("get", f"/api/v1/projects/{project_id}/tasks", None, None),
+        (
+            "post",
+            f"/api/v1/projects/{project_id}/updates",
+            {"reporting_date": date.today().isoformat(), "summary": "Tenant probe"},
+            None,
+        ),
+        (
+            "post",
+            f"/api/v1/projects/{project_id}/risks",
+            {"title": "Tenant probe risk"},
+            None,
+        ),
+        (
+            "post",
+            f"/api/v1/projects/{project_id}/issues",
+            {"title": "Tenant probe issue"},
+            None,
+        ),
+        (
+            "get",
+            f"/api/v1/projects/{project_id}/report",
+            None,
+            {
+                "start_date": (date.today() - timedelta(days=1)).isoformat(),
+                "end_date": date.today().isoformat(),
+            },
+        ),
+        (
+            "post",
+            "/api/v1/meetings",
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "title": "Tenant probe meeting",
+                "start_datetime": "2027-10-04T09:00:00Z",
+                "end_datetime": "2027-10-04T10:00:00Z",
+                "timezone": "UTC",
+            },
+            None,
+        ),
+    )
+    for method, path, body, params in nested_probes:
+        response = await organization_client.request(
+            method, path, headers=admin_headers, json=body, params=params
+        )
         assert response.status_code == 404, response.text
         assert "Contoso" not in response.text
 
