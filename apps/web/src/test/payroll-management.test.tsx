@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import type { ReactNode } from 'react'
 
 import { PayrollPage } from '@/features/payroll/payroll-page'
@@ -16,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   statutory: vi.fn(),
   loans: vi.fn(),
   reports: vi.fn(),
+  updateComponent: vi.fn(),
 }))
 
 vi.mock('@/features/auth/auth-store', () => ({
@@ -47,7 +54,7 @@ vi.mock('@/features/payroll/api', async (original) => {
       createStructure: vi.fn(),
       previewStructure: vi.fn(),
       createComponent: vi.fn(),
-      updateComponent: vi.fn(),
+      updateComponent: mocks.updateComponent,
       createStatutory: vi.fn(),
       createLoan: vi.fn(),
       endStructure: vi.fn(),
@@ -89,6 +96,7 @@ beforeEach(() => {
   mocks.statutory.mockResolvedValue([])
   mocks.loans.mockResolvedValue([])
   mocks.reports.mockResolvedValue([])
+  mocks.updateComponent.mockResolvedValue({})
 })
 
 it('shows employees only their own secure payslips', async () => {
@@ -124,6 +132,52 @@ it('shows permission-aware payroll administration sections', async () => {
 it('formats decimal payroll amounts without floating point loss', () => {
   expect(payrollMoney('9007199254740993.5', 'NGN')).toBe(
     'NGN 9,007,199,254,740,993.50',
+  )
+})
+
+it('edits salary component policy without replacing payroll history', async () => {
+  mocks.permissions = [
+    'payroll.salary_structure.view',
+    'payroll.components.manage',
+  ]
+  mocks.components.mockResolvedValue([
+    {
+      id: 'component-1',
+      code: 'TRAVEL',
+      name: 'Travel allowance',
+      description: 'Monthly travel support',
+      component_kind: 'earning',
+      calculation_type: 'fixed',
+      taxable: true,
+      pensionable: false,
+      recurring: true,
+      is_active: true,
+      effective_start: '2026-01-01',
+      effective_end: null,
+    },
+  ])
+  renderPage(<PayrollPage />)
+  await screen.findByText('Payroll overview')
+  fireEvent.click(screen.getByRole('button', { name: 'Components' }))
+  await screen.findByText('Travel allowance')
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+  const form = screen.getByRole('form', { name: 'Edit Travel allowance' })
+  fireEvent.change(within(form).getByLabelText('Name'), {
+    target: { value: 'Travel benefit' },
+  })
+  fireEvent.click(within(form).getByLabelText('Pensionable'))
+  fireEvent.submit(form)
+  await waitFor(() =>
+    expect(mocks.updateComponent).toHaveBeenCalledWith(
+      'component-1',
+      expect.objectContaining({
+        name: 'Travel benefit',
+        pensionable: true,
+        taxable: true,
+        recurring: true,
+        is_active: true,
+      }),
+    ),
   )
 })
 

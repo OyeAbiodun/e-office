@@ -21,7 +21,12 @@ import {
   Section,
   Status,
 } from '@/features/finance/shared'
-import { downloadPayroll, payrollApi, payrollMoney } from './api'
+import {
+  downloadPayroll,
+  payrollApi,
+  payrollMoney,
+  type SalaryComponent,
+} from './api'
 
 type Tab =
   | 'overview'
@@ -34,6 +39,20 @@ type Tab =
   | 'reports'
 const today = new Date().toISOString().slice(0, 10)
 const input = (form: HTMLFormElement) => Object.fromEntries(new FormData(form))
+const componentInput = (form: HTMLFormElement) => {
+  const values = input(form)
+  const checked = (name: string) =>
+    (form.elements.namedItem(name) as HTMLInputElement | null)?.checked ?? false
+  return {
+    ...values,
+    description: values.description || null,
+    effective_end: values.effective_end || null,
+    taxable: checked('taxable'),
+    pensionable: checked('pensionable'),
+    recurring: checked('recurring'),
+    is_active: checked('is_active'),
+  }
+}
 
 export function PayrollPage() {
   const { user } = useAuth()
@@ -1259,10 +1278,89 @@ function Structures({ canManage }: { canManage: boolean }) {
   )
 }
 
+function ComponentFields({ component }: { component?: SalaryComponent }) {
+  return (
+    <>
+      <Field label="Code">
+        <input name="code" defaultValue={component?.code} required />
+      </Field>
+      <Field label="Name">
+        <input name="name" defaultValue={component?.name} required />
+      </Field>
+      <Field label="Description">
+        <input name="description" defaultValue={component?.description ?? ''} />
+      </Field>
+      <Field label="Kind">
+        <select name="component_kind" defaultValue={component?.component_kind}>
+          <option value="earning">Earning</option>
+          <option value="deduction">Deduction</option>
+        </select>
+      </Field>
+      <Field label="Calculation">
+        <select
+          name="calculation_type"
+          defaultValue={component?.calculation_type}
+        >
+          <option value="fixed">Fixed</option>
+          <option value="percentage">Percentage</option>
+        </select>
+      </Field>
+      <Field label="Effective from">
+        <input
+          name="effective_start"
+          type="date"
+          defaultValue={component?.effective_start ?? today}
+          required
+        />
+      </Field>
+      <Field label="Effective to">
+        <input
+          name="effective_end"
+          type="date"
+          defaultValue={component?.effective_end ?? ''}
+        />
+      </Field>
+      <label className="finance-check">
+        <input
+          name="taxable"
+          type="checkbox"
+          defaultChecked={component?.taxable ?? true}
+        />
+        Taxable
+      </label>
+      <label className="finance-check">
+        <input
+          name="pensionable"
+          type="checkbox"
+          defaultChecked={component?.pensionable ?? false}
+        />
+        Pensionable
+      </label>
+      <label className="finance-check">
+        <input
+          name="recurring"
+          type="checkbox"
+          defaultChecked={component?.recurring ?? true}
+        />
+        Recurring
+      </label>
+      <label className="finance-check">
+        <input
+          name="is_active"
+          type="checkbox"
+          defaultChecked={component?.is_active ?? true}
+        />
+        Active
+      </label>
+    </>
+  )
+}
+
 function Components({ canManage }: { canManage: boolean }) {
   const client = useQueryClient()
   const confirm = useConfirmation()
   const [create, setCreate] = useState(false)
+  const [editing, setEditing] = useState<SalaryComponent>()
   const query = useQuery({
     queryKey: ['payroll', 'components'],
     queryFn: payrollApi.components,
@@ -1279,6 +1377,7 @@ function Components({ canManage }: { canManage: boolean }) {
       payrollApi.updateComponent(id, body),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['payroll', 'components'] })
+      setEditing(undefined)
     },
   })
   const toggle = async (row: NonNullable<typeof query.data>[number]) => {
@@ -1328,43 +1427,37 @@ function Components({ canManage }: { canManage: boolean }) {
           className="finance-filters"
           onSubmit={(event) => {
             event.preventDefault()
-            const values = input(event.currentTarget)
-            mutation.mutate({
-              ...values,
-              taxable: true,
-              pensionable: false,
-              recurring: true,
-              is_active: true,
+            mutation.mutate(componentInput(event.currentTarget))
+          }}
+        >
+          <ComponentFields />
+          <button className="finance-primary" disabled={mutation.isPending}>
+            Create component
+          </button>
+        </form>
+      )}
+      {editing && (
+        <form
+          className="finance-filters"
+          aria-label={`Edit ${editing.name}`}
+          onSubmit={(event) => {
+            event.preventDefault()
+            updateMutation.mutate({
+              id: editing.id,
+              body: componentInput(event.currentTarget),
             })
           }}
         >
-          <Field label="Code">
-            <input name="code" required />
-          </Field>
-          <Field label="Name">
-            <input name="name" required />
-          </Field>
-          <Field label="Kind">
-            <select name="component_kind">
-              <option value="earning">Earning</option>
-              <option value="deduction">Deduction</option>
-            </select>
-          </Field>
-          <Field label="Calculation">
-            <select name="calculation_type">
-              <option value="fixed">Fixed</option>
-              <option value="percentage">Percentage</option>
-            </select>
-          </Field>
-          <Field label="Effective from">
-            <input
-              name="effective_start"
-              type="date"
-              defaultValue={today}
-              required
-            />
-          </Field>
-          <button className="finance-primary">Create component</button>
+          <ComponentFields component={editing} />
+          <button
+            className="finance-primary"
+            disabled={updateMutation.isPending}
+          >
+            Save component
+          </button>
+          <button type="button" onClick={() => setEditing(undefined)}>
+            Cancel
+          </button>
         </form>
       )}
       {query.isLoading ? (
@@ -1398,6 +1491,7 @@ function Components({ canManage }: { canManage: boolean }) {
                   </td>
                   {canManage && (
                     <td>
+                      <button onClick={() => setEditing(row)}>Edit</button>
                       <button
                         disabled={updateMutation.isPending}
                         onClick={() => void toggle(row)}
