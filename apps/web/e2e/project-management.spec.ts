@@ -245,6 +245,15 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
   await expect(
     managerBrowser.page.getByText(project.project_code).first(),
   ).toBeVisible()
+  await managerBrowser.page
+    .getByRole('button', { name: 'Edit project' })
+    .click()
+  let dialog = managerBrowser.page.getByRole('dialog')
+  await dialog.getByLabel('Health').selectOption('at_risk')
+  await dialog.getByRole('button', { name: 'Save project' }).click()
+  await expect(
+    managerBrowser.page.getByText('At Risk', { exact: true }).first(),
+  ).toBeVisible()
   await managerBrowser.page.getByRole('button', { name: 'Tasks' }).click()
   await expect(
     managerBrowser.page.getByText('Validate launch controls'),
@@ -259,7 +268,7 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
   await managerBrowser.page
     .getByRole('button', { name: 'Add', exact: true })
     .click()
-  let dialog = managerBrowser.page.getByRole('dialog')
+  dialog = managerBrowser.page.getByRole('dialog')
   await dialog.getByLabel('Risk title').fill('Vendor cutover capacity')
   await dialog.getByLabel('Severity').selectOption('high')
   await dialog.getByLabel('Probability').selectOption('medium')
@@ -271,6 +280,10 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
   await expect(
     managerBrowser.page.getByText('Vendor cutover capacity'),
   ).toBeVisible()
+  await managerBrowser.page
+    .getByLabel('Update Vendor cutover capacity status')
+    .selectOption('monitoring')
+  await expect(managerBrowser.page.getByLabel('Monitoring')).toBeVisible()
 
   await managerBrowser.page.getByRole('button', { name: 'Issues' }).click()
   await managerBrowser.page
@@ -287,6 +300,13 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
   await expect(
     managerBrowser.page.getByText('Legacy access review'),
   ).toBeVisible()
+  await managerBrowser.page
+    .getByLabel('Legacy access review resolution')
+    .fill('Legacy identities removed and verified.')
+  await managerBrowser.page
+    .getByLabel('Update Legacy access review status')
+    .selectOption('resolved')
+  await expect(managerBrowser.page.getByLabel('Resolved')).toBeVisible()
 
   await managerBrowser.page.getByRole('button', { name: 'Files' }).click()
   await managerBrowser.page.locator('input[type="file"]').setInputFiles({
@@ -316,9 +336,6 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
   ).toBeVisible()
   await expect(
     managerBrowser.page.getByText('Vendor cutover capacity'),
-  ).toBeVisible()
-  await expect(
-    managerBrowser.page.getByText('Legacy access review'),
   ).toBeVisible()
 
   const memberBrowser = await browserSession(

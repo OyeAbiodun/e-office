@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { AlertTriangle, FileText, Plus } from 'lucide-react'
+import { AlertTriangle, FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, type ReactNode, useState } from 'react'
 
 import { type ProjectDetail, type ProjectReport, projectsApi } from './api'
@@ -24,6 +24,7 @@ const tabs = [
 ] as const
 type Tab = (typeof tabs)[number]
 type Action =
+  | 'project'
   | 'task'
   | 'milestone'
   | 'member'
@@ -89,6 +90,39 @@ export function ProjectDetailPage() {
       projectsApi.update(projectId, body),
     onSuccess: refresh,
   })
+  const management = useMutation({
+    mutationFn: ({
+      operation,
+      resourceId,
+      body = {},
+    }: {
+      operation:
+        | 'member.update'
+        | 'member.remove'
+        | 'milestone.update'
+        | 'milestone.remove'
+        | 'risk.update'
+        | 'issue.update'
+        | 'attachment.remove'
+      resourceId: string
+      body?: Record<string, unknown>
+    }) => {
+      if (operation === 'member.update')
+        return projectsApi.updateMember(projectId, resourceId, body)
+      if (operation === 'member.remove')
+        return projectsApi.removeMember(projectId, resourceId)
+      if (operation === 'milestone.update')
+        return projectsApi.updateMilestone(projectId, resourceId, body)
+      if (operation === 'milestone.remove')
+        return projectsApi.removeMilestone(projectId, resourceId)
+      if (operation === 'risk.update')
+        return projectsApi.updateRisk(projectId, resourceId, body)
+      if (operation === 'issue.update')
+        return projectsApi.updateIssue(projectId, resourceId, body)
+      return projectsApi.removeAttachment(projectId, resourceId)
+    },
+    onSuccess: refresh,
+  })
 
   if (detail.isLoading)
     return (
@@ -147,6 +181,12 @@ export function ProjectDetailPage() {
           <div className="flex flex-wrap gap-2">
             {canManage && (
               <>
+                <button
+                  className="rounded-xl border px-4 py-2.5"
+                  onClick={() => setAction('project')}
+                >
+                  <Pencil className="mr-1 inline" size={16} /> Edit project
+                </button>
                 <button
                   className="rounded-xl border px-4 py-2.5"
                   onClick={() => setAction('update')}
@@ -243,6 +283,56 @@ export function ProjectDetailPage() {
                   style={{ width: `${item.progress}%` }}
                 />
               </div>
+              {canManage && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
+                  <label className="text-xs font-medium">
+                    Status
+                    <select
+                      aria-label={`Update ${item.name} milestone status`}
+                      className="ml-2 rounded-lg border bg-background px-2 py-1.5 text-sm"
+                      value={item.status}
+                      onChange={(event) =>
+                        management.mutate({
+                          operation: 'milestone.update',
+                          resourceId: item.id,
+                          body: { status: event.target.value },
+                        })
+                      }
+                    >
+                      {[
+                        'not_started',
+                        'in_progress',
+                        'completed',
+                        'delayed',
+                        'cancelled',
+                      ].map((value) => (
+                        <option key={value} value={value}>
+                          {title(value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="ml-auto rounded-lg border px-2 py-1.5 text-sm text-destructive"
+                    onClick={() =>
+                      void confirm({
+                        title: 'Remove milestone?',
+                        description:
+                          'Milestones containing tasks must be unlinked before removal.',
+                        confirmLabel: 'Remove milestone',
+                      }).then((approved) => {
+                        if (approved)
+                          management.mutate({
+                            operation: 'milestone.remove',
+                            resourceId: item.id,
+                          })
+                      })
+                    }
+                  >
+                    <Trash2 className="mr-1 inline" size={14} /> Remove
+                  </button>
+                </div>
+              )}
             </article>
           ))}
         </Collection>
@@ -268,7 +358,54 @@ export function ProjectDetailPage() {
                   {member.job_title || 'Employee'}
                 </p>
               </div>
-              <Badge value={member.role} />
+              <div className="flex items-center gap-2">
+                {(permissions.has('projects.manage_members') ||
+                  project.project_manager_id === user?.id) &&
+                member.role !== 'project_manager' ? (
+                  <select
+                    aria-label={`Change ${member.display_name} project role`}
+                    className="rounded-lg border bg-background px-2 py-1.5 text-sm"
+                    value={member.role}
+                    onChange={(event) =>
+                      management.mutate({
+                        operation: 'member.update',
+                        resourceId: member.id,
+                        body: { role: event.target.value },
+                      })
+                    }
+                  >
+                    <option value="project_lead">Project Lead</option>
+                    <option value="member">Member</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                ) : (
+                  <Badge value={member.role} />
+                )}
+                {(permissions.has('projects.manage_members') ||
+                  project.project_manager_id === user?.id) &&
+                  member.role !== 'project_manager' && (
+                    <button
+                      aria-label={`Remove ${member.display_name} from project`}
+                      className="rounded-lg border p-2 text-destructive"
+                      onClick={() =>
+                        void confirm({
+                          title: 'Remove project member?',
+                          description:
+                            'Their historical project activity will be retained.',
+                          confirmLabel: 'Remove member',
+                        }).then((approved) => {
+                          if (approved)
+                            management.mutate({
+                              operation: 'member.remove',
+                              resourceId: member.id,
+                            })
+                        })
+                      }
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+              </div>
             </article>
           ))}
         </Collection>
@@ -329,7 +466,22 @@ export function ProjectDetailPage() {
           onAdd={() => setAction('risk')}
         >
           {data.risks.map((item) => (
-            <Attention key={item.id} kind="Risk" item={item} />
+            <Attention
+              key={item.id}
+              kind="Risk"
+              item={item}
+              canManage={
+                permissions.has('projects.manage_risks') ||
+                project.project_manager_id === user?.id
+              }
+              onUpdate={(body) =>
+                management.mutate({
+                  operation: 'risk.update',
+                  resourceId: item.id,
+                  body,
+                })
+              }
+            />
           ))}
         </Collection>
       )}
@@ -344,7 +496,22 @@ export function ProjectDetailPage() {
           onAdd={() => setAction('issue')}
         >
           {data.issues.map((item) => (
-            <Attention key={item.id} kind="Issue" item={item} />
+            <Attention
+              key={item.id}
+              kind="Issue"
+              item={item}
+              canManage={
+                permissions.has('projects.manage_issues') ||
+                project.project_manager_id === user?.id
+              }
+              onUpdate={(body) =>
+                management.mutate({
+                  operation: 'issue.update',
+                  resourceId: item.id,
+                  body,
+                })
+              }
+            />
           ))}
         </Collection>
       )}
@@ -380,6 +547,20 @@ export function ProjectDetailPage() {
             project.project_manager_id === user?.id
           }
           refresh={refresh}
+          onRemove={(attachmentId) =>
+            void confirm({
+              title: 'Remove project file?',
+              description:
+                'The document will no longer be available from this project.',
+              confirmLabel: 'Remove file',
+            }).then((approved) => {
+              if (approved)
+                management.mutate({
+                  operation: 'attachment.remove',
+                  resourceId: attachmentId,
+                })
+            })
+          }
         />
       )}
       {tab === 'reports' && (
@@ -396,12 +577,17 @@ export function ProjectDetailPage() {
       {action && (
         <ActionDialog
           action={action}
+          project={project}
           milestones={data.milestones}
           people={people.data ?? []}
-          pending={mutation.isPending}
-          error={mutation.error}
+          pending={mutation.isPending || status.isPending}
+          error={action === 'project' ? status.error : mutation.error}
           onClose={() => setAction(null)}
-          onSubmit={(body) => mutation.mutate({ type: action, body })}
+          onSubmit={(body) =>
+            action === 'project'
+              ? status.mutate(body, { onSuccess: () => setAction(null) })
+              : mutation.mutate({ type: action, body })
+          }
           onReport={async (startDate, endDate) => {
             const value = await projectsApi.report(
               project.id,
@@ -654,22 +840,80 @@ function Collection({
 function Attention({
   kind,
   item,
+  canManage,
+  onUpdate,
 }: {
   kind: string
   item: ProjectDetail['risks'][number] | ProjectDetail['issues'][number]
+  canManage: boolean
+  onUpdate: (body: Record<string, unknown>) => void
 }) {
+  const [resolution, setResolution] = useState('')
+  const issue = kind === 'Issue'
   return (
-    <article className="flex items-start justify-between gap-4 rounded-xl border p-4">
-      <div className="flex gap-3">
-        <AlertTriangle className="mt-0.5 text-amber-600" size={18} />
-        <div>
-          <strong>{item.title}</strong>
-          <p className="text-sm text-muted-foreground">
-            {kind} · {title(item.severity)} severity
-          </p>
+    <article className="rounded-xl border p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex gap-3">
+          <AlertTriangle className="mt-0.5 text-amber-600" size={18} />
+          <div>
+            <strong>{item.title}</strong>
+            <p className="text-sm text-muted-foreground">
+              {kind} · {title(item.severity)} severity
+            </p>
+          </div>
         </div>
+        <Badge value={item.status} />
       </div>
-      <Badge value={item.status} />
+      {canManage && (
+        <div className="mt-4 flex flex-wrap items-end gap-2 border-t pt-3">
+          <label className="text-xs font-medium">
+            Status
+            <select
+              aria-label={`Update ${item.title} status`}
+              className="ml-2 rounded-lg border bg-background px-2 py-1.5 text-sm"
+              value={item.status}
+              onChange={(event) =>
+                onUpdate({
+                  status: event.target.value,
+                  ...(issue &&
+                  ['resolved', 'closed'].includes(event.target.value)
+                    ? { resolution }
+                    : {}),
+                })
+              }
+            >
+              {(issue
+                ? ['open', 'in_progress', 'resolved', 'closed']
+                : ['open', 'monitoring', 'mitigated', 'closed']
+              ).map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                  disabled={
+                    issue &&
+                    ['resolved', 'closed'].includes(value) &&
+                    !resolution.trim()
+                  }
+                >
+                  {title(value)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {issue && (
+            <label className="min-w-52 flex-1 text-xs font-medium">
+              Resolution required to resolve
+              <input
+                aria-label={`${item.title} resolution`}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+                value={resolution}
+                onChange={(event) => setResolution(event.target.value)}
+                placeholder="Describe the resolution"
+              />
+            </label>
+          )}
+        </div>
+      )}
     </article>
   )
 }
@@ -689,11 +933,13 @@ function Files({
   rows,
   canManage,
   refresh,
+  onRemove,
 }: {
   projectId: string
   rows: ProjectDetail['attachments']
   canManage: boolean
   refresh: () => void
+  onRemove: (attachmentId: string) => void
 }) {
   const upload = useMutation({
     mutationFn: (file: File) => projectsApi.upload(projectId, file),
@@ -730,14 +976,25 @@ function Files({
                 </p>
               </div>
             </div>
-            <button
-              className="text-sm font-semibold text-primary"
-              onClick={() =>
-                void projectsApi.download(projectId, row.id, row.filename)
-              }
-            >
-              Download
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="text-sm font-semibold text-primary"
+                onClick={() =>
+                  void projectsApi.download(projectId, row.id, row.filename)
+                }
+              >
+                Download
+              </button>
+              {canManage && (
+                <button
+                  aria-label={`Remove ${row.filename}`}
+                  className="rounded-lg border p-2 text-destructive"
+                  onClick={() => onRemove(row.id)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
           </article>
         ))}
       </>
@@ -838,6 +1095,7 @@ function ReportSection({
 
 function ActionDialog({
   action,
+  project,
   milestones,
   people,
   pending,
@@ -847,6 +1105,7 @@ function ActionDialog({
   onReport,
 }: {
   action: Exclude<Action, null>
+  project: ProjectDetail['project']
   milestones: ProjectDetail['milestones']
   people: Awaited<ReturnType<typeof tasksApi.assignees>>
   pending: boolean
@@ -874,11 +1133,87 @@ function ActionDialog({
   return (
     <Dialog
       title={
-        action === 'report' ? 'Generate project report' : `Add ${title(action)}`
+        action === 'report'
+          ? 'Generate project report'
+          : action === 'project'
+            ? 'Edit project'
+            : `Add ${title(action)}`
       }
       onClose={onClose}
     >
       <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+        {action === 'project' && (
+          <>
+            <Field label="Project name" wide>
+              <input name="name" defaultValue={project.name} required />
+            </Field>
+            <Field label="Project manager">
+              <select
+                name="project_manager_id"
+                defaultValue={project.project_manager_id}
+              >
+                {!people.some(
+                  (person) => person.id === project.project_manager_id,
+                ) && (
+                  <option value={project.project_manager_id}>
+                    {project.manager_name ?? 'Current project manager'}
+                  </option>
+                )}
+                {people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.display_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Priority">
+              <select name="priority" defaultValue={project.priority}>
+                {['low', 'normal', 'high', 'urgent'].map((value) => (
+                  <option key={value} value={value}>
+                    {title(value)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Health">
+              <select name="health" defaultValue={project.health}>
+                {['on_track', 'at_risk', 'off_track'].map((value) => (
+                  <option key={value} value={value}>
+                    {title(value)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Visibility">
+              <select name="visibility" defaultValue={project.visibility}>
+                <option value="organization">Organization</option>
+                <option value="department">Department</option>
+                <option value="members">Project members</option>
+              </select>
+            </Field>
+            <Field label="Start date">
+              <input
+                name="start_date"
+                type="date"
+                defaultValue={project.start_date ?? ''}
+              />
+            </Field>
+            <Field label="Target end">
+              <input
+                name="target_end_date"
+                type="date"
+                defaultValue={project.target_end_date ?? ''}
+              />
+            </Field>
+            <Field label="Description" wide>
+              <textarea
+                name="description"
+                rows={4}
+                defaultValue={project.description ?? ''}
+              />
+            </Field>
+          </>
+        )}
         {action === 'task' && (
           <>
             <Field label="Task title" wide>
@@ -1073,7 +1408,9 @@ function ActionDialog({
               ? 'Saving…'
               : action === 'report'
                 ? 'Generate report'
-                : 'Save'}
+                : action === 'project'
+                  ? 'Save project'
+                  : 'Save'}
           </button>
         </div>
       </form>

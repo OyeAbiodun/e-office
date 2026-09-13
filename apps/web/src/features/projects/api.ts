@@ -154,6 +154,12 @@ export const projectsApi = {
       { method: 'POST', body: JSON.stringify(body) },
       true,
     ),
+  updateMember: (id: string, memberId: string, body: Record<string, unknown>) =>
+    apiRequest(
+      `/projects/${id}/members/${memberId}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+      true,
+    ),
   removeMember: (id: string, memberId: string) =>
     apiRequest(
       `/projects/${id}/members/${memberId}`,
@@ -176,6 +182,12 @@ export const projectsApi = {
       { method: 'PATCH', body: JSON.stringify(body) },
       true,
     ),
+  removeMilestone: (id: string, milestoneId: string) =>
+    apiRequest(
+      `/projects/${id}/milestones/${milestoneId}`,
+      { method: 'DELETE' },
+      true,
+    ),
   createTask: (id: string, body: Record<string, unknown>) =>
     apiRequest(
       `/projects/${id}/tasks`,
@@ -195,10 +207,22 @@ export const projectsApi = {
       { method: 'POST', body: JSON.stringify(body) },
       true,
     ),
+  updateRisk: (id: string, riskId: string, body: Record<string, unknown>) =>
+    apiRequest(
+      `/projects/${id}/risks/${riskId}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+      true,
+    ),
   addIssue: (id: string, body: Record<string, unknown>) =>
     apiRequest(
       `/projects/${id}/issues`,
       { method: 'POST', body: JSON.stringify(body) },
+      true,
+    ),
+  updateIssue: (id: string, issueId: string, body: Record<string, unknown>) =>
+    apiRequest(
+      `/projects/${id}/issues/${issueId}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
       true,
     ),
   report: (id: string, startDate: string, endDate: string) =>
@@ -227,4 +251,10 @@ export const projectsApi = {
     link.click()
     URL.revokeObjectURL(url)
   },
+  removeAttachment: (id: string, attachmentId: string) =>
+    apiRequest(
+      `/projects/${id}/attachments/${attachmentId}`,
+      { method: 'DELETE' },
+      true,
+    ),
 }
