@@ -66,6 +66,7 @@ from meetinghq_api.modules.meetings.schemas import (
     TemplateInput,
 )
 from meetinghq_api.modules.notifications.service import NotificationService
+from meetinghq_api.modules.projects.models import Project, ProjectMember
 from meetinghq_api.modules.users.models import User
 from meetinghq_api.shared.events import DomainEvent
 from meetinghq_api.shared.exceptions import (
@@ -196,6 +197,8 @@ class MeetingService:
     async def create(
         self, organization_id: uuid.UUID, body: MeetingCreate, actor_id: uuid.UUID
     ) -> Meeting:
+        if body.project_id:
+            await self._project(organization_id, body.project_id, actor_id)
         calendar = await self._calendar(organization_id, body, actor_id)
         validation = await SchedulingService(self.session).validate(
             organization_id,
@@ -296,6 +299,8 @@ class MeetingService:
     ) -> Meeting:
         meeting = await self.get(organization_id, meeting_id)
         self._require_organizer(meeting, actor_id, allow_manage)
+        if body.project_id:
+            await self._project(organization_id, body.project_id, actor_id)
         for field, value in body.model_dump(exclude_unset=True).items():
             setattr(meeting, field, value)
         events = list(
@@ -319,6 +324,39 @@ class MeetingService:
         await self._record("MeetingUpdated", meeting, actor_id)
         meeting.updated_at = datetime.now(UTC)
         return meeting
+
+    async def _project(
+        self, organization_id: uuid.UUID, project_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> Project:
+        project = await self.session.scalar(
+            select(Project).where(
+                Project.id == project_id,
+                Project.organization_id == organization_id,
+                Project.deleted_at.is_(None),
+            )
+        )
+        if project is None:
+            raise NotFoundError("Project not found")
+        actor = await self.session.get(User, actor_id)
+        permissions = (
+            {permission.name for role in actor.roles for permission in role.permissions}
+            if actor
+            else set()
+        )
+        if (
+            project.visibility == "members"
+            and project.project_manager_id != actor_id
+            and "projects.edit" not in permissions
+            and not await self.session.scalar(
+                select(ProjectMember.id).where(
+                    ProjectMember.project_id == project.id,
+                    ProjectMember.user_id == actor_id,
+                    ProjectMember.organization_id == organization_id,
+                )
+            )
+        ):
+            raise AuthorizationError("You cannot access this project")
+        return project
 
     async def transition(
         self,

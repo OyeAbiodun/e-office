@@ -15,6 +15,7 @@ SearchResultType = Literal[
     "help",
     "audit",
     "integration",
+    "project",
 ]
 
 

@@ -82,6 +82,8 @@ async def list_tasks(
     priority: str | None = Query(default=None),
     assignee_id: uuid.UUID | None = None,
     department_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    milestone_id: uuid.UUID | None = None,
     due: Literal["today", "overdue", "week"] | None = None,
     sort: Literal[
         "due_date", "priority", "status", "created_at", "assignee", "completed_at"
@@ -98,6 +100,8 @@ async def list_tasks(
         priority=priority,
         assignee_id=assignee_id,
         department_id=department_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
         due=due,
         sort=sort,
         direction=direction,

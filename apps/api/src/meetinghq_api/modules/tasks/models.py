@@ -80,6 +80,12 @@ class Task(SoftDeleteMixin, Base):
     meeting_action_item_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("meeting_action_items.id", ondelete="SET NULL"), index=True
     )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True
+    )
+    milestone_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("project_milestones.id", ondelete="SET NULL"), index=True
+    )
     start_date: Mapped[date | None] = mapped_column(Date)
     due_date: Mapped[date | None] = mapped_column(Date, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
@@ -212,6 +218,9 @@ class DailyActivity(SoftDeleteMixin, Base):
     )
     meeting_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("meetings.id", ondelete="SET NULL"), index=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True
     )
     activity_date: Mapped[date] = mapped_column(Date, index=True)
     summary: Mapped[str] = mapped_column(Text)

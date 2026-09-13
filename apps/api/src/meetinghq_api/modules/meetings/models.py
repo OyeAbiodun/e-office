@@ -58,6 +58,9 @@ class Meeting(Base):
     calendar_event_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("calendar_events.id"), unique=True
     )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True
+    )
     meeting_template_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("meeting_templates.id")
     )

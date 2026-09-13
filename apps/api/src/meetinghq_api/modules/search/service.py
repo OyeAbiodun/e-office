@@ -10,6 +10,7 @@ from meetinghq_api.modules.help_center.models import HelpArticle
 from meetinghq_api.modules.mail.models import MailMessage
 from meetinghq_api.modules.meetings.models import Meeting, MeetingAttendee
 from meetinghq_api.modules.notifications.models import Notification
+from meetinghq_api.modules.projects.models import Project, ProjectMember
 from meetinghq_api.modules.search.schemas import SearchResponse, SearchResult
 from meetinghq_api.modules.teams.models import Team
 from meetinghq_api.modules.users.models import Role, User
@@ -35,6 +36,8 @@ class GlobalSearchService:
             results.extend(await self._users(user, pattern))
         if permissions & {"teams.view", "teams.read"}:
             results.extend(await self._teams(user, pattern))
+        if "projects.view" in permissions:
+            results.extend(await self._projects(user, pattern, permissions))
         if "roles.manage" in permissions or "admin.manage" in permissions:
             results.extend(await self._roles(user, pattern))
         if "mail.view" in permissions:
@@ -179,6 +182,48 @@ class GlobalSearchService:
                 url="/roles",
                 icon="shield",
                 score=76,
+            )
+            for row in rows
+        ]
+
+    async def _projects(
+        self, user: User, pattern: str, permissions: set[str]
+    ) -> list[SearchResult]:
+        query = select(Project).where(
+            Project.organization_id == user.organization_id,
+            Project.deleted_at.is_(None),
+            or_(
+                Project.name.ilike(pattern),
+                Project.project_code.ilike(pattern),
+                Project.description.ilike(pattern),
+            ),
+        )
+        if "projects.edit" not in permissions:
+            memberships = select(ProjectMember.project_id).where(
+                ProjectMember.organization_id == user.organization_id,
+                ProjectMember.user_id == user.id,
+            )
+            clauses = [
+                Project.project_manager_id == user.id,
+                Project.id.in_(memberships),
+                Project.visibility == "organization",
+            ]
+            if user.department_id:
+                clauses.append(
+                    (Project.visibility == "department")
+                    & (Project.department_id == user.department_id)
+                )
+            query = query.where(or_(*clauses))
+        rows = (await self.session.scalars(query.limit(8))).all()
+        return [
+            SearchResult(
+                id=str(row.id),
+                type="project",
+                title=row.name,
+                subtitle=f"{row.project_code} · {row.status.replace('_', ' ')}",
+                url=f"/projects/{row.id}",
+                icon="folder-kanban",
+                score=88,
             )
             for row in rows
         ]

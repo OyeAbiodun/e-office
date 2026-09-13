@@ -489,6 +489,7 @@ function TaskRow({
             ? `Due ${new Date(task.due_date).toLocaleDateString()}`
             : 'No due date'}
           {task.meeting_title ? ` · ${task.meeting_title}` : ''}
+          {task.project_name ? ` · ${task.project_name}` : ''}
         </p>
       </button>
       <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold capitalize">
@@ -893,6 +894,15 @@ function TaskDetail({
             >
               Open source meeting
               {task.meeting_title ? `: ${task.meeting_title}` : ''}
+            </Link>
+          ) : null}
+          {task.project_id ? (
+            <Link
+              className="ml-3 mt-3 inline-flex text-sm font-semibold text-primary hover:underline"
+              params={{ projectId: task.project_id }}
+              to="/projects/$projectId"
+            >
+              Open project{task.project_name ? `: ${task.project_name}` : ''}
             </Link>
           ) : null}
         </div>

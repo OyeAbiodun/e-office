@@ -16,6 +16,7 @@ from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.meetings.models import Meeting, MeetingActionItem, MeetingAttendee
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.organizations.models import OrganizationUnit
+from meetinghq_api.modules.projects.models import Project, ProjectMember, ProjectMilestone
 from meetinghq_api.modules.tasks.models import (
     DailyActivity,
     Task,
@@ -140,6 +141,10 @@ class TaskService:
             if body.meeting_id and body.meeting_id != action.meeting_id:
                 raise ValidationError("The action item does not belong to the related meeting")
             body.meeting_id = action.meeting_id
+        if body.project_id:
+            await self._project_context(actor, body.project_id, body.milestone_id)
+        elif body.milestone_id:
+            raise ValidationError("A milestone requires a project")
         sequence = (
             int(
                 await self.session.scalar(
@@ -164,6 +169,8 @@ class TaskService:
             team_id=body.team_id,
             meeting_id=body.meeting_id,
             meeting_action_item_id=body.meeting_action_item_id,
+            project_id=body.project_id,
+            milestone_id=body.milestone_id,
             start_date=body.start_date,
             due_date=body.due_date,
             reminder_at=body.reminder_at,
@@ -213,6 +220,8 @@ class TaskService:
         priority: str | None = None,
         assignee_id: uuid.UUID | None = None,
         department_id: uuid.UUID | None = None,
+        project_id: uuid.UUID | None = None,
+        milestone_id: uuid.UUID | None = None,
         due: str | None = None,
         sort: str = "due_date",
         direction: str = "asc",
@@ -237,6 +246,11 @@ class TaskService:
         if department_id:
             await self._department(actor.organization_id, department_id)
             query = query.where(Task.department_id == department_id)
+        if project_id:
+            await self._project_context(actor, project_id, milestone_id)
+            query = query.where(Task.project_id == project_id)
+        if milestone_id:
+            query = query.where(Task.milestone_id == milestone_id)
         today = datetime.now(UTC).date()
         if due == "today":
             query = query.where(Task.due_date == today)
@@ -484,6 +498,18 @@ class TaskService:
                 await self._notify_assignment(task, assignee, actor, "reassigned")
         if "department_id" in values and values["department_id"]:
             await self._department(actor.organization_id, values["department_id"])
+        target_project_id = values.get("project_id", task.project_id)
+        target_milestone_id = values.get("milestone_id", task.milestone_id)
+        if target_project_id:
+            await self._project_context(
+                actor,
+                cast(uuid.UUID, target_project_id),
+                cast(uuid.UUID | None, target_milestone_id),
+            )
+        elif target_milestone_id:
+            raise ValidationError("A milestone requires a project")
+        elif "project_id" in values:
+            values["milestone_id"] = None
         for key, value in values.items():
             if key == "assignee_id":
                 continue
@@ -557,15 +583,22 @@ class TaskService:
     async def record_activity(self, actor: User, body: DailyActivityCreate) -> DailyActivity:
         if "activity.create_own" not in self.permissions(actor) and not self.can_manage(actor):
             raise AuthorizationError("You cannot record daily activity")
+        task: Task | None = None
         if body.task_id:
-            await self._visible_task(actor, body.task_id)
+            task = await self._visible_task(actor, body.task_id)
         if body.meeting_id:
             await self._meeting(actor.organization_id, body.meeting_id)
+        if body.project_id:
+            await self._project_context(actor, body.project_id, None)
+        if task and body.project_id and task.project_id and body.project_id != task.project_id:
+            raise ValidationError("The activity project does not match the related task")
+        project_id = body.project_id or (task.project_id if task else None)
         row = DailyActivity(
             organization_id=actor.organization_id,
             user_id=actor.id,
             department_id=actor.department_id,
-            **body.model_dump(),
+            project_id=project_id,
+            **body.model_dump(exclude={"project_id"}),
         )
         self.session.add(row)
         await self.session.flush()
@@ -1116,6 +1149,11 @@ class TaskService:
         )
 
     async def _activity(self, task: Task, actor_id: uuid.UUID, event_type: str) -> None:
+        payload: dict[str, object] = {
+            "sequence": task.sequence,
+            "title": task.title,
+            "project_id": str(task.project_id) if task.project_id else None,
+        }
         await self.activity.publish(
             Activity(
                 organization_id=task.organization_id,
@@ -1123,9 +1161,25 @@ class TaskService:
                 event_type=event_type,
                 subject_type="task",
                 subject_id=task.id,
-                payload={"sequence": task.sequence, "title": task.title},
+                payload=payload,
             )
         )
+        if task.project_id and event_type in {
+            "task.completed",
+            "task.status_changed",
+            "task.reopened",
+            "task.updated",
+        }:
+            await self.activity.publish(
+                Activity(
+                    organization_id=task.organization_id,
+                    actor_id=actor_id,
+                    event_type=f"project.{event_type.replace('.', '_')}",
+                    subject_type="project",
+                    subject_id=task.project_id,
+                    payload={"task_id": str(task.id), **payload},
+                )
+            )
 
     def _audit(
         self, actor: User, action: str, resource_id: uuid.UUID, metadata: dict[str, object]
@@ -1188,6 +1242,43 @@ class TaskService:
             {task.department_id for task in tasks if task.department_id},
             {task.meeting_id for task in tasks if task.meeting_id},
         )
+        project_ids = {task.project_id for task in tasks if task.project_id}
+        milestone_ids = {task.milestone_id for task in tasks if task.milestone_id}
+        projects = {
+            row.id: row
+            for row in (
+                list(
+                    (
+                        await self.session.scalars(
+                            select(Project).where(
+                                Project.organization_id == organization_id,
+                                Project.id.in_(project_ids),
+                                Project.deleted_at.is_(None),
+                            )
+                        )
+                    ).all()
+                )
+                if project_ids
+                else []
+            )
+        }
+        milestones = {
+            row.id: row
+            for row in (
+                list(
+                    (
+                        await self.session.scalars(
+                            select(ProjectMilestone).where(
+                                ProjectMilestone.organization_id == organization_id,
+                                ProjectMilestone.id.in_(milestone_ids),
+                            )
+                        )
+                    ).all()
+                )
+                if milestone_ids
+                else []
+            )
+        }
         today = datetime.now(UTC).date()
         responses: list[TaskResponse] = []
         for task in tasks:
@@ -1212,6 +1303,14 @@ class TaskService:
                         "assignee_name": assignee.display_name,
                         "department_name": department.name if department else None,
                         "meeting_title": meeting.title if meeting else None,
+                        "project_name": (
+                            projects[task.project_id].name if task.project_id in projects else None
+                        ),
+                        "milestone_name": (
+                            milestones[task.milestone_id].name
+                            if task.milestone_id in milestones
+                            else None
+                        ),
                     }
                 )
             )
@@ -1273,6 +1372,46 @@ class TaskService:
             {row.id: row for row in departments},
             {row.id: row for row in meetings},
         )
+
+    async def _project_context(
+        self,
+        actor: User,
+        project_id: uuid.UUID,
+        milestone_id: uuid.UUID | None,
+    ) -> Project:
+        project = await self.session.scalar(
+            select(Project).where(
+                Project.id == project_id,
+                Project.organization_id == actor.organization_id,
+                Project.deleted_at.is_(None),
+            )
+        )
+        if project is None:
+            raise NotFoundError("Project not found")
+        permissions = self.permissions(actor)
+        if (
+            project.visibility == "members"
+            and project.project_manager_id != actor.id
+            and "projects.edit" not in permissions
+            and "tasks.manage" not in permissions
+            and not await self.session.scalar(
+                select(ProjectMember.id).where(
+                    ProjectMember.project_id == project.id,
+                    ProjectMember.organization_id == actor.organization_id,
+                    ProjectMember.user_id == actor.id,
+                )
+            )
+        ):
+            raise AuthorizationError("You cannot access this project")
+        if milestone_id and not await self.session.scalar(
+            select(ProjectMilestone.id).where(
+                ProjectMilestone.id == milestone_id,
+                ProjectMilestone.project_id == project.id,
+                ProjectMilestone.organization_id == actor.organization_id,
+            )
+        ):
+            raise NotFoundError("Project milestone not found")
+        return project
 
     async def _comment_response(self, row: TaskComment) -> TaskCommentResponse:
         return (await self._comment_responses([row]))[0]

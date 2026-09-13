@@ -24,6 +24,8 @@ export interface Task {
   team_id: string | null
   meeting_id: string | null
   meeting_action_item_id: string | null
+  project_id: string | null
+  milestone_id: string | null
   start_date: string | null
   due_date: string | null
   completed_at: string | null
@@ -37,6 +39,8 @@ export interface Task {
   assignee_name: string | null
   department_name: string | null
   meeting_title: string | null
+  project_name: string | null
+  milestone_name: string | null
 }
 
 export interface TaskPage {
@@ -100,6 +104,7 @@ export interface DailyActivity {
   summary: string
   task_id: string | null
   meeting_id: string | null
+  project_id: string | null
   duration_minutes: number | null
   outcome: string | null
   blockers: string | null

@@ -216,6 +216,16 @@ const TasksPage = lazy(() =>
     default: module.TasksPage,
   })),
 )
+const ProjectsPage = lazy(() =>
+  import('@/features/projects/projects-page').then((module) => ({
+    default: module.ProjectsPage,
+  })),
+)
+const ProjectDetailPage = lazy(() =>
+  import('@/features/projects/project-detail-page').then((module) => ({
+    default: module.ProjectDetailPage,
+  })),
+)
 const LeavePage = lazy(() =>
   import('@/features/leave/leave-page').then((module) => ({
     default: module.LeavePage,
@@ -324,6 +334,16 @@ const protectedPages = [
     getParentRoute: () => appShellRoute,
     path: '/tasks',
     component: TasksPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/projects',
+    component: ProjectsPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/projects/$projectId',
+    component: ProjectDetailPage,
   }),
   createRoute({
     getParentRoute: () => appShellRoute,

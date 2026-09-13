@@ -8,6 +8,7 @@ import {
   Clock3,
   Bell,
   Plus,
+  FolderKanban,
   Users,
   Video,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ import { FinanceWidget } from '@/features/finance/finance-widget'
 import { leaveApi } from '@/features/leave/api'
 import { meetingApi } from '@/features/meetings/api'
 import { notificationApi } from '@/features/notifications/api'
+import { projectsApi } from '@/features/projects/api'
 import { tasksApi } from '@/features/tasks/api'
 import { useAuth } from '@/features/auth/auth-store'
 import { humanizeEvent } from '@/lib/activity'
@@ -51,6 +53,7 @@ export function DashboardPage() {
   const { user } = useAuth()
   const permissions = new Set(user?.permissions ?? [])
   const canViewWork = permissions.has('tasks.view_own')
+  const canViewProjects = permissions.has('projects.view')
   const greetingName = user?.display_name ?? user?.first_name ?? 'there'
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: getDashboard })
   const meetings = useQuery({
@@ -66,23 +69,32 @@ export function DashboardPage() {
     queryFn: () => tasksApi.list({ scope: 'mine', page: 1, page_size: 5 }),
     enabled: canViewWork,
   })
+  const projects = useQuery({
+    queryKey: ['dashboard-projects'],
+    queryFn: () =>
+      projectsApi.list({ status: 'active', page: 1, page_size: 10 }),
+    enabled: canViewProjects,
+  })
   const loading =
     dashboard.isLoading ||
     meetings.isLoading ||
     notifications.isLoading ||
-    (canViewWork && work.isLoading)
+    (canViewWork && work.isLoading) ||
+    (canViewProjects && projects.isLoading)
   const error =
     dashboard.isError ||
     meetings.isError ||
     notifications.isError ||
-    (canViewWork && work.isError)
+    (canViewWork && work.isError) ||
+    (canViewProjects && projects.isError)
   if (loading) return <DashboardSkeleton />
   if (
     error ||
     !dashboard.data ||
     !meetings.data ||
     !notifications.data ||
-    (canViewWork && !work.data)
+    (canViewWork && !work.data) ||
+    (canViewProjects && !projects.data)
   )
     return (
       <div
@@ -162,6 +174,53 @@ export function DashboardPage() {
 
       {permissions.has('leave.view_own') && (
         <LeaveDashboardStrip manager={permissions.has('leave.view_team')} />
+      )}
+
+      {canViewProjects && projects.data && (
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold">
+                <FolderKanban className="size-5 text-primary" /> Active projects
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Deadlines and delivery health that need attention.
+              </p>
+            </div>
+            <Link className="text-sm font-semibold text-primary" to="/projects">
+              View projects
+            </Link>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {projects.data.items.slice(0, 3).map((project) => (
+              <Link
+                key={project.id}
+                className="rounded-xl border p-4 hover:bg-muted/50"
+                to="/projects/$projectId"
+                params={{ projectId: project.id }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <strong>{project.name}</strong>
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">
+                    {project.health.replace('_', ' ')}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {project.progress}% complete · {project.overdue_task_count}{' '}
+                  overdue
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Target {project.target_end_date ?? 'not set'}
+                </p>
+              </Link>
+            ))}
+            {!projects.data.items.length && (
+              <p className="text-sm text-muted-foreground">
+                No active projects are visible to you.
+              </p>
+            )}
+          </div>
+        </section>
       )}
 
       {canViewWork && work.data && (

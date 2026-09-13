@@ -8,6 +8,7 @@ const labels: Record<string, string> = {
   vouchers: 'Vouchers',
   finance: 'Finance Center',
   payroll: 'Payroll',
+  projects: 'Projects',
   leave: 'Leave',
   team: 'Team Leave',
   accounts: 'Accounts',
@@ -55,6 +56,7 @@ const icons: Record<string, string> = {
   profile: 'user',
   leave: 'calendar-range',
   payroll: 'wallet-cards',
+  projects: 'folder-kanban',
 }
 
 const administrationRoutes = new Set([
@@ -123,11 +125,13 @@ export function resolveBreadcrumbs(
             ? 'Team Details'
             : parent === 'workspaces'
               ? 'Workspace Details'
-              : parent === 'mail'
-                ? 'Message'
-                : parent === 'chat'
-                  ? 'Conversation'
-                  : 'Details'
+              : parent === 'projects'
+                ? 'Project Overview'
+                : parent === 'mail'
+                  ? 'Message'
+                  : parent === 'chat'
+                    ? 'Conversation'
+                    : 'Details'
     }
     if (part === 'edit') label = 'Edit'
     if (part === 'new') label = root === 'meetings' ? 'Schedule Meeting' : 'New'

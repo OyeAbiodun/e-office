@@ -22,6 +22,8 @@ class TaskCreate(BaseModel):
     team_id: uuid.UUID | None = None
     meeting_id: uuid.UUID | None = None
     meeting_action_item_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+    milestone_id: uuid.UUID | None = None
     start_date: date | None = None
     reminder_at: datetime | None = None
     follow_up_at: datetime | None = None
@@ -42,6 +44,8 @@ class TaskUpdate(BaseModel):
     reminder_at: datetime | None = None
     follow_up_at: datetime | None = None
     tags: list[str] | None = Field(default=None, max_length=20)
+    project_id: uuid.UUID | None = None
+    milestone_id: uuid.UUID | None = None
 
 
 class TaskCommentCreate(BaseModel):
@@ -64,6 +68,7 @@ class DailyActivityCreate(BaseModel):
     summary: str = Field(min_length=1, max_length=20000)
     task_id: uuid.UUID | None = None
     meeting_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
     duration_minutes: int | None = Field(default=None, ge=1, le=1440)
     outcome: str | None = Field(default=None, max_length=10000)
     blockers: str | None = Field(default=None, max_length=10000)
@@ -87,6 +92,8 @@ class TaskResponse(BaseModel):
     team_id: uuid.UUID | None
     meeting_id: uuid.UUID | None
     meeting_action_item_id: uuid.UUID | None
+    project_id: uuid.UUID | None
+    milestone_id: uuid.UUID | None
     start_date: date | None
     due_date: date | None
     completed_at: datetime | None
@@ -100,6 +107,8 @@ class TaskResponse(BaseModel):
     assignee_name: str | None = None
     department_name: str | None = None
     meeting_title: str | None = None
+    project_name: str | None = None
+    milestone_name: str | None = None
 
 
 class TaskPage(BaseModel):
@@ -180,6 +189,7 @@ class DailyActivityResponse(BaseModel):
     department_id: uuid.UUID | None
     task_id: uuid.UUID | None
     meeting_id: uuid.UUID | None
+    project_id: uuid.UUID | None
     activity_date: date
     summary: str
     duration_minutes: int | None

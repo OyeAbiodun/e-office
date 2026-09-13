@@ -25,6 +25,9 @@ const steps = [
 ]
 
 export function CreateMeetingPage() {
+  const projectId = new URLSearchParams(window.location.search).get(
+    'project_id',
+  )
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const workspaces = useQuery({
@@ -93,6 +96,7 @@ export function CreateMeetingPage() {
     try {
       const meeting = await meetingApi.create({
         ...form,
+        project_id: projectId,
         agenda: form.agenda.filter(Boolean).join('\n') || null,
         recurrence:
           form.recurrence_frequency === 'none'

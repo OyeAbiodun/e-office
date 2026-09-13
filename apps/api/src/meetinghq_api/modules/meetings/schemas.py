@@ -17,6 +17,7 @@ class MeetingCreate(BaseModel):
     workspace_id: uuid.UUID
     calendar_id: uuid.UUID | None = None
     meeting_template_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
     title: str = Field(min_length=1, max_length=240)
     description: str | None = Field(default=None, max_length=8000)
     agenda: str | None = Field(default=None, max_length=16000)
@@ -49,6 +50,7 @@ class MeetingUpdate(BaseModel):
     meeting_url: str | None = None
     location: str | None = Field(default=None, max_length=500)
     visibility: str | None = None
+    project_id: uuid.UUID | None = None
 
 
 class MeetingResponse(OrmModel):
@@ -57,6 +59,7 @@ class MeetingResponse(OrmModel):
     workspace_id: uuid.UUID
     calendar_event_id: uuid.UUID | None
     meeting_template_id: uuid.UUID | None
+    project_id: uuid.UUID | None
     title: str
     description: str | None
     agenda_text: str | None = None

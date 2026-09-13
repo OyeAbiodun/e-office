@@ -116,6 +116,17 @@ class Permissions:
     PAYROLL_LOANS_MANAGE = "payroll.loans.manage"
     PAYROLL_REPORTS_VIEW = "payroll.reports.view"
     PAYROLL_EXPORT = "payroll.export"
+    PROJECTS_VIEW = "projects.view"
+    PROJECTS_CREATE = "projects.create"
+    PROJECTS_EDIT = "projects.edit"
+    PROJECTS_ARCHIVE = "projects.archive"
+    PROJECTS_MANAGE_MEMBERS = "projects.manage_members"
+    PROJECTS_MANAGE_MILESTONES = "projects.manage_milestones"
+    PROJECTS_MANAGE_RISKS = "projects.manage_risks"
+    PROJECTS_MANAGE_ISSUES = "projects.manage_issues"
+    PROJECTS_MANAGE_FILES = "projects.manage_files"
+    PROJECTS_GENERATE_REPORTS = "projects.generate_reports"
+    PROJECTS_VIEW_REPORTS = "projects.view_reports"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -287,6 +298,23 @@ _PAYROLL_PERMISSION_CATALOG = tuple(
     )
 )
 
+_PROJECT_PERMISSION_CATALOG = tuple(
+    PermissionDefinition(name, "projects", action, description)
+    for name, action, description in (
+        (Permissions.PROJECTS_VIEW, "view", "View authorized projects"),
+        (Permissions.PROJECTS_CREATE, "create", "Create projects"),
+        (Permissions.PROJECTS_EDIT, "edit", "Manage organization projects"),
+        (Permissions.PROJECTS_ARCHIVE, "archive", "Archive completed projects"),
+        (Permissions.PROJECTS_MANAGE_MEMBERS, "manage_members", "Manage project members"),
+        (Permissions.PROJECTS_MANAGE_MILESTONES, "manage_milestones", "Manage project milestones"),
+        (Permissions.PROJECTS_MANAGE_RISKS, "manage_risks", "Manage project risks"),
+        (Permissions.PROJECTS_MANAGE_ISSUES, "manage_issues", "Manage project issues"),
+        (Permissions.PROJECTS_MANAGE_FILES, "manage_files", "Manage project files"),
+        (Permissions.PROJECTS_GENERATE_REPORTS, "generate_reports", "Generate project reports"),
+        (Permissions.PROJECTS_VIEW_REPORTS, "view_reports", "View project reports"),
+    )
+)
+
 MVP_PERMISSION_RESOURCES = (
     "dashboard",
     "calendar",
@@ -319,6 +347,7 @@ PERMISSION_CATALOG = tuple(
             *_FINANCE_PERMISSION_CATALOG,
             *_LEAVE_PERMISSION_CATALOG,
             *_PAYROLL_PERMISSION_CATALOG,
+            *_PROJECT_PERMISSION_CATALOG,
             *MVP_PERMISSION_CATALOG,
         )
     }.values()
@@ -334,6 +363,7 @@ _legacy_admin = frozenset(item.name for item in _LEGACY_PERMISSION_CATALOG)
 _finance_admin = frozenset(item.name for item in _FINANCE_PERMISSION_CATALOG)
 _leave_admin = frozenset(item.name for item in _LEAVE_PERMISSION_CATALOG)
 _payroll_admin = frozenset(item.name for item in _PAYROLL_PERMISSION_CATALOG)
+_project_admin = frozenset(item.name for item in _PROJECT_PERMISSION_CATALOG)
 _task_employee = frozenset(
     {
         Permissions.TASKS_VIEW_OWN,
@@ -382,6 +412,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     | _finance_admin
     | _leave_admin
     | _payroll_admin
+    | _project_admin
     | _matrix(set(MVP_PERMISSION_RESOURCES)),
     "Meeting Organizer": _meeting_operator
     | _matrix({"dashboard"}, {"view"})
@@ -457,7 +488,28 @@ ROLE_PERMISSIONS["Team Manager"] |= (
     | _matrix({"users", "reports", "settings"}, {"view"})
 )
 ROLE_PERMISSIONS["Team Manager"] |= _task_manager
+ROLE_PERMISSIONS["Team Manager"] |= frozenset(
+    {
+        Permissions.PROJECTS_VIEW,
+        Permissions.PROJECTS_CREATE,
+        Permissions.PROJECTS_EDIT,
+        Permissions.PROJECTS_MANAGE_MEMBERS,
+        Permissions.PROJECTS_MANAGE_MILESTONES,
+        Permissions.PROJECTS_MANAGE_RISKS,
+        Permissions.PROJECTS_MANAGE_ISSUES,
+        Permissions.PROJECTS_MANAGE_FILES,
+        Permissions.PROJECTS_GENERATE_REPORTS,
+        Permissions.PROJECTS_VIEW_REPORTS,
+    }
+)
 ROLE_PERMISSIONS["Meeting Organizer"] |= _task_manager
+ROLE_PERMISSIONS["Meeting Organizer"] |= frozenset(
+    {
+        Permissions.PROJECTS_VIEW,
+        Permissions.PROJECTS_CREATE,
+        Permissions.PROJECTS_VIEW_REPORTS,
+    }
+)
 ROLE_PERMISSIONS["Team Manager"] |= frozenset(
     {
         Permissions.LEAVE_VIEW_OWN,
@@ -483,6 +535,9 @@ _voucher_employee = frozenset(
     }
 )
 ROLE_PERMISSIONS["Employee"] |= _voucher_employee
+ROLE_PERMISSIONS["Employee"] |= frozenset(
+    {Permissions.PROJECTS_VIEW, Permissions.PROJECTS_VIEW_REPORTS}
+)
 ROLE_PERMISSIONS["Employee"] |= frozenset(
     {Permissions.PAYROLL_VIEW_OWN, Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN}
 )
@@ -523,6 +578,8 @@ ROLE_PERMISSIONS["Auditor"] = _matrix({"dashboard", "notifications"}, {"view"}) 
         Permissions.PAYROLL_VIEW_EMPLOYEE,
         Permissions.PAYROLL_REPORTS_VIEW,
         Permissions.PAYROLL_EXPORT,
+        Permissions.PROJECTS_VIEW,
+        Permissions.PROJECTS_VIEW_REPORTS,
     }
 )
 
