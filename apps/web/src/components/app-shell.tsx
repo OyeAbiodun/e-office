@@ -76,6 +76,9 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNav
           breadcrumbs={crumbs}
+          canViewNotifications={Boolean(
+            user?.permissions.includes('notifications.view'),
+          )}
           onCommand={() => setPanel('command')}
           onHelp={() => setHelpOpen(true)}
           onMobileNavigation={() => setMobileOpen(true)}

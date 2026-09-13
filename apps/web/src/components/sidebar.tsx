@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
+import { useAuth } from '@/features/auth/auth-store'
 import { mailApi } from '@/features/mail/api'
 import { notificationApi } from '@/features/notifications/api'
 import { organizationApi } from '@/features/organizations/api'
@@ -64,6 +65,8 @@ export function Sidebar({
   onCloseMobile,
   onToggle,
 }: SidebarProps) {
+  const { user } = useAuth()
+  const permissions = new Set(user?.permissions ?? [])
   const navigate = useNavigate()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -74,10 +77,12 @@ export function Sidebar({
   const organization = useQuery({
     queryKey: ['organization'],
     queryFn: organizationApi.organization,
+    enabled: permissions.has('organizations.read'),
   })
   const workspaces = useQuery({
     queryKey: ['workspaces'],
     queryFn: organizationApi.workspaces,
+    enabled: permissions.has('workspaces.read'),
   })
   const navigation = useQuery({
     queryKey: ['platform-navigation'],
@@ -86,11 +91,13 @@ export function Sidebar({
   const notificationSummary = useQuery({
     queryKey: ['notifications', 'shell-summary'],
     queryFn: notificationApi.list,
+    enabled: permissions.has('notifications.view'),
     refetchInterval: 10_000,
   })
   const mailSummary = useQuery({
     queryKey: ['mail-messages', 'inbox', 'shell-summary'],
     queryFn: () => mailApi.messages({ folder: 'inbox', page: 1, pageSize: 10 }),
+    enabled: permissions.has('mail.view'),
     refetchInterval: 15_000,
   })
   const label = organization.data?.name ?? 'MeetingHQ'

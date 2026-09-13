@@ -34,6 +34,7 @@ interface TopNavProps {
   onHelp?: () => void
   onNotifications: () => void
   onQuickCreate: () => void
+  canViewNotifications?: boolean
 }
 
 export function TopNav({
@@ -43,10 +44,12 @@ export function TopNav({
   onHelp,
   onNotifications,
   onQuickCreate,
+  canViewNotifications = true,
 }: TopNavProps) {
   const notifications = useQuery({
     queryKey: ['notifications', 'top-navigation'],
     queryFn: notificationApi.list,
+    enabled: canViewNotifications,
     refetchInterval: 10_000,
   })
   const unread = notifications.data?.unread ?? 0
