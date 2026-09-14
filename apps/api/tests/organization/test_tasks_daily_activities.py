@@ -47,11 +47,12 @@ async def test_self_task_activity_history_and_filters(
     )
     assert comment.status_code == 201, comment.text
 
+    prior_day = date.today() - timedelta(days=1)
     activity = await organization_client.post(
         "/api/v1/tasks/activities",
         headers=admin_headers,
         json={
-            "activity_date": date.today().isoformat(),
+            "activity_date": prior_day.isoformat(),
             "summary": "Prepared the weekly update draft.",
             "task_id": task["id"],
             "duration_minutes": 45,
@@ -59,6 +60,32 @@ async def test_self_task_activity_history_and_filters(
         },
     )
     assert activity.status_code == 201, activity.text
+    activity_data = activity.json()["data"]
+    edited_activity = await organization_client.patch(
+        f"/api/v1/tasks/activities/{activity_data['id']}",
+        headers=admin_headers,
+        json={
+            "summary": "Prepared and validated the weekly update draft.",
+            "outcome": "The final reporting evidence is ready.",
+            "duration_minutes": 60,
+        },
+    )
+    assert edited_activity.status_code == 200, edited_activity.text
+    edited_data = edited_activity.json()["data"]
+    assert edited_data["activity_date"] == prior_day.isoformat()
+    assert edited_data["summary"] == "Prepared and validated the weekly update draft."
+    assert edited_data["created_at"] == activity_data["created_at"]
+    assert edited_data["updated_at"] >= activity_data["updated_at"]
+
+    future_activity = await organization_client.post(
+        "/api/v1/tasks/activities",
+        headers=admin_headers,
+        json={
+            "activity_date": (date.today() + timedelta(days=1)).isoformat(),
+            "summary": "This record must not be accepted.",
+        },
+    )
+    assert future_activity.status_code == 422, future_activity.text
 
     listed = await organization_client.get(
         "/api/v1/tasks?scope=mine&priority=high&page=1&page_size=10",
@@ -76,7 +103,7 @@ async def test_self_task_activity_history_and_filters(
     }
 
     summary = await organization_client.get(
-        f"/api/v1/tasks/summary/daily?summary_date={date.today().isoformat()}",
+        f"/api/v1/tasks/summary/daily?summary_date={prior_day.isoformat()}",
         headers=admin_headers,
     )
     assert summary.status_code == 200, summary.text
@@ -207,6 +234,7 @@ async def test_tasks_are_tenant_isolated(
         json={"activity_date": date.today().isoformat(), "summary": "Private work"},
     )
     assert activity.status_code == 201, activity.text
+    activity_id = activity.json()["data"]["id"]
 
     invisible = await organization_client.get(f"/api/v1/tasks/{task_id}", headers=admin_headers)
     assert invisible.status_code == 404
@@ -241,6 +269,12 @@ async def test_tasks_are_tenant_isolated(
         f"/api/v1/tasks/activities?user_id={other_identity['user']['id']}", headers=admin_headers
     )
     assert cross_tenant_activity.status_code == 404
+    cross_tenant_activity_edit = await organization_client.patch(
+        f"/api/v1/tasks/activities/{activity_id}",
+        headers=admin_headers,
+        json={"summary": "Tenant probe"},
+    )
+    assert cross_tenant_activity_edit.status_code == 404
     cross_tenant_assignment = await organization_client.post(
         "/api/v1/tasks",
         headers=admin_headers,

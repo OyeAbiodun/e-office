@@ -28,6 +28,7 @@ from meetinghq_api.modules.tasks.models import (
 from meetinghq_api.modules.tasks.schemas import (
     DailyActivityCreate,
     DailyActivityResponse,
+    DailyActivityUpdate,
     DailySummary,
     TaskAssigneeResponse,
     TaskAttachmentResponse,
@@ -581,8 +582,11 @@ class TaskService:
         return comment
 
     async def record_activity(self, actor: User, body: DailyActivityCreate) -> DailyActivity:
-        if "activity.create_own" not in self.permissions(actor) and not self.can_manage(actor):
+        permissions = self.permissions(actor)
+        if "activity.create_own" not in permissions and "activity.manage" not in permissions:
             raise AuthorizationError("You cannot record daily activity")
+        if body.activity_date > datetime.now(UTC).date():
+            raise ValidationError("Daily activity cannot be recorded for a future date")
         task: Task | None = None
         if body.task_id:
             task = await self._visible_task(actor, body.task_id)
@@ -618,6 +622,80 @@ class TaskService:
             "daily_activity.recorded",
             row.id,
             {"activity_date": row.activity_date.isoformat()},
+            resource="daily_activity",
+        )
+        return row
+
+    async def update_activity(
+        self, actor: User, activity_id: uuid.UUID, body: DailyActivityUpdate
+    ) -> DailyActivity:
+        row = await self.session.scalar(
+            select(DailyActivity).where(
+                DailyActivity.id == activity_id,
+                DailyActivity.organization_id == actor.organization_id,
+                DailyActivity.deleted_at.is_(None),
+            )
+        )
+        if row is None:
+            raise NotFoundError("Daily activity not found")
+        permissions = self.permissions(actor)
+        if row.user_id != actor.id:
+            if "activity.manage" not in permissions:
+                raise AuthorizationError("You cannot edit this employee's activity")
+            await self._assert_visible_user(actor, row.user_id, activity=True)
+        elif "activity.edit_own" not in permissions and "activity.manage" not in permissions:
+            raise AuthorizationError("You cannot edit daily activity")
+
+        changes = body.model_dump(exclude_unset=True)
+        if any(
+            field in changes and changes[field] is None
+            for field in ("activity_date", "summary", "visibility")
+        ):
+            raise ValidationError("Activity date, summary, and visibility cannot be cleared")
+        activity_date = changes.get("activity_date")
+        if isinstance(activity_date, date) and activity_date > datetime.now(UTC).date():
+            raise ValidationError("Daily activity cannot be recorded for a future date")
+
+        task: Task | None = None
+        task_id = changes.get("task_id", row.task_id)
+        if isinstance(task_id, uuid.UUID):
+            task = await self._visible_task(actor, task_id)
+        meeting_id = changes.get("meeting_id", row.meeting_id)
+        if isinstance(meeting_id, uuid.UUID):
+            await self._meeting(actor.organization_id, meeting_id)
+        project_id = changes.get("project_id", row.project_id)
+        if isinstance(project_id, uuid.UUID):
+            await self._project_context(actor, project_id, None)
+        if task and project_id and task.project_id and project_id != task.project_id:
+            raise ValidationError("The activity project does not match the related task")
+        if "task_id" in changes and "project_id" not in changes and task is not None:
+            changes["project_id"] = task.project_id
+
+        changed_fields: list[str] = []
+        for field, value in changes.items():
+            if getattr(row, field) != value:
+                setattr(row, field, value)
+                changed_fields.append(field)
+        if not changed_fields:
+            return row
+        await self.session.flush()
+        await self.session.refresh(row)
+        await self.activity.publish(
+            Activity(
+                organization_id=actor.organization_id,
+                actor_id=actor.id,
+                event_type="daily_activity.edited",
+                subject_type="daily_activity",
+                subject_id=row.id,
+                payload={"changed_fields": changed_fields},
+            )
+        )
+        self._audit(
+            actor,
+            "daily_activity.edited",
+            row.id,
+            {"changed_fields": changed_fields},
+            resource="daily_activity",
         )
         return row
 
@@ -1009,7 +1087,7 @@ class TaskService:
         if user_id == actor.id:
             return
         target = await self._active_user(actor.organization_id, user_id, allow_inactive=True)
-        if self.can_manage(actor):
+        if self.can_manage(actor) or (activity and "activity.manage" in self.permissions(actor)):
             return
         prefixes = "activity" if activity else "tasks"
         if target.manager_id == actor.id and f"{prefixes}.view_team" in self.permissions(actor):
@@ -1182,14 +1260,20 @@ class TaskService:
             )
 
     def _audit(
-        self, actor: User, action: str, resource_id: uuid.UUID, metadata: dict[str, object]
+        self,
+        actor: User,
+        action: str,
+        resource_id: uuid.UUID,
+        metadata: dict[str, object],
+        *,
+        resource: str = "task",
     ) -> None:
         self.session.add(
             AuditLog(
                 organization_id=actor.organization_id,
                 user_id=actor.id,
                 action=action,
-                resource="task",
+                resource=resource,
                 resource_id=resource_id,
                 audit_metadata=metadata,
             )

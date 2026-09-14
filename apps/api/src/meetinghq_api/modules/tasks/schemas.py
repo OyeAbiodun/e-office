@@ -76,6 +76,19 @@ class DailyActivityCreate(BaseModel):
     visibility: Literal["private", "manager", "department"] = "manager"
 
 
+class DailyActivityUpdate(BaseModel):
+    activity_date: date | None = None
+    summary: str | None = Field(default=None, min_length=1, max_length=20000)
+    task_id: uuid.UUID | None = None
+    meeting_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    outcome: str | None = Field(default=None, max_length=10000)
+    blockers: str | None = Field(default=None, max_length=10000)
+    next_step: str | None = Field(default=None, max_length=10000)
+    visibility: Literal["private", "manager", "department"] | None = None
+
+
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -198,6 +211,7 @@ class DailyActivityResponse(BaseModel):
     next_step: str | None
     visibility: str
     created_at: datetime
+    updated_at: datetime
     user_name: str | None = None
 
 

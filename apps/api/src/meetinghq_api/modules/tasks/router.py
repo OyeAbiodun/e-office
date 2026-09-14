@@ -15,12 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings, get_settings
 from meetinghq_api.infrastructure.database import get_database_session
-from meetinghq_api.modules.auth.presentation.dependencies import require_permission
+from meetinghq_api.modules.auth.presentation.dependencies import (
+    require_any_permission,
+    require_permission,
+)
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.storage.local import LocalStorageProvider
 from meetinghq_api.modules.tasks.schemas import (
     DailyActivityCreate,
     DailyActivityResponse,
+    DailyActivityUpdate,
     DailySummary,
     TaskAssigneeResponse,
     TaskAttachmentResponse,
@@ -46,6 +50,17 @@ Session = Annotated[AsyncSession, Depends(get_database_session)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 TaskReader = Annotated[User, require_permission("tasks.view_own")]
 TaskCreator = Annotated[User, require_permission("tasks.create_own")]
+ActivityReader = Annotated[
+    User,
+    require_any_permission(
+        "activity.view_own",
+        "activity.view_team",
+        "activity.view_department",
+        "activity.manage",
+    ),
+]
+ActivityCreator = Annotated[User, require_any_permission("activity.create_own", "activity.manage")]
+ActivityEditor = Annotated[User, require_any_permission("activity.edit_own", "activity.manage")]
 TaskUpload = Annotated[UploadFile, File()]
 ALLOWED_ATTACHMENT_TYPES = {
     "application/pdf",
@@ -139,7 +154,7 @@ async def task_assignees(
 async def activities(
     session: Session,
     settings: AppSettings,
-    user: TaskReader,
+    user: ActivityReader,
     user_id: uuid.UUID | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=10, le=100),
@@ -151,10 +166,24 @@ async def activities(
 
 @router.post("/activities", response_model=DailyActivityResponse, status_code=201)
 async def record_daily_activity(
-    body: DailyActivityCreate, session: Session, settings: AppSettings, user: TaskCreator
+    body: DailyActivityCreate, session: Session, settings: AppSettings, user: ActivityCreator
 ) -> DailyActivityResponse:
     task_service = service(session, settings)
     return await task_service._activity_response(await task_service.record_activity(user, body))
+
+
+@router.patch("/activities/{activity_id}", response_model=DailyActivityResponse)
+async def update_daily_activity(
+    activity_id: uuid.UUID,
+    body: DailyActivityUpdate,
+    session: Session,
+    settings: AppSettings,
+    user: ActivityEditor,
+) -> DailyActivityResponse:
+    task_service = service(session, settings)
+    return await task_service._activity_response(
+        await task_service.update_activity(user, activity_id, body)
+    )
 
 
 @router.get("/summary/daily", response_model=DailySummary)

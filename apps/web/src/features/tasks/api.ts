@@ -100,6 +100,7 @@ export interface TaskChecklistItem {
 
 export interface DailyActivity {
   id: string
+  user_id: string
   activity_date: string
   summary: string
   task_id: string | null
@@ -111,6 +112,8 @@ export interface DailyActivity {
   next_step: string | null
   visibility: string
   user_name: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface DailySummary {
@@ -236,6 +239,12 @@ export const tasksApi = {
     apiRequest<DailyActivity>(
       '/tasks/activities',
       { method: 'POST', body: JSON.stringify(body) },
+      true,
+    ),
+  updateActivity: (id: string, body: Record<string, unknown>) =>
+    apiRequest<DailyActivity>(
+      `/tasks/activities/${id}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
       true,
     ),
 }

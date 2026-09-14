@@ -162,18 +162,6 @@ test('reporting workflow is reviewable, permission-scoped, automated, and respon
   })
   expect(taskResponse.ok(), await taskResponse.text()).toBeTruthy()
   const task = unwrap<Entity>(await taskResponse.json())
-  const activity = await request.post(`${apiBase}/tasks/activities`, {
-    headers: employeeApi.headers,
-    data: {
-      activity_date: today,
-      summary: 'Prepared verified reporting evidence.',
-      task_id: task.id,
-      project_id: project.id,
-      duration_minutes: 45,
-    },
-  })
-  expect(activity.ok(), await activity.text()).toBeTruthy()
-
   const openGeneratedEmployeeReport = async (
     page: Page,
     start: string,
@@ -209,6 +197,39 @@ test('reporting workflow is reviewable, permission-scoped, automated, and respon
     employee.email,
     finalPassword,
   )
+  await employeeBrowser.page.goto('/tasks')
+  await employeeBrowser.page
+    .getByRole('button', { name: 'Log activity' })
+    .click()
+  const activityForm = employeeBrowser.page.getByRole('dialog')
+  await activityForm.getByLabel('Activity date').fill(yesterday)
+  await activityForm
+    .getByLabel('Summary')
+    .fill('Prepared verified reporting evidence.')
+  await activityForm.getByLabel('Related task').selectOption(task.id)
+  await activityForm.getByLabel('Minutes spent').fill('45')
+  await activityForm.getByLabel('Outcome').fill('Evidence package prepared.')
+  await activityForm.getByRole('button', { name: 'Save' }).click()
+  await expect(
+    employeeBrowser.page.getByText('Prepared verified reporting evidence.'),
+  ).toBeVisible()
+  await employeeBrowser.page
+    .getByRole('button', { name: 'Edit activity' })
+    .click()
+  const editActivityForm = employeeBrowser.page.getByRole('dialog')
+  await editActivityForm
+    .getByLabel('Summary')
+    .fill('Prepared and validated reporting evidence.')
+  await editActivityForm
+    .getByLabel('Outcome')
+    .fill('Evidence package validated and ready for review.')
+  await editActivityForm.getByRole('button', { name: 'Save' }).click()
+  await expect(
+    employeeBrowser.page.getByText(
+      'Prepared and validated reporting evidence.',
+    ),
+  ).toBeVisible()
+
   const firstReport = await openGeneratedEmployeeReport(
     employeeBrowser.page,
     today,
@@ -241,6 +262,23 @@ test('reporting workflow is reviewable, permission-scoped, automated, and respon
     employeeBrowser.page,
     yesterday,
     yesterday,
+  )
+  const priorReport = await request.get(`${apiBase}/reports/${secondReport}`, {
+    headers: employeeApi.headers,
+  })
+  expect(priorReport.ok(), await priorReport.text()).toBeTruthy()
+  const priorSnapshot = unwrap<{
+    report: {
+      authoritative_snapshot: {
+        activities: Array<{ summary: string; outcome: string | null }>
+      }
+    }
+  }>(await priorReport.json()).report.authoritative_snapshot
+  expect(priorSnapshot.activities).toContainEqual(
+    expect.objectContaining({
+      summary: 'Prepared and validated reporting evidence.',
+      outcome: 'Evidence package validated and ready for review.',
+    }),
   )
   await saveAndSubmit(
     employeeBrowser.page,

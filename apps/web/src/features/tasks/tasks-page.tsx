@@ -5,6 +5,7 @@ import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
 
 import {
   tasksApi,
+  type DailyActivity,
   type Task,
   type TaskAssignee,
   type TaskDetail as TaskDetailResponse,
@@ -35,6 +36,9 @@ export function TasksPage() {
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
+  const [editingActivity, setEditingActivity] = useState<DailyActivity | null>(
+    null,
+  )
   const [selected, setSelected] = useState<Task | null>(null)
   const [page, setPage] = useState(1)
   const todayDate = new Date().toISOString().slice(0, 10)
@@ -61,6 +65,21 @@ export function TasksPage() {
     queryKey: ['task-weekly-summary', weekStartDate],
     queryFn: () => tasksApi.weeklySummary(weekStartDate),
   })
+  const canViewActivity = [
+    'activity.view_own',
+    'activity.view_team',
+    'activity.view_department',
+    'activity.manage',
+  ].some((permission) => permissions.has(permission))
+  const canCreateActivity =
+    permissions.has('activity.create_own') || permissions.has('activity.manage')
+  const canEditActivity =
+    permissions.has('activity.edit_own') || permissions.has('activity.manage')
+  const activities = useQuery({
+    queryKey: ['task-activities'],
+    queryFn: tasksApi.activities,
+    enabled: canViewActivity,
+  })
   const refresh = () => void client.invalidateQueries({ queryKey: ['tasks'] })
   const update = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
@@ -78,6 +97,16 @@ export function TasksPage() {
     mutationFn: tasksApi.recordActivity,
     onSuccess: () => {
       setShowActivity(false)
+      void client.invalidateQueries({ queryKey: ['task-activities'] })
+      void client.invalidateQueries({ queryKey: ['task-daily-summary'] })
+      void client.invalidateQueries({ queryKey: ['task-weekly-summary'] })
+    },
+  })
+  const updateActivity = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      tasksApi.updateActivity(id, body),
+    onSuccess: () => {
+      setEditingActivity(null)
       void client.invalidateQueries({ queryKey: ['task-activities'] })
       void client.invalidateQueries({ queryKey: ['task-daily-summary'] })
       void client.invalidateQueries({ queryKey: ['task-weekly-summary'] })
@@ -112,13 +141,15 @@ export function TasksPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-xl border bg-card px-4 py-2.5 text-sm font-semibold"
-            onClick={() => setShowActivity(true)}
-            type="button"
-          >
-            Log today
-          </button>
+          {canCreateActivity && (
+            <button
+              className="rounded-xl border bg-card px-4 py-2.5 text-sm font-semibold"
+              onClick={() => setShowActivity(true)}
+              type="button"
+            >
+              Log activity
+            </button>
+          )}
           <button
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
             onClick={() => setShowCreate(true)}
@@ -258,6 +289,92 @@ export function TasksPage() {
           ) : null}
         </article>
       </section>
+      {canViewActivity && (
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold">Recent activity</h2>
+              <p className="text-sm text-muted-foreground">
+                Your dated work record used by daily and weekly reporting.
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {activities.data?.length ?? 0} recent entries
+            </span>
+          </div>
+          {activities.isLoading ? (
+            <div className="mt-4 h-16 animate-pulse rounded-xl bg-muted" />
+          ) : activities.isError ? (
+            <div
+              className="mt-4 rounded-xl border border-destructive/30 p-4 text-sm"
+              role="alert"
+            >
+              Activity history could not be loaded.{' '}
+              <button
+                className="font-semibold text-primary"
+                onClick={() => void activities.refetch()}
+                type="button"
+              >
+                Retry
+              </button>
+            </div>
+          ) : activities.data?.length ? (
+            <div className="mt-4 divide-y">
+              {activities.data.slice(0, 5).map((entry) => (
+                <article
+                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between"
+                  key={entry.id}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <time
+                        className="text-xs font-semibold uppercase tracking-wide text-primary"
+                        dateTime={entry.activity_date}
+                      >
+                        {new Date(
+                          `${entry.activity_date}T00:00:00`,
+                        ).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </time>
+                      {entry.duration_minutes ? (
+                        <span className="text-xs text-muted-foreground">
+                          {entry.duration_minutes} min
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-sm font-medium">{entry.summary}</p>
+                    {entry.blockers ? (
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                        Blocker: {entry.blockers}
+                      </p>
+                    ) : null}
+                  </div>
+                  {canEditActivity && entry.user_id === user?.id ? (
+                    <button
+                      className="self-start rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                      onClick={() => setEditingActivity(entry)}
+                      type="button"
+                    >
+                      Edit activity
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl bg-muted/50 p-6 text-center">
+              <p className="font-medium">No activity recorded yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Capture completed work, outcomes, and blockers when you are
+                ready.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2" aria-label="Task scope">
@@ -411,6 +528,16 @@ export function TasksPage() {
           tasks={rows}
           onClose={() => setShowActivity(false)}
           onSave={(body) => activity.mutate(body)}
+        />
+      )}
+      {editingActivity && (
+        <ActivityForm
+          activity={editingActivity}
+          tasks={rows}
+          onClose={() => setEditingActivity(null)}
+          onSave={(body) =>
+            updateActivity.mutate({ id: editingActivity.id, body })
+          }
         />
       )}
       {selected && (
@@ -690,10 +817,12 @@ function TaskForm({
   )
 }
 function ActivityForm({
+  activity,
   tasks,
   onClose,
   onSave,
 }: {
+  activity?: DailyActivity
   tasks: Task[]
   onClose: () => void
   onSave: (body: Record<string, unknown>) => void
@@ -701,25 +830,48 @@ function ActivityForm({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const optional = (name: string) => {
+      const value = form.get(name)
+      return value || (activity ? null : undefined)
+    }
     onSave({
-      activity_date: new Date().toISOString().slice(0, 10),
+      activity_date: form.get('activity_date'),
       summary: form.get('summary'),
-      task_id: form.get('task_id') || undefined,
+      task_id: optional('task_id'),
       duration_minutes: form.get('duration_minutes')
         ? Number(form.get('duration_minutes'))
-        : undefined,
-      blockers: form.get('blockers') || undefined,
-      next_step: form.get('next_step') || undefined,
+        : activity
+          ? null
+          : undefined,
+      outcome: optional('outcome'),
+      blockers: optional('blockers'),
+      next_step: optional('next_step'),
     })
   }
+  const today = new Date().toISOString().slice(0, 10)
   return (
-    <Dialog title="What did you work on today?" onClose={onClose}>
+    <Dialog
+      title={activity ? 'Edit daily activity' : 'What did you work on?'}
+      onClose={onClose}
+    >
       <form className="space-y-4" onSubmit={submit}>
+        <label className="block text-sm font-medium">
+          Activity date
+          <input
+            className="mt-1 w-full rounded-lg border bg-background p-2"
+            defaultValue={activity?.activity_date ?? today}
+            max={today}
+            name="activity_date"
+            required
+            type="date"
+          />
+        </label>
         <label className="block text-sm font-medium">
           Summary
           <textarea
             autoFocus
             className="mt-1 min-h-24 w-full rounded-lg border bg-background p-2"
+            defaultValue={activity?.summary ?? ''}
             name="summary"
             required
           />
@@ -729,6 +881,7 @@ function ActivityForm({
             Related task
             <select
               className="mt-1 w-full rounded-lg border bg-background p-2"
+              defaultValue={activity?.task_id ?? ''}
               name="task_id"
             >
               <option value="">None</option>
@@ -743,6 +896,7 @@ function ActivityForm({
             Minutes spent
             <input
               className="mt-1 w-full rounded-lg border bg-background p-2"
+              defaultValue={activity?.duration_minutes ?? ''}
               min="1"
               name="duration_minutes"
               type="number"
@@ -750,9 +904,18 @@ function ActivityForm({
           </label>
         </div>
         <label className="block text-sm font-medium">
+          Outcome
+          <textarea
+            className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2"
+            defaultValue={activity?.outcome ?? ''}
+            name="outcome"
+          />
+        </label>
+        <label className="block text-sm font-medium">
           Blockers
           <textarea
             className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2"
+            defaultValue={activity?.blockers ?? ''}
             name="blockers"
           />
         </label>
@@ -760,6 +923,7 @@ function ActivityForm({
           Next step
           <input
             className="mt-1 w-full rounded-lg border bg-background p-2"
+            defaultValue={activity?.next_step ?? ''}
             name="next_step"
           />
         </label>

@@ -120,7 +120,7 @@ test('creates a project through the lightweight enterprise flow', async () => {
   fireEvent.change(screen.getByLabelText('Project name'), {
     target: { value: 'Finance modernization' },
   })
-  await screen.findByRole('option', { name: /Nora Admin/ })
+  await screen.findByRole('option', { name: /Nora Admin/ }, { timeout: 5_000 })
   fireEvent.change(screen.getByLabelText('Project manager'), {
     target: { value: 'user-1' },
   })

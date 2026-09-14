@@ -10,13 +10,23 @@ const mocks = vi.hoisted(() => ({
   assignees: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  activities: vi.fn(),
   recordActivity: vi.fn(),
+  updateActivity: vi.fn(),
 }))
 
 vi.mock('@/features/auth/auth-store', () => ({
   useAuth: () => ({
     user: {
-      permissions: ['tasks.view_own', 'tasks.create_own', 'tasks.edit_own'],
+      id: 'user-1',
+      permissions: [
+        'tasks.view_own',
+        'tasks.create_own',
+        'tasks.edit_own',
+        'activity.view_own',
+        'activity.create_own',
+        'activity.edit_own',
+      ],
     },
   }),
 }))
@@ -29,7 +39,9 @@ vi.mock('@/features/tasks/api', () => ({
     weeklySummary: mocks.weeklySummary,
     create: mocks.create,
     update: mocks.update,
+    activities: mocks.activities,
     recordActivity: mocks.recordActivity,
+    updateActivity: mocks.updateActivity,
     get: vi.fn(),
     comment: vi.fn(),
   },
@@ -102,8 +114,80 @@ beforeEach(() => {
     workload: [],
   })
   mocks.assignees.mockResolvedValue([])
+  mocks.activities.mockResolvedValue([
+    {
+      id: 'activity-1',
+      user_id: 'user-1',
+      activity_date: '2026-09-04',
+      summary: 'Prepared the customer review evidence.',
+      task_id: 'task-1',
+      meeting_id: null,
+      project_id: null,
+      duration_minutes: 30,
+      outcome: null,
+      blockers: null,
+      next_step: 'Share the final review.',
+      visibility: 'manager',
+      user_name: 'Taylor Example',
+      created_at: '2026-09-04T09:00:00Z',
+      updated_at: '2026-09-04T09:00:00Z',
+    },
+  ])
   mocks.create.mockResolvedValue({ id: 'task-created' })
+  mocks.updateActivity.mockResolvedValue({ id: 'activity-1' })
 })
+
+test('records a prior-day activity and edits it from the same work history', async () => {
+  renderPage()
+
+  expect(
+    await screen.findByText('Prepared the customer review evidence.'),
+  ).toBeVisible()
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Log activity' }))
+  })
+  const createDialog = await screen.findByRole('dialog')
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Activity date'), {
+      target: { value: '2026-09-03' },
+    })
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Completed prior-day validation.' },
+    })
+    fireEvent.click(
+      createDialog.querySelector('button[type="submit"]') as HTMLButtonElement,
+    )
+  })
+  await vi.waitFor(() => expect(mocks.recordActivity).toHaveBeenCalledTimes(1))
+  expect(mocks.recordActivity.mock.calls[0]?.[0]).toEqual(
+    expect.objectContaining({
+      activity_date: '2026-09-03',
+      summary: 'Completed prior-day validation.',
+    }),
+  )
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Edit activity' }))
+  })
+  const editDialog = await screen.findByRole('dialog')
+  const editSummary = screen.getByLabelText('Summary')
+  expect(editSummary).toHaveValue('Prepared the customer review evidence.')
+  await act(async () => {
+    fireEvent.change(editSummary, {
+      target: { value: 'Prepared and validated the customer review evidence.' },
+    })
+    fireEvent.click(
+      editDialog.querySelector('button[type="submit"]') as HTMLButtonElement,
+    )
+  })
+  await vi.waitFor(() => expect(mocks.updateActivity).toHaveBeenCalledTimes(1))
+  expect(mocks.updateActivity.mock.calls[0]?.[0]).toBe('activity-1')
+  expect(mocks.updateActivity.mock.calls[0]?.[1]).toEqual(
+    expect.objectContaining({
+      summary: 'Prepared and validated the customer review evidence.',
+    }),
+  )
+}, 15_000)
 
 test('shows live work summaries and supports lightweight task creation', async () => {
   renderPage()
