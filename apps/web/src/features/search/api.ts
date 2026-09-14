@@ -11,6 +11,8 @@ export type SearchResultType =
   | 'help'
   | 'audit'
   | 'integration'
+  | 'project'
+  | 'report'
 
 export interface SearchResult {
   id: string

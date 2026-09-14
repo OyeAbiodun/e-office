@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { AlertTriangle, FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, type ReactNode, useState } from 'react'
 
-import { type ProjectDetail, type ProjectReport, projectsApi } from './api'
+import { type ProjectDetail, projectsApi } from './api'
 import { Badge, Dialog, Field } from './projects-page'
 import { useConfirmation } from '@/components/feedback/confirmation'
 import { useAuth } from '@/features/auth/auth-store'
+import { reportsApi } from '@/features/reports/api'
 import { tasksApi } from '@/features/tasks/api'
 
 const tabs = [
@@ -40,12 +41,12 @@ const title = (value: string) =>
 export function ProjectDetailPage() {
   const { projectId } = useParams({ strict: false }) as { projectId: string }
   const { user } = useAuth()
+  const navigate = useNavigate()
   const confirm = useConfirmation()
   const permissions = new Set(user?.permissions ?? [])
   const client = useQueryClient()
   const [tab, setTab] = useState<Tab>('overview')
   const [action, setAction] = useState<Action>(null)
-  const [report, setReport] = useState<ProjectReport | null>(null)
   const detail = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectsApi.get(projectId),
@@ -89,6 +90,24 @@ export function ProjectDetailPage() {
     mutationFn: (body: Record<string, unknown>) =>
       projectsApi.update(projectId, body),
     onSuccess: refresh,
+  })
+  const reportGeneration = useMutation({
+    mutationFn: ({ start, end }: { start: string; end: string }) =>
+      reportsApi.generate({
+        report_type: 'project',
+        subject_id: projectId,
+        period_type: 'custom',
+        period_start: start,
+        period_end: end,
+      }),
+    onSuccess: (generated) => {
+      setAction(null)
+      void client.invalidateQueries({ queryKey: ['reports'] })
+      void navigate({
+        to: '/reports/$reportId',
+        params: { reportId: generated.id },
+      })
+    },
   })
   const management = useMutation({
     mutationFn: ({
@@ -565,7 +584,7 @@ export function ProjectDetailPage() {
       )}
       {tab === 'reports' && (
         <Reports
-          report={report}
+          projectId={project.id}
           canGenerate={
             permissions.has('projects.generate_reports') ||
             project.project_manager_id === user?.id
@@ -580,8 +599,16 @@ export function ProjectDetailPage() {
           project={project}
           milestones={data.milestones}
           people={people.data ?? []}
-          pending={mutation.isPending || status.isPending}
-          error={action === 'project' ? status.error : mutation.error}
+          pending={
+            mutation.isPending || status.isPending || reportGeneration.isPending
+          }
+          error={
+            action === 'project'
+              ? status.error
+              : action === 'report'
+                ? reportGeneration.error
+                : mutation.error
+          }
           onClose={() => setAction(null)}
           onSubmit={(body) =>
             action === 'project'
@@ -589,14 +616,10 @@ export function ProjectDetailPage() {
               : mutation.mutate({ type: action, body })
           }
           onReport={async (startDate, endDate) => {
-            const value = await projectsApi.report(
-              project.id,
-              startDate,
-              endDate,
-            )
-            setReport(value)
-            setAction(null)
-            setTab('reports')
+            await reportGeneration.mutateAsync({
+              start: startDate,
+              end: endDate,
+            })
           }}
         />
       )}
@@ -1003,92 +1026,79 @@ function Files({
 }
 
 function Reports({
-  report,
+  projectId,
   canGenerate,
   onGenerate,
 }: {
-  report: ProjectReport | null
+  projectId: string
   canGenerate: boolean
   onGenerate: () => void
 }) {
-  if (!report)
-    return (
-      <Collection
-        title="Project status report"
-        empty="Choose a reporting period to generate a data-backed status report"
-        canAdd={canGenerate}
-        onAdd={onGenerate}
-      >
-        {[]}
-      </Collection>
-    )
+  const reports = useQuery({
+    queryKey: ['reports', 'project', projectId],
+    queryFn: () =>
+      reportsApi.list({
+        report_type: 'project',
+        subject_id: projectId,
+        page: 1,
+        page_size: 10,
+      }),
+  })
   return (
-    <section className="rounded-2xl border bg-card p-5 print:border-0">
-      <div className="flex justify-between gap-3 print:hidden">
+    <section className="rounded-2xl border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">Project status report</h2>
+          <h2 className="text-xl font-semibold">Project reports</h2>
           <p className="text-sm text-muted-foreground">
-            {report.start_date} – {report.end_date}
+            Governed, versioned reports generated from this project's live work
+            data.
           </p>
         </div>
-        <button
-          className="rounded-xl border px-3 py-2"
-          onClick={() => window.print()}
+        {canGenerate && (
+          <button
+            className="rounded-xl bg-primary px-4 py-2 text-primary-foreground"
+            onClick={onGenerate}
+          >
+            Generate report
+          </button>
+        )}
+      </div>
+      {reports.isLoading && (
+        <div className="mt-5 h-28 animate-pulse rounded-xl bg-muted" />
+      )}
+      {reports.isError && (
+        <p
+          className="mt-5 rounded-xl bg-destructive/10 p-4 text-sm text-destructive"
+          role="alert"
         >
-          Print / Save PDF
-        </button>
+          Project reports could not be loaded.
+        </p>
+      )}
+      {reports.data?.items.length === 0 && (
+        <p className="mt-5 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          No governed report has been generated for this project yet.
+        </p>
+      )}
+      <div className="mt-5 grid gap-3">
+        {reports.data?.items.map((report) => (
+          <Link
+            key={report.id}
+            to="/reports/$reportId"
+            params={{ reportId: report.id }}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 transition hover:border-primary/50 hover:bg-muted/30"
+          >
+            <span>
+              <strong>{title(report.period_type)} project report</strong>
+              <span className="mt-1 block text-sm text-muted-foreground">
+                {report.period_start} – {report.period_end}
+              </span>
+            </span>
+            <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold">
+              {title(report.status)}
+            </span>
+          </Link>
+        ))}
       </div>
-      <div className="mt-6 space-y-6">
-        <ReportSection title="Executive summary">
-          {report.executive_summary}
-        </ReportSection>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Tasks in period" value={String(report.tasks_total)} />
-          <Stat label="Completed" value={String(report.tasks_completed)} />
-          <Stat label="Overdue" value={String(report.tasks_overdue)} />
-        </div>
-        <ReportSection title="Milestone status">
-          {report.milestones
-            .map(
-              (item) =>
-                `${item.name}: ${title(item.status)} (${item.progress}%)`,
-            )
-            .join('\n') || 'No milestones'}
-        </ReportSection>
-        <ReportSection title="Work completed during period">
-          {report.updates
-            .map((item) => String(item.accomplishments ?? item.summary))
-            .join('\n\n') || 'No structured updates for this period.'}
-        </ReportSection>
-        <ReportSection title="Issues and risks">
-          {[
-            ...report.issues.map((item) => `Issue: ${item.title}`),
-            ...report.risks.map((item) => `Risk: ${item.title}`),
-          ].join('\n') || 'No open issues or risks.'}
-        </ReportSection>
-        <ReportSection title="Next actions">
-          {report.updates
-            .map((item) => String(item.next_steps ?? ''))
-            .filter(Boolean)
-            .join('\n') || 'No next actions recorded.'}
-        </ReportSection>
-      </div>
-    </section>
-  )
-}
-function ReportSection({
-  title: sectionTitle,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <section>
-      <h3 className="font-semibold">{sectionTitle}</h3>
-      <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-        {children}
-      </p>
     </section>
   )
 }

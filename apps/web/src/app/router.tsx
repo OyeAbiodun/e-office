@@ -226,6 +226,16 @@ const ProjectDetailPage = lazy(() =>
     default: module.ProjectDetailPage,
   })),
 )
+const ReportsPage = lazy(() =>
+  import('@/features/reports/reports-page').then((module) => ({
+    default: module.ReportsPage,
+  })),
+)
+const ReportDetailPage = lazy(() =>
+  import('@/features/reports/report-detail-page').then((module) => ({
+    default: module.ReportDetailPage,
+  })),
+)
 const LeavePage = lazy(() =>
   import('@/features/leave/leave-page').then((module) => ({
     default: module.LeavePage,
@@ -344,6 +354,16 @@ const protectedPages = [
     getParentRoute: () => appShellRoute,
     path: '/projects/$projectId',
     component: ProjectDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/reports',
+    component: ReportsPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/reports/$reportId',
+    component: ReportDetailPage,
   }),
   createRoute({
     getParentRoute: () => appShellRoute,

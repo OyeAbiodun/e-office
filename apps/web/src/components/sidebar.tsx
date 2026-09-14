@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarDays,
   CalendarRange,
+  ChartNoAxesCombined,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +40,7 @@ const icons = {
   building: Building2,
   'calendar-days': CalendarDays,
   'calendar-range': CalendarRange,
+  'chart-no-axes-combined': ChartNoAxesCombined,
   'circle-help': CircleHelp,
   'file-clock': FileClock,
   'folder-kanban': FolderKanban,
@@ -222,6 +224,7 @@ export function Sidebar({
         />
       )}
       <aside
+        data-app-sidebar
         className={`${mobileOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-2xl transition-transform lg:static lg:translate-x-0 lg:shadow-none ${
           collapsed ? 'lg:w-[76px]' : 'lg:w-64'
         }`}

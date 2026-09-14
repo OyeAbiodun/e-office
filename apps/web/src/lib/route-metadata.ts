@@ -9,6 +9,7 @@ const labels: Record<string, string> = {
   finance: 'Finance Center',
   payroll: 'Payroll',
   projects: 'Projects',
+  reports: 'Reports & Intelligence',
   leave: 'Leave',
   team: 'Team Leave',
   accounts: 'Accounts',
@@ -57,6 +58,7 @@ const icons: Record<string, string> = {
   leave: 'calendar-range',
   payroll: 'wallet-cards',
   projects: 'folder-kanban',
+  reports: 'chart-no-axes-combined',
 }
 
 const administrationRoutes = new Set([
@@ -127,11 +129,13 @@ export function resolveBreadcrumbs(
               ? 'Workspace Details'
               : parent === 'projects'
                 ? 'Project Overview'
-                : parent === 'mail'
-                  ? 'Message'
-                  : parent === 'chat'
-                    ? 'Conversation'
-                    : 'Details'
+                : parent === 'reports'
+                  ? 'Report Details'
+                  : parent === 'mail'
+                    ? 'Message'
+                    : parent === 'chat'
+                      ? 'Conversation'
+                      : 'Details'
     }
     if (part === 'edit') label = 'Edit'
     if (part === 'new') label = root === 'meetings' ? 'Schedule Meeting' : 'New'

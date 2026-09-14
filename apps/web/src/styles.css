@@ -101,3 +101,21 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  body:has(.report-document) [data-app-sidebar],
+  body:has(.report-document) .app-top-nav,
+  body:has(.report-document) button {
+    display: none !important;
+  }
+
+  body:has(.report-document),
+  body:has(.report-document) .report-document {
+    background: white !important;
+    color: black !important;
+  }
+
+  .report-document {
+    padding: 0 !important;
+  }
+}

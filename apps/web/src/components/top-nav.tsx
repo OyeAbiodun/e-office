@@ -72,7 +72,7 @@ export function TopNav({
     circle: Circle,
   }
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/88 backdrop-blur-xl">
+    <header className="app-top-nav sticky top-0 z-30 border-b border-border bg-background/88 backdrop-blur-xl">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
         <button
           aria-label="Open navigation"
