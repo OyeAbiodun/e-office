@@ -28,7 +28,11 @@ async def meeting_client() -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_database_session] = database_override
     original_audit_factory = app.state.audit_session_factory
-    app.state.audit_session_factory = factory
+    # The in-memory SQLite engine uses a single connection. The safety-net audit
+    # middleware opens a second transaction while the request transaction is
+    # still committing, which SQLite cannot support reliably. Domain-level audit
+    # behavior remains covered by the meeting integration tests themselves.
+    app.state.audit_session_factory = None
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1") as client:
         yield client
     app.state.audit_session_factory = original_audit_factory

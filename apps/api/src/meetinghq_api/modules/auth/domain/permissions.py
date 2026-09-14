@@ -127,6 +127,16 @@ class Permissions:
     PROJECTS_MANAGE_FILES = "projects.manage_files"
     PROJECTS_GENERATE_REPORTS = "projects.generate_reports"
     PROJECTS_VIEW_REPORTS = "projects.view_reports"
+    REPORTS_VIEW_OWN = "reports.view_own"
+    REPORTS_CREATE_OWN = "reports.create_own"
+    REPORTS_SUBMIT_OWN = "reports.submit_own"
+    REPORTS_VIEW_TEAM = "reports.view_team"
+    REPORTS_REVIEW_TEAM = "reports.review_team"
+    REPORTS_VIEW_DEPARTMENT = "reports.view_department"
+    REPORTS_VIEW_MANAGEMENT = "reports.view_management"
+    REPORTS_GENERATE = "reports.generate"
+    REPORTS_EXPORT = "reports.export"
+    REPORTS_MANAGE_POLICY = "reports.manage_policy"
 
 
 _LEGACY_PERMISSION_CATALOG = tuple(
@@ -315,6 +325,34 @@ _PROJECT_PERMISSION_CATALOG = tuple(
     )
 )
 
+_REPORT_PERMISSION_CATALOG = tuple(
+    PermissionDefinition(name, "reports", action, description)
+    for name, action, description in (
+        (Permissions.REPORTS_VIEW_OWN, "view_own", "View own generated reports"),
+        (Permissions.REPORTS_CREATE_OWN, "create_own", "Generate own reports"),
+        (Permissions.REPORTS_SUBMIT_OWN, "submit_own", "Submit own reports for review"),
+        (Permissions.REPORTS_VIEW_TEAM, "view_team", "View direct-report and team reports"),
+        (Permissions.REPORTS_REVIEW_TEAM, "review_team", "Review authorized staff reports"),
+        (
+            Permissions.REPORTS_VIEW_DEPARTMENT,
+            "view_department",
+            "View authorized department reports",
+        ),
+        (
+            Permissions.REPORTS_VIEW_MANAGEMENT,
+            "view_management",
+            "View organization management intelligence",
+        ),
+        (Permissions.REPORTS_GENERATE, "generate", "Generate authorized management reports"),
+        (Permissions.REPORTS_EXPORT, "export", "Export authorized reporting data"),
+        (
+            Permissions.REPORTS_MANAGE_POLICY,
+            "manage_policy",
+            "Manage organization reporting policy",
+        ),
+    )
+)
+
 MVP_PERMISSION_RESOURCES = (
     "dashboard",
     "calendar",
@@ -348,6 +386,7 @@ PERMISSION_CATALOG = tuple(
             *_LEAVE_PERMISSION_CATALOG,
             *_PAYROLL_PERMISSION_CATALOG,
             *_PROJECT_PERMISSION_CATALOG,
+            *_REPORT_PERMISSION_CATALOG,
             *MVP_PERMISSION_CATALOG,
         )
     }.values()
@@ -364,6 +403,7 @@ _finance_admin = frozenset(item.name for item in _FINANCE_PERMISSION_CATALOG)
 _leave_admin = frozenset(item.name for item in _LEAVE_PERMISSION_CATALOG)
 _payroll_admin = frozenset(item.name for item in _PAYROLL_PERMISSION_CATALOG)
 _project_admin = frozenset(item.name for item in _PROJECT_PERMISSION_CATALOG)
+_report_admin = frozenset(item.name for item in _REPORT_PERMISSION_CATALOG)
 _task_employee = frozenset(
     {
         Permissions.TASKS_VIEW_OWN,
@@ -413,6 +453,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     | _leave_admin
     | _payroll_admin
     | _project_admin
+    | _report_admin
     | _matrix(set(MVP_PERMISSION_RESOURCES)),
     "Meeting Organizer": _meeting_operator
     | _matrix({"dashboard"}, {"view"})
@@ -502,6 +543,17 @@ ROLE_PERMISSIONS["Team Manager"] |= frozenset(
         Permissions.PROJECTS_VIEW_REPORTS,
     }
 )
+ROLE_PERMISSIONS["Team Manager"] |= frozenset(
+    {
+        Permissions.REPORTS_VIEW_OWN,
+        Permissions.REPORTS_CREATE_OWN,
+        Permissions.REPORTS_SUBMIT_OWN,
+        Permissions.REPORTS_VIEW_TEAM,
+        Permissions.REPORTS_REVIEW_TEAM,
+        Permissions.REPORTS_VIEW_DEPARTMENT,
+        Permissions.REPORTS_EXPORT,
+    }
+)
 ROLE_PERMISSIONS["Meeting Organizer"] |= _task_manager
 ROLE_PERMISSIONS["Meeting Organizer"] |= frozenset(
     {
@@ -537,6 +589,14 @@ _voucher_employee = frozenset(
 ROLE_PERMISSIONS["Employee"] |= _voucher_employee
 ROLE_PERMISSIONS["Employee"] |= frozenset(
     {Permissions.PROJECTS_VIEW, Permissions.PROJECTS_VIEW_REPORTS}
+)
+ROLE_PERMISSIONS["Employee"] |= frozenset(
+    {
+        Permissions.REPORTS_VIEW_OWN,
+        Permissions.REPORTS_CREATE_OWN,
+        Permissions.REPORTS_SUBMIT_OWN,
+        Permissions.REPORTS_EXPORT,
+    }
 )
 ROLE_PERMISSIONS["Employee"] |= frozenset(
     {Permissions.PAYROLL_VIEW_OWN, Permissions.PAYROLL_PAYSLIP_DOWNLOAD_OWN}

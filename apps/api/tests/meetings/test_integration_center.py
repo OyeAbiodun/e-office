@@ -109,9 +109,13 @@ async def test_integration_center_separates_availability_from_credentials(
     assert disconnected.status_code == 200
     assert disconnected.json()["data"]["configured"] is False
 
-    audit = await meeting_client.get("/api/v1/audit?search=integrations.", headers=headers)
+    audit = await meeting_client.get("/api/v1/audit", headers=headers)
     actions = {item["action"] for item in audit.json()["data"]["items"]}
-    assert {"integrations.update", "integrations.create", "integrations.delete"} <= actions
+    assert {
+        "integrations.configured",
+        "integrations.connection_tested",
+        "integrations.disconnected",
+    } <= actions
 
 
 async def test_smtp_administration_preserves_write_only_secret_and_uses_shared_transport(

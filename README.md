@@ -172,11 +172,13 @@ state transitions publish durable activity events used by the real dashboard.
 - [Realtime architecture](docs/realtime-architecture.md)
 - [WebSocket events](docs/websocket-events.md)
 - [Chat API](docs/chat-api.md)
+- [Reporting & Management Intelligence](docs/reporting-intelligence.md)
 - Interactive API documentation is generated from FastAPI at `/api/docs`.
 
 ## Product boundary
 
-Identity, organization management, calendar scheduling, meetings, collaboration,
-notifications, Internal Mail, and administration foundations are implemented.
-Provider-specific OAuth synchronization, AI, billing, and reports remain gated until
-their corresponding production implementation is complete.
+Identity, organization and employee management, calendar scheduling, meetings, collaboration,
+tasks and daily activities, projects, leave, payroll, voucher/finance, notifications, Internal
+Mail, reporting intelligence, and administration foundations are implemented. Provider-specific
+OAuth synchronization, AI, and billing remain gated until their corresponding production
+implementation is complete.

@@ -87,9 +87,9 @@ IMPLEMENTED_CAPABILITIES: dict[str, str] = {
     "leave": "/leave",
     "payroll": "/payroll",
     "projects": "/projects",
+    "reports": "/reports",
 }
 COMING_SOON_CAPABILITIES = {
-    "reports": ("4.0", "Sprint 4", ["search", "files"]),
     "ai": ("4.0", "Sprint 4", ["openai", "files", "search"]),
     "recordings": ("4.1", "Post-Sprint 4", ["meetings", "files"]),
     "waiting-room": ("4.1", "Post-Sprint 4", ["meetings"]),
@@ -122,6 +122,15 @@ DEFAULT_MENUS = (
     ("calendar", "Calendar", "/calendar", "calendar-days", "calendar.view", "calendar", "work"),
     ("chat", "Chat", "/chat", "messages", "chat.view", "chat", "work"),
     ("mail", "Mail", "/mail", "mail", "mail.view", "mail", "work"),
+    (
+        "reports",
+        "Reports & Intelligence",
+        "/reports",
+        "chart-no-axes-combined",
+        "reports.view_own",
+        "reports",
+        "work",
+    ),
     (
         "notifications",
         "Notifications",
@@ -208,11 +217,15 @@ class PlatformService:
                     )
                 )
                 if feature is not None:
+                    previous_status = feature.availability_status
                     for name, value in metadata.items():
                         setattr(feature, name, value)
                     if not feature.installed or feature.availability_status == "coming_soon":
                         feature.enabled = False
                         feature.hidden = True
+                    elif previous_status == "coming_soon":
+                        feature.enabled = True
+                        feature.hidden = False
         menu_keys = set(
             (
                 await self.session.scalars(

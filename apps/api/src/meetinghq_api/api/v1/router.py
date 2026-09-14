@@ -23,6 +23,7 @@ from meetinghq_api.modules.notifications.router import router as notifications_r
 from meetinghq_api.modules.organizations.router import router as organizations_router
 from meetinghq_api.modules.payroll.router import router as payroll_router
 from meetinghq_api.modules.projects.router import router as projects_router
+from meetinghq_api.modules.reports.router import router as reports_router
 from meetinghq_api.modules.search.router import router as search_router
 from meetinghq_api.modules.storage.router import router as storage_router
 from meetinghq_api.modules.system_health.router import router as system_health_router
@@ -52,6 +53,7 @@ router.include_router(tasks_router)
 router.include_router(finance_router)
 router.include_router(payroll_router)
 router.include_router(projects_router)
+router.include_router(reports_router)
 router.include_router(dashboard_router)
 router.include_router(search_router)
 router.include_router(storage_router)

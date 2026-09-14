@@ -11,6 +11,7 @@ from meetinghq_api.modules.mail.models import MailMessage
 from meetinghq_api.modules.meetings.models import Meeting, MeetingAttendee
 from meetinghq_api.modules.notifications.models import Notification
 from meetinghq_api.modules.projects.models import Project, ProjectMember
+from meetinghq_api.modules.reports.models import GeneratedReport
 from meetinghq_api.modules.search.schemas import SearchResponse, SearchResult
 from meetinghq_api.modules.teams.models import Team
 from meetinghq_api.modules.users.models import Role, User
@@ -38,6 +39,15 @@ class GlobalSearchService:
             results.extend(await self._teams(user, pattern))
         if "projects.view" in permissions:
             results.extend(await self._projects(user, pattern, permissions))
+        if permissions.intersection(
+            {
+                "reports.view_own",
+                "reports.view_team",
+                "reports.view_department",
+                "reports.view_management",
+            }
+        ):
+            results.extend(await self._reports(user, pattern, permissions))
         if "roles.manage" in permissions or "admin.manage" in permissions:
             results.extend(await self._roles(user, pattern))
         if "mail.view" in permissions:
@@ -224,6 +234,60 @@ class GlobalSearchService:
                 url=f"/projects/{row.id}",
                 icon="folder-kanban",
                 score=88,
+            )
+            for row in rows
+        ]
+
+    async def _reports(self, user: User, pattern: str, permissions: set[str]) -> list[SearchResult]:
+        query = select(GeneratedReport).where(
+            GeneratedReport.organization_id == user.organization_id,
+            or_(
+                GeneratedReport.subject_name.ilike(pattern),
+                GeneratedReport.report_type.ilike(pattern),
+                GeneratedReport.period_type.ilike(pattern),
+                GeneratedReport.status.ilike(pattern),
+            ),
+        )
+        if "reports.view_management" not in permissions:
+            rules = [GeneratedReport.owner_id == user.id, GeneratedReport.manager_id == user.id]
+            if "reports.view_department" in permissions and user.department_id:
+                rules.extend(
+                    [
+                        GeneratedReport.subject_id == user.department_id,
+                        GeneratedReport.subject_id.in_(
+                            select(User.id).where(
+                                User.organization_id == user.organization_id,
+                                User.department_id == user.department_id,
+                            )
+                        ),
+                    ]
+                )
+            if "reports.view_team" in permissions and user.team_id:
+                rules.append(GeneratedReport.subject_id == user.team_id)
+            rules.append(
+                GeneratedReport.subject_id.in_(
+                    select(ProjectMember.project_id).where(
+                        ProjectMember.organization_id == user.organization_id,
+                        ProjectMember.user_id == user.id,
+                    )
+                )
+            )
+            query = query.where(or_(*rules))
+        rows = (
+            await self.session.scalars(query.order_by(GeneratedReport.created_at.desc()).limit(8))
+        ).all()
+        return [
+            SearchResult(
+                id=str(row.id),
+                type="report",
+                title=f"{row.subject_name} · {row.period_type.title()}",
+                subtitle=(
+                    f"{row.report_type.title()} · {row.period_start} – {row.period_end} · "
+                    f"{row.status.replace('_', ' ').title()}"
+                ),
+                url=f"/reports/{row.id}",
+                icon="chart-no-axes-combined",
+                score=86,
             )
             for row in rows
         ]

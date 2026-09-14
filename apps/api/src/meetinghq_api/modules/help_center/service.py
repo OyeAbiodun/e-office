@@ -35,6 +35,12 @@ ARTICLES = (
     ("notifications", "Notifications", "User Handbook", ["notifications"]),
     ("email", "Email Delivery", "Administrator Handbook", ["mail"]),
     ("profile", "Profile & Security", "User Handbook", ["profile", "account"]),
+    (
+        "reporting-intelligence",
+        "Reports & Management Intelligence",
+        "User Handbook",
+        ["reports", "reports.detail"],
+    ),
     ("settings", "Organization Settings", "Administrator Handbook", ["settings", "organization"]),
     ("keyboard-shortcuts", "Keyboard Shortcuts", "User Handbook", ["global"]),
     ("faq", "Frequently Asked Questions", "Troubleshooting", ["global"]),

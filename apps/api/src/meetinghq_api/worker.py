@@ -11,6 +11,7 @@ from meetinghq_api.infrastructure.redis import redis_client
 from meetinghq_api.modules.leave.service import LeaveService
 from meetinghq_api.modules.mail.service import MailService
 from meetinghq_api.modules.notifications.service import NotificationService
+from meetinghq_api.modules.reports.service import ReportingService
 from meetinghq_api.modules.tasks.service import TaskService
 
 logger = structlog.get_logger(__name__)
@@ -29,6 +30,7 @@ async def run_once() -> int:
             delivered += await TaskService(session, service).process_due_reminders()
             delivered += await MailService(session, settings).process_due_deliveries()
             delivered += await LeaveService(session).process_scheduled_policies()
+            delivered += await ReportingService(session, service).process_scheduled_reports()
             await session.commit()
         await logger.ainfo("scheduled_worker_completed", delivered=delivered)
         return delivered

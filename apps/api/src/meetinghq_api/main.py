@@ -29,6 +29,7 @@ from meetinghq_api.modules.integrations.service import IntegrationService
 from meetinghq_api.modules.leave.service import LeaveService
 from meetinghq_api.modules.mail.service import MailService
 from meetinghq_api.modules.notifications.service import NotificationService
+from meetinghq_api.modules.reports.service import ReportingService
 from meetinghq_api.modules.tasks.service import TaskService
 
 logger = structlog.get_logger(__name__)
@@ -48,6 +49,7 @@ async def reminder_worker(stop: asyncio.Event) -> None:
                 delivered += await TaskService(session, service).process_due_reminders()
                 delivered += await MailService(session, settings).process_due_deliveries()
                 delivered += await LeaveService(session).process_scheduled_policies()
+                delivered += await ReportingService(session, service).process_scheduled_reports()
                 await session.commit()
             if delivered:
                 await logger.ainfo("meeting_reminders_delivered", count=delivered)
