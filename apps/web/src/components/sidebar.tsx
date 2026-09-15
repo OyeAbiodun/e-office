@@ -28,8 +28,14 @@ import {
   WalletCards,
   X,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import {
+  buildSidebarNavigation,
+  groupIsActive,
+  sidebarGroupStorageKey,
+  type SidebarGroup,
+} from '@/components/sidebar-navigation'
 import { useAuth } from '@/features/auth/auth-store'
 import { mailApi } from '@/features/mail/api'
 import { notificationApi } from '@/features/notifications/api'
@@ -75,12 +81,23 @@ export function Sidebar({
   onToggle,
 }: SidebarProps) {
   const { user } = useAuth()
-  const permissions = new Set(user?.permissions ?? [])
+  const permissions = useMemo(
+    () => new Set(user?.permissions ?? []),
+    [user?.permissions],
+  )
   const navigate = useNavigate()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
+    try {
+      return new Set(
+        JSON.parse(localStorage.getItem(sidebarGroupStorageKey) ?? '[]'),
+      )
+    } catch {
+      return new Set()
+    }
+  })
   const organization = useQuery({
     queryKey: ['organization'],
     queryFn: organizationApi.organization,
@@ -113,6 +130,25 @@ export function Sidebar({
   const sidebarItems = allItems.filter(
     (item) => item.parent_key !== 'administration',
   )
+  const groupedNavigation = useMemo(
+    () => buildSidebarNavigation(sidebarItems, permissions),
+    [permissions, sidebarItems],
+  )
+  useEffect(() => {
+    setExpandedGroups((current) => {
+      const next = new Set(current)
+      groupedNavigation.groups
+        .filter((group) => groupIsActive(group, pathname))
+        .forEach((group) => next.add(group.key))
+      return next
+    })
+  }, [groupedNavigation.groups, pathname])
+  useEffect(() => {
+    localStorage.setItem(
+      sidebarGroupStorageKey,
+      JSON.stringify([...expandedGroups]),
+    )
+  }, [expandedGroups])
   const dynamicBadge = (item: MenuDefinition) => {
     const displayCount = (count: number) => (count > 99 ? '99+' : String(count))
     if (item.key === 'notifications' && notificationSummary.data?.unread)
@@ -121,110 +157,98 @@ export function Sidebar({
       return displayCount(mailSummary.data.unread)
     return item.badge
   }
-  const renderNavigation = (
-    items: MenuDefinition[],
-    title?: string,
-  ): ReactNode => (
-    <div className="space-y-1">
-      {title && !collapsed && (
-        <p className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          {title}
-        </p>
-      )}
-      {items.map((item) => {
-        const Icon = icons[item.icon as keyof typeof icons] ?? LayoutDashboard
-        const children = sidebarItems
-          .filter((candidate) => candidate.parent_key === item.key)
-          .sort((left, right) => left.position - right.position)
-        const expanded = expandedGroups.has(item.key)
-        const badge = dynamicBadge(item)
-        return (
-          <div key={item.key}>
-            <div className="flex items-center gap-1">
-              <a
-                aria-label={collapsed ? item.label : undefined}
-                className={`flex min-h-10 min-w-0 flex-1 items-center gap-3 rounded-xl px-3 text-sm font-medium transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
-                  pathname === item.path
-                    ? 'bg-sidebar-accent text-primary'
-                    : 'text-muted-foreground'
-                }`}
-                href={item.path}
-                onClick={(event) => {
-                  if (
-                    event.button === 0 &&
-                    !event.ctrlKey &&
-                    !event.metaKey &&
-                    !event.shiftKey &&
-                    !event.altKey
-                  ) {
-                    event.preventDefault()
-                    onCloseMobile()
-                    void navigate({ to: item.path as never })
-                  }
-                }}
-                title={collapsed ? item.label : undefined}
-              >
-                <Icon className="size-[18px] shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-                {!collapsed && badge && (
-                  <span
-                    className={`ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary ${
-                      item.key === 'notifications' ? 'animate-pulse' : ''
-                    }`}
-                  >
-                    {badge}
-                  </span>
-                )}
-              </a>
-              {!collapsed && children.length > 0 && (
-                <button
-                  aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.label}`}
-                  className="rounded-lg p-2 text-muted-foreground hover:bg-sidebar-accent"
-                  onClick={() =>
-                    setExpandedGroups((current) => {
-                      const next = new Set(current)
-                      if (next.has(item.key)) next.delete(item.key)
-                      else next.add(item.key)
-                      return next
-                    })
-                  }
-                  type="button"
-                >
-                  <ChevronDown
-                    className={`size-4 transition ${
-                      expanded ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-              )}
-            </div>
-            {!collapsed && expanded && children.length > 0 && (
-              <div className="ml-5 border-l pl-2">
-                {renderNavigation(children)}
-              </div>
-            )}
+  const renderItem = (item: MenuDefinition, nested = false): ReactNode => {
+    const Icon = icons[item.icon as keyof typeof icons] ?? LayoutDashboard
+    const badge = dynamicBadge(item)
+    const active =
+      pathname === item.path ||
+      (item.path !== '/' && pathname.startsWith(`${item.path}/`))
+    return (
+      <a
+        aria-current={active ? 'page' : undefined}
+        aria-label={collapsed ? item.label : undefined}
+        className={`flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-3 text-sm font-medium outline-none transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-primary ${
+          active ? 'bg-sidebar-accent text-primary' : 'text-muted-foreground'
+        } ${nested ? 'ml-3 border-l border-sidebar-border pl-4' : ''}`}
+        href={item.path}
+        key={item.key}
+        onClick={(event) => {
+          if (
+            event.button === 0 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey &&
+            !event.altKey
+          ) {
+            event.preventDefault()
+            onCloseMobile()
+            void navigate({ to: item.path as never })
+          }
+        }}
+        title={collapsed ? item.label : undefined}
+      >
+        <Icon className="size-[18px] shrink-0" />
+        {!collapsed && <span className="truncate">{item.label}</span>}
+        {!collapsed && badge && (
+          <span
+            className={`ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary ${
+              item.key === 'notifications' ? 'animate-pulse' : ''
+            }`}
+          >
+            {badge}
+          </span>
+        )}
+      </a>
+    )
+  }
+  const groupIcons: Record<string, typeof BriefcaseBusiness> = {
+    'my-work': BriefcaseBusiness,
+    communication: MessageSquareText,
+    people: Users,
+    'finance-payroll': WalletCards,
+    intelligence: ChartNoAxesCombined,
+    more: LayoutDashboard,
+  }
+  const renderGroup = (group: SidebarGroup) => {
+    const expanded = expandedGroups.has(group.key)
+    const active = groupIsActive(group, pathname)
+    const GroupIcon = groupIcons[group.key] ?? LayoutDashboard
+    return (
+      <div key={group.key}>
+        <button
+          aria-expanded={expanded}
+          className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-semibold outline-none transition hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-primary ${
+            active ? 'text-primary' : 'text-muted-foreground'
+          }`}
+          onClick={() =>
+            setExpandedGroups((current) => {
+              const next = new Set(current)
+              if (next.has(group.key)) next.delete(group.key)
+              else next.add(group.key)
+              return next
+            })
+          }
+          title={collapsed ? group.label : undefined}
+          type="button"
+        >
+          <GroupIcon className="size-[18px] shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="truncate">{group.label}</span>
+              <ChevronDown
+                className={`ml-auto size-4 transition ${expanded ? 'rotate-180' : ''}`}
+              />
+            </>
+          )}
+        </button>
+        {!collapsed && expanded && (
+          <div className="mt-1 space-y-0.5">
+            {group.items.map((item) => renderItem(item, true))}
           </div>
-        )
-      })}
-    </div>
-  )
-  const isAdministrator = user?.roles.some((role) =>
-    ['Super Admin', 'Admin'].includes(role),
-  )
-  const sectionOrder = isAdministrator
-    ? ['administration', 'work', 'support']
-    : ['work', 'administration', 'support']
-  const sections = [
-    ...new Set(
-      sidebarItems
-        .filter((item) => !item.parent_key)
-        .map((item) => item.section),
-    ),
-  ].sort((left, right) => {
-    const leftIndex = sectionOrder.indexOf(left)
-    const rightIndex = sectionOrder.indexOf(right)
-    return (leftIndex < 0 ? 99 : leftIndex) - (rightIndex < 0 ? 99 : rightIndex)
-  })
+        )}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -286,22 +310,18 @@ export function Sidebar({
               Navigation unavailable
             </p>
           )}
-          {sections.map((section) => (
-            <div key={section}>
-              {renderNavigation(
-                sidebarItems
-                  .filter(
-                    (item) => item.section === section && !item.parent_key,
-                  )
-                  .sort((left, right) => left.position - right.position),
-                section === 'work'
-                  ? 'Workspace'
-                  : section === 'administration'
-                    ? 'Control center'
-                    : section,
+          {groupedNavigation.direct
+            .filter((item) => item.key === 'dashboard')
+            .map((item) => renderItem(item))}
+          {!collapsed
+            ? groupedNavigation.groups.map(renderGroup)
+            : groupedNavigation.groups.flatMap((group) =>
+                group.items.map((item) => renderItem(item)),
               )}
-            </div>
-          ))}
+          <div className="my-2 border-t border-sidebar-border" />
+          {groupedNavigation.direct
+            .filter((item) => item.key !== 'dashboard')
+            .map((item) => renderItem(item))}
         </nav>
 
         <div className="hidden border-t p-3 lg:block">

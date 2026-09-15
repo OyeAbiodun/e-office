@@ -24,12 +24,31 @@ async function login(page: Page) {
 }
 
 async function navigateTo(page: Page, label: string) {
-  if ((page.viewportSize()?.width ?? 1280) >= 1024)
-    await page.getByRole('link', { name: label, exact: true }).click()
-  else {
+  if ((page.viewportSize()?.width ?? 1280) < 1024)
     await page.getByRole('button', { name: 'Open navigation' }).click()
-    await page.getByRole('link', { name: label, exact: true }).click()
+  const link = page.getByRole('link', { name: label, exact: true })
+  if (!(await link.isVisible().catch(() => false))) {
+    const groups: Record<string, string> = {
+      'My Space': 'My work',
+      Projects: 'My work',
+      'Tasks & Activities': 'My work',
+      Calendar: 'My work',
+      Mail: 'Communication',
+      Chat: 'Communication',
+      Meetings: 'Communication',
+      Notifications: 'Communication',
+      People: 'People',
+      Leave: 'People',
+      Finance: 'Finance & payroll',
+      Vouchers: 'Finance & payroll',
+      'My Payroll': 'Finance & payroll',
+      'Reports & Intelligence': 'Intelligence',
+    }
+    const group = groups[label]
+    if (group)
+      await page.getByRole('button', { name: group, exact: true }).click()
   }
+  await link.click()
 }
 
 test('authenticated shell, command center, and navigation work', async ({
@@ -64,6 +83,36 @@ test('authenticated shell, command center, and navigation work', async ({
     secondPage.getByRole('button', { name: /user account/i }),
   ).toBeVisible()
   await secondPage.close()
+})
+
+test('grouped navigation and live decision charts support drill-down', async ({
+  page,
+}) => {
+  await login(page)
+  const sidebar = page.getByRole('navigation', { name: 'Primary navigation' })
+  await expect(sidebar.getByRole('button', { name: 'My work' })).toBeVisible()
+  await expect(
+    sidebar.getByRole('button', { name: 'Communication' }),
+  ).toBeVisible()
+  await expect(
+    sidebar.getByRole('button', { name: 'Finance & payroll' }),
+  ).toBeVisible()
+  await expect(page.locator('[data-decision-chart]')).toHaveCount(2)
+  const chartLink = page.locator('[data-decision-chart] a').first()
+  await chartLink.click()
+  await expect(page).not.toHaveURL('/')
+
+  await page.goto('/reports')
+  await expect(
+    page.getByRole('heading', { name: 'Reports & Intelligence' }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: 'Work delivery chart' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Report history' }).click()
+  await expect(page.locator('[data-report-list]')).toBeVisible()
+  await page.getByLabel('Rows').selectOption('10')
+  await expect(page.getByText(/Page \d+ of \d+/)).toBeVisible()
 })
 
 test('Help & Support provides learning, support, and admin content workflows', async ({

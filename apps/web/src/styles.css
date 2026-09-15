@@ -16,10 +16,10 @@
   --foreground: oklch(0.205 0.025 253);
   --card: oklch(1 0 0);
   --surface-elevated: oklch(1 0 0);
-  --primary: oklch(0.59 0.185 252);
-  --primary-hover: oklch(0.53 0.195 253);
-  --primary-subtle: oklch(0.95 0.035 249);
-  --primary-border: oklch(0.84 0.075 250);
+  --primary: #2f80ed;
+  --primary-hover: #256dcc;
+  --primary-subtle: #eaf3ff;
+  --primary-border: #b9d6fa;
   --primary-foreground: oklch(0.99 0 0);
   --muted: oklch(0.956 0.008 246);
   --muted-foreground: oklch(0.5 0.025 253);
@@ -28,11 +28,11 @@
   --warning: oklch(0.72 0.15 75);
   --danger: oklch(0.59 0.205 25);
   --info: oklch(0.61 0.16 244);
-  --sidebar: oklch(0.972 0.006 245);
+  --sidebar: #f6f9fc;
   --sidebar-foreground: oklch(0.24 0.025 255);
   --sidebar-border: oklch(0.9 0.012 247);
-  --sidebar-accent: oklch(0.938 0.03 249);
-  --sidebar-accent-foreground: oklch(0.47 0.15 253);
+  --sidebar-accent: #eaf3ff;
+  --sidebar-accent-foreground: #256dcc;
   --shadow-color: 220 35% 15%;
   --radius-control: 0.5rem;
   --radius-card: 0.75rem;
@@ -47,10 +47,10 @@
   --foreground: oklch(0.95 0.008 250);
   --card: oklch(0.205 0.02 255);
   --surface-elevated: oklch(0.225 0.022 255);
-  --primary: oklch(0.68 0.17 250);
-  --primary-hover: oklch(0.73 0.15 248);
-  --primary-subtle: oklch(0.265 0.045 252);
-  --primary-border: oklch(0.39 0.075 251);
+  --primary: #6aa8f7;
+  --primary-hover: #84b8f8;
+  --primary-subtle: #182c46;
+  --primary-border: #315a87;
   --primary-foreground: oklch(0.15 0.025 255);
   --muted: oklch(0.25 0.02 255);
   --muted-foreground: oklch(0.7 0.02 250);
@@ -59,10 +59,10 @@
   --warning: oklch(0.79 0.13 79);
   --danger: oklch(0.72 0.17 25);
   --info: oklch(0.73 0.14 242);
-  --sidebar: oklch(0.185 0.02 255);
+  --sidebar: #111a24;
   --sidebar-foreground: oklch(0.94 0.008 250);
   --sidebar-border: oklch(0.27 0.02 255);
-  --sidebar-accent: oklch(0.25 0.03 255);
+  --sidebar-accent: #182c46;
   --sidebar-accent-foreground: oklch(0.94 0.01 250);
 }
 
@@ -156,6 +156,21 @@ button:disabled {
     border-radius: var(--radius-card);
     background: var(--card);
     box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.035);
+  }
+
+  .data-region {
+    max-height: min(36rem, 70vh);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .data-region-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: color-mix(in oklch, var(--card) 94%, transparent);
+    backdrop-filter: blur(10px);
   }
 
   .metric-link {

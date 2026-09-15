@@ -215,6 +215,31 @@ test('renders live management intelligence and report history', async () => {
   expect(await screen.findByText('80%')).toBeVisible()
   expect(screen.getByText('Operations')).toBeVisible()
   expect(screen.getByText('Riley Reporter')).toBeVisible()
+  expect(
+    screen.getByRole('region', { name: 'Work delivery chart' }),
+  ).toBeVisible()
+  expect(
+    screen.getByRole('link', {
+      name: 'Overdue tasks: 2. Open filtered results',
+    }),
+  ).toHaveAttribute('href', '/tasks?due=overdue')
+})
+
+test('keeps report lists bounded and supports server page-size selection', async () => {
+  renderPage(<ReportsPage />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Report history' }))
+  expect(
+    await screen.findByRole('heading', { name: 'Report history' }),
+  ).toBeVisible()
+  expect(document.querySelector('[data-report-list]')).toHaveClass(
+    'data-region',
+  )
+  fireEvent.change(screen.getByLabelText('Rows'), { target: { value: '10' } })
+  await waitFor(() =>
+    expect(mocks.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page_size: 10 }),
+    ),
+  )
 })
 
 test('exposes manager review and organization policy controls by permission', async () => {

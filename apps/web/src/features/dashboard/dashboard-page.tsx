@@ -27,6 +27,10 @@ import {
   PageHeader,
   Surface,
 } from '@/components/page'
+import {
+  DecisionBarChart,
+  type DecisionChartDatum,
+} from '@/components/decision-chart'
 import { useAuth } from '@/features/auth/auth-store'
 import { getDashboard } from '@/features/dashboard/api'
 import { financeApi } from '@/features/finance/api'
@@ -187,6 +191,91 @@ export function DashboardPage() {
       (total, balance) => total + Number(balance.available_after_pending),
       0,
     ) ?? 0
+  const workloadChart: DecisionChartDatum[] = canViewTasks
+    ? [
+        {
+          label: 'Completed this week',
+          value: weekly.data?.completed_tasks ?? 0,
+          to: '/tasks?status=completed',
+          tone: 'success',
+        },
+        {
+          label: 'Open work',
+          value: weekly.data?.pending_tasks ?? 0,
+          to: '/tasks?status=in_progress',
+          tone: 'primary',
+        },
+        {
+          label: 'Overdue',
+          value: weekly.data?.overdue_tasks ?? 0,
+          to: '/tasks?due=overdue',
+          tone: 'danger',
+        },
+      ]
+    : []
+  const decisionChart: DecisionChartDatum[] =
+    persona === 'finance'
+      ? [
+          {
+            label: 'Submitted vouchers',
+            value: voucherCount('submitted'),
+            to: '/vouchers?status=submitted',
+            tone: 'warning',
+          },
+          {
+            label: 'Approved for payment',
+            value: voucherCount('approved'),
+            to: '/vouchers?status=approved',
+            tone: 'success',
+          },
+          {
+            label: 'Returned',
+            value: voucherCount('returned'),
+            to: '/vouchers?status=returned',
+            tone: 'danger',
+          },
+        ]
+      : persona === 'administrator' || persona === 'manager'
+        ? [
+            {
+              label: 'Active projects',
+              value: reporting.data?.active_projects ?? activeProjects.length,
+              to: '/projects?status=active',
+              tone: 'primary',
+            },
+            {
+              label: 'Projects at risk',
+              value: reporting.data?.projects_at_risk ?? atRiskProjects,
+              to: '/projects?health=at_risk',
+              tone: 'warning',
+            },
+            {
+              label: 'Reports awaiting review',
+              value: reporting.data?.pending_my_review ?? 0,
+              to: '/reports?tab=review&status=pending_review',
+              tone: 'info',
+            },
+          ]
+        : [
+            {
+              label: 'Upcoming meetings',
+              value: meetings.data?.upcoming.length ?? 0,
+              to: '/meetings/upcoming',
+              tone: 'info',
+            },
+            {
+              label: 'Active projects',
+              value: projects.data?.total ?? 0,
+              to: '/projects?status=active',
+              tone: 'primary',
+            },
+            {
+              label: 'Unread notifications',
+              value: notifications.data?.unread ?? 0,
+              to: '/notifications?status=unread',
+              tone: 'warning',
+            },
+          ]
 
   return (
     <Page className="space-y-6">
@@ -313,6 +402,30 @@ export function DashboardPage() {
           )}
         </section>
       )}
+
+      <section
+        aria-label="Decision dashboards"
+        className="grid gap-4 lg:grid-cols-2"
+      >
+        {workloadChart.length > 0 && (
+          <DecisionBarChart
+            data={workloadChart}
+            description="Select a bar to open the matching work queue."
+            title={persona === 'manager' ? 'Team workload' : 'Work this week'}
+          />
+        )}
+        <DecisionBarChart
+          data={decisionChart}
+          description="Live signals from the areas you are permitted to view."
+          title={
+            persona === 'finance'
+              ? 'Voucher pipeline'
+              : persona === 'administrator' || persona === 'manager'
+                ? 'Delivery attention'
+                : 'Coming up'
+          }
+        />
+      </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.75fr)]">
         <FocusPanel meetings={meetings.data} tasks={tasks.data?.items ?? []} />

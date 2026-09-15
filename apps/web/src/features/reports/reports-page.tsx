@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 
+import { DecisionBarChart } from '@/components/decision-chart'
 import { reportsApi, type PeriodType, type ReportType } from './api'
 import { useAuth } from '@/features/auth/auth-store'
 import { organizationApi } from '@/features/organizations/api'
@@ -27,6 +28,12 @@ const weekStart = () => {
   value.setDate(value.getDate() - 6)
   return iso(value)
 }
+const initialTab = () => {
+  const value = new URLSearchParams(window.location.search).get('tab')
+  return ['overview', 'reports', 'review', 'policy'].includes(value ?? '')
+    ? (value as 'overview' | 'reports' | 'review' | 'policy')
+    : 'overview'
+}
 
 export function ReportsPage() {
   const { user } = useAuth()
@@ -34,7 +41,7 @@ export function ReportsPage() {
   const permissions = new Set(user?.permissions ?? [])
   const client = useQueryClient()
   const [tab, setTab] = useState<'overview' | 'reports' | 'review' | 'policy'>(
-    'overview',
+    initialTab,
   )
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
@@ -48,6 +55,7 @@ export function ReportsPage() {
   const [start, setStart] = useState(weekStart())
   const [end, setEnd] = useState(today())
   const [showGenerate, setShowGenerate] = useState(false)
+  const [insightWindow, setInsightWindow] = useState('weekly')
 
   const dashboard = useQuery({
     queryKey: ['reporting-dashboard'],
@@ -168,16 +176,37 @@ export function ReportsPage() {
             records.
           </p>
         </div>
-        {(permissions.has('reports.create_own') ||
-          permissions.has('reports.generate')) && (
-          <button
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground"
-            onClick={() => setShowGenerate(true)}
-            type="button"
-          >
-            <FilePlus2 size={18} /> Generate report
-          </button>
-        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs font-semibold text-muted-foreground">
+            Review window
+            <select
+              aria-label="Review window"
+              className="control mt-1 min-w-32"
+              onChange={(event) => {
+                const value = event.target.value
+                setInsightWindow(value)
+                setHistoryPeriod(value === 'quarterly' ? '' : value)
+                setPage(1)
+              }}
+              value={insightWindow}
+            >
+              <option value="weekly">This week</option>
+              <option value="monthly">This month</option>
+              <option value="quarterly">This quarter</option>
+              <option value="custom">Custom reports</option>
+            </select>
+          </label>
+          {(permissions.has('reports.create_own') ||
+            permissions.has('reports.generate')) && (
+            <button
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground hover:bg-primary-hover"
+              onClick={() => setShowGenerate(true)}
+              type="button"
+            >
+              <FilePlus2 size={18} /> Generate report
+            </button>
+          )}
+        </div>
       </header>
 
       <nav
@@ -202,8 +231,12 @@ export function ReportsPage() {
             }`}
             key={value}
             onClick={() => {
-              setTab(value as typeof tab)
+              const next = value as typeof tab
+              setTab(next)
               setPage(1)
+              const url = new URL(window.location.href)
+              url.searchParams.set('tab', next)
+              window.history.replaceState({}, '', url)
             }}
             type="button"
           >
@@ -218,27 +251,82 @@ export function ReportsPage() {
             <Metric
               icon={<CalendarClock size={18} />}
               label="Drafts to review"
+              to="/reports?tab=review&status=pending_review"
               value={dashboard.data?.pending_my_review ?? 0}
             />
             <Metric
               icon={<ShieldCheck size={18} />}
               label="Awaiting manager"
+              to="/reports?tab=reports&status=submitted"
               value={dashboard.data?.awaiting_manager_review ?? 0}
             />
             <Metric
               icon={<TriangleAlert size={18} />}
               label="Overdue tasks"
+              to="/tasks?due=overdue"
               value={dashboard.data?.overdue_tasks ?? 0}
             />
             <Metric
               icon={<BarChart3 size={18} />}
               label="Projects at risk"
+              to="/projects?health=at_risk"
               value={dashboard.data?.projects_at_risk ?? 0}
             />
             <Metric
               icon={<CheckCircle2 size={18} />}
               label="Reporting compliance"
+              to="/reports?tab=reports"
               value={`${dashboard.data?.reporting_compliance_percent ?? 100}%`}
+            />
+          </section>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <DecisionBarChart
+              data={[
+                {
+                  label: 'Open tasks',
+                  value: dashboard.data?.open_tasks ?? 0,
+                  to: '/tasks?status=in_progress',
+                  tone: 'primary',
+                },
+                {
+                  label: 'Overdue tasks',
+                  value: dashboard.data?.overdue_tasks ?? 0,
+                  to: '/tasks?due=overdue',
+                  tone: 'danger',
+                },
+                {
+                  label: 'Unresolved blockers',
+                  value: dashboard.data?.unresolved_blockers ?? 0,
+                  to: '/tasks?status=blocked',
+                  tone: 'warning',
+                },
+              ]}
+              description="Current tenant-scoped workload requiring action."
+              title="Work delivery"
+            />
+            <DecisionBarChart
+              data={[
+                {
+                  label: 'Finalized',
+                  value: dashboard.data?.finalized_this_period ?? 0,
+                  to: '/reports?tab=reports&status=final',
+                  tone: 'success',
+                },
+                {
+                  label: 'Awaiting manager',
+                  value: dashboard.data?.awaiting_manager_review ?? 0,
+                  to: '/reports?tab=review&status=pending_review',
+                  tone: 'info',
+                },
+                {
+                  label: 'Returned',
+                  value: dashboard.data?.returned ?? 0,
+                  to: '/reports?tab=reports&status=returned',
+                  tone: 'danger',
+                },
+              ]}
+              description="Select a stage to inspect its report history."
+              title="Reporting flow"
             />
           </section>
           <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
@@ -614,10 +702,10 @@ function ReportList({
       </p>
     )
   return (
-    <div className="divide-y">
+    <div className="data-region divide-y" data-report-list>
       {reports.map((report) => (
         <Link
-          className="grid gap-2 p-4 transition hover:bg-muted/40 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+          className="grid min-h-12 gap-2 px-4 py-2.5 transition hover:bg-muted/40 sm:grid-cols-[1fr_auto_auto] sm:items-center"
           key={report.id}
           params={{ reportId: report.id }}
           to="/reports/$reportId"
@@ -645,19 +733,25 @@ function Metric({
   label: text,
   value,
   icon,
+  to,
 }: {
   label: string
   value: number | string
   icon: ReactNode
+  to: string
 }) {
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+    <Link
+      aria-label={`${text}: ${value}. View details`}
+      className="rounded-xl border bg-card p-4 shadow-sm transition hover:border-primary-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      to={to as never}
+    >
       <div className="flex items-center justify-between text-muted-foreground">
         <span className="text-sm">{text}</span>
         {icon}
       </div>
       <strong className="mt-3 block text-2xl">{value}</strong>
-    </div>
+    </Link>
   )
 }
 

@@ -27,7 +27,11 @@ import { label } from './utils'
 export function FinancePage() {
   const { user } = useAuth()
   const permissions = new Set(user?.permissions)
-  const [tab, setTab] = useState('accounts')
+  const initialQuery = new URLSearchParams(window.location.search)
+  const [tab, setTab] = useState(
+    initialQuery.get('tab') === 'transactions' ? 'transactions' : 'accounts',
+  )
+  const statementIntent = initialQuery.get('intent') === 'statement'
   const [create, setCreate] = useState(false)
   const [transfer, setTransfer] = useState(false)
   if (!permissions.has('finance.accounts.view'))
@@ -81,6 +85,11 @@ export function FinancePage() {
           </button>
         )}
       </nav>
+      {statementIntent && tab === 'accounts' && (
+        <p className="finance-callout" role="status">
+          Choose an account to open its transactions and downloadable statement.
+        </p>
+      )}
       {tab === 'accounts' ? <Accounts /> : <Transactions />}
     </FinanceLayout>
   )
