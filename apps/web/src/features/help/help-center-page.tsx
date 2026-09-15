@@ -23,6 +23,7 @@ import {
   Surface,
 } from '@/components/page'
 import { useAuth } from '@/features/auth/auth-store'
+import { HelpAdminStudio } from '@/features/help/help-admin-studio'
 import {
   helpApi,
   type HelpArticle,
@@ -30,7 +31,7 @@ import {
 } from '@/features/help/api'
 
 type Collection = 'all' | 'favorites' | 'recent'
-type View = 'learn' | 'support'
+type View = 'learn' | 'support' | 'manage'
 const categoryCards = [
   [
     'Getting Started',
@@ -74,6 +75,8 @@ export function HelpCenterPage() {
   )
   const [collection, setCollection] = useState<Collection>('all')
   const queryClient = useQueryClient()
+  const canManage =
+    user?.roles.some((role) => ['Super Admin', 'Admin'].includes(role)) ?? false
   const articles = useQuery({
     queryKey: ['help-articles', collection, search],
     queryFn: async () => {
@@ -130,7 +133,13 @@ export function HelpCenterPage() {
             role="tablist"
             aria-label="Help views"
           >
-            {(['learn', 'support'] as const).map((item) => (
+            {(
+              [
+                'learn',
+                'support',
+                ...(canManage ? ['manage' as const] : []),
+              ] as const
+            ).map((item) => (
               <button
                 aria-selected={view === item}
                 className={
@@ -143,13 +152,19 @@ export function HelpCenterPage() {
                 role="tab"
                 type="button"
               >
-                {item === 'learn' ? 'Learn' : 'Get support'}
+                {item === 'learn'
+                  ? 'Learn'
+                  : item === 'support'
+                    ? 'Get support'
+                    : 'Manage content'}
               </button>
             ))}
           </div>
         }
       />
-      {view === 'support' ? (
+      {view === 'manage' && canManage ? (
+        <HelpAdminStudio />
+      ) : view === 'support' ? (
         <SupportWorkspace />
       ) : (
         <>

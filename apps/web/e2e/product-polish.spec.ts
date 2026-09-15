@@ -70,6 +70,28 @@ test('authenticated shell, command center, and navigation work', async ({
   await secondPage.close()
 })
 
+test('Help & Support provides learning, support, and admin content workflows', async ({
+  page,
+}) => {
+  await login(page)
+  await navigateTo(page, 'Help & Support')
+  await expect(page).toHaveURL('/help')
+  await expect(
+    page.getByRole('heading', { name: 'Help & Support' }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Search OfficeFlow help')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Get support' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'How can we help?' }),
+  ).toBeVisible()
+  await expect(page.getByText('Request history')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Manage content' }).click()
+  await expect(page.getByText('Content studio')).toBeVisible()
+  await expect(page.getByLabel('Search help content')).toBeVisible()
+})
+
 test('calendar can create, edit, and delete a real event', async ({ page }) => {
   await login(page)
   await navigateTo(page, 'Calendar')
