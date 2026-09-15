@@ -97,3 +97,27 @@ test('surfaces a safe field-level validation message instead of a generic mutati
     authApi.resetPassword({ token: 'safe-test-token' }),
   ).rejects.toEqual(new ApiError('new_password: Field required', 422))
 })
+
+test('keeps the authenticated shell mounted when an optional surface returns 403', async () => {
+  vi.resetModules()
+  document.cookie = 'meetinghq_csrf=initial-csrf-token; path=/'
+  const expired = vi.fn()
+  window.addEventListener('meetinghq:session-expired', expired)
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input)
+    if (url.endsWith('/auth/refresh'))
+      return Response.json({ success: true, data: tokenResponse })
+    return Response.json(
+      { success: false, error: { message: 'Access denied' } },
+      { status: 403 },
+    )
+  })
+
+  const { apiRequest, ApiError } = await import('@/features/auth/api')
+  await expect(apiRequest('/restricted-widget', {}, true)).rejects.toEqual(
+    new ApiError('Access denied', 403),
+  )
+  expect(expired).not.toHaveBeenCalled()
+  expect(window.location.pathname).not.toBe('/login')
+  window.removeEventListener('meetinghq:session-expired', expired)
+})

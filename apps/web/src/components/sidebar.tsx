@@ -3,10 +3,12 @@ import { useNavigate, useRouterState } from '@tanstack/react-router'
 import {
   Activity,
   Bell,
+  BriefcaseBusiness,
   Building2,
   CalendarDays,
   CalendarRange,
   ChartNoAxesCombined,
+  CheckSquare2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -33,14 +35,17 @@ import { mailApi } from '@/features/mail/api'
 import { notificationApi } from '@/features/notifications/api'
 import { organizationApi } from '@/features/organizations/api'
 import { platformApi, type MenuDefinition } from '@/features/platform/api'
+import { ProductWordmark } from '@/components/product-wordmark'
 
 const icons = {
   activity: Activity,
   bell: Bell,
+  briefcase: BriefcaseBusiness,
   building: Building2,
   'calendar-days': CalendarDays,
   'calendar-range': CalendarRange,
   'chart-no-axes-combined': ChartNoAxesCombined,
+  'check-square': CheckSquare2,
   'circle-help': CircleHelp,
   'file-clock': FileClock,
   'folder-kanban': FolderKanban,
@@ -104,7 +109,7 @@ export function Sidebar({
     enabled: permissions.has('mail.view'),
     refetchInterval: 15_000,
   })
-  const label = organization.data?.name ?? 'MeetingHQ'
+  const organizationLabel = organization.data?.name ?? 'Your organization'
   const workspace = workspaces.data?.[0]
   const allItems = navigation.data ?? []
   const dynamicBadge = (item: MenuDefinition) => {
@@ -202,7 +207,12 @@ export function Sidebar({
       })}
     </div>
   )
-  const sectionOrder = ['work', 'administration', 'support']
+  const isAdministrator = user?.roles.some((role) =>
+    ['Super Admin', 'Admin'].includes(role),
+  )
+  const sectionOrder = isAdministrator
+    ? ['administration', 'work', 'support']
+    : ['work', 'administration', 'support']
   const sections = [
     ...new Set(
       allItems.filter((item) => !item.parent_key).map((item) => item.section),
@@ -229,18 +239,8 @@ export function Sidebar({
           collapsed ? 'lg:w-[76px]' : 'lg:w-64'
         }`}
       >
-        <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-4">
-          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20">
-            MH
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold tracking-tight">{label}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {workspace?.name ?? 'Digital workplace'}
-              </p>
-            </div>
-          )}
+        <div className="flex h-[60px] items-center gap-3 border-b border-sidebar-border px-4">
+          <ProductWordmark compact={collapsed} />
           <button
             aria-label="Close navigation"
             className="rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden"
@@ -252,17 +252,17 @@ export function Sidebar({
         </div>
 
         {!collapsed && (
-          <div className="border-b p-3">
-            <div className="flex items-center gap-3 rounded-xl border bg-card/50 p-3">
+          <div className="border-b border-sidebar-border p-3">
+            <div className="flex items-center gap-3 rounded-[10px] border bg-card/70 p-2.5">
               <div className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
                 <Users className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">
-                  {workspace?.name ?? 'Choose workspace'}
+                  {workspace?.name ?? 'Primary workspace'}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {label}
+                  {organizationLabel}
                 </p>
               </div>
             </div>
@@ -291,7 +291,11 @@ export function Sidebar({
                     (item) => item.section === section && !item.parent_key,
                   )
                   .sort((left, right) => left.position - right.position),
-                section === 'work' ? undefined : section,
+                section === 'work'
+                  ? 'Workspace'
+                  : section === 'administration'
+                    ? 'Control center'
+                    : section,
               )}
             </div>
           ))}

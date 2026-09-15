@@ -92,3 +92,28 @@ class HelpAnalyticsResponse(BaseModel):
     unique_readers: int
     favorite_count: int
     popular_articles: list[dict[str, object]]
+
+
+class SupportRequestInput(BaseModel):
+    request_type: Literal["help", "issue", "feature", "administration"] = "help"
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
+    subject: str = Field(min_length=4, max_length=240)
+    description: str = Field(min_length=10, max_length=10_000)
+    page_url: str | None = Field(default=None, max_length=1000)
+    module: str | None = Field(default=None, max_length=120)
+    diagnostics: dict[str, object] = Field(default_factory=dict)
+
+
+class SupportRequestResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    reference: str
+    request_type: str
+    priority: str
+    subject: str
+    description: str
+    status: str
+    page_url: str | None
+    module: str | None
+    created_at: datetime
+    updated_at: datetime

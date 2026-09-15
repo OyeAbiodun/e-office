@@ -1524,7 +1524,7 @@ class NotificationService:
             [
                 "BEGIN:VCALENDAR",
                 "VERSION:2.0",
-                "PRODID:-//MeetingHQ//Meeting Invitation//EN",
+                "PRODID:-//OfficeFlow//Meeting Invitation//EN",
                 "CALSCALE:GREGORIAN",
                 f"METHOD:{method}",
                 "BEGIN:VEVENT",
@@ -1555,7 +1555,7 @@ class NotificationService:
             f"Ends: {meeting.end_datetime.isoformat()} ({meeting.timezone})\n"
             f"Location: {location}\n"
             f"Meeting link: {meeting.meeting_url or 'Not specified'}\n\n"
-            "Open MeetingHQ to Accept, Decline, or respond Tentative."
+            "Open OfficeFlow to Accept, Decline, or respond Tentative."
         )
 
     @staticmethod

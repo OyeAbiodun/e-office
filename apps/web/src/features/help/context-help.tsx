@@ -142,7 +142,7 @@ export function ContextHelp({
             onClick={onClose}
             to="/help"
           >
-            Browse all documentation
+            Open Help & Support
           </Link>
         </footer>
       </aside>

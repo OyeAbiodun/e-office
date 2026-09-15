@@ -99,7 +99,7 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level, json_output=settings.environment != "local")
 
     application = FastAPI(
-        title="MeetingHQ API",
+        title="OfficeFlow API",
         summary="Schedule. Meet. Collaborate.",
         version="0.1.0",
         docs_url="/api/docs",

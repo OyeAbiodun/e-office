@@ -19,7 +19,9 @@ export function AppShell() {
   })
   const { user } = useAuth()
   useNotificationRealtime(user)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('officeflow-sidebar-collapsed') === 'true',
+  )
   const [mobileOpen, setMobileOpen] = useState(false)
   const [panel, setPanel] = useState<ShellPanel>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -47,9 +49,13 @@ export function AppShell() {
   const helpContextId = getHelpContextId(pathname)
 
   useEffect(() => {
+    localStorage.setItem('officeflow-sidebar-collapsed', String(collapsed))
+  }, [collapsed])
+
+  useEffect(() => {
     if (!user) return
-    const leaf = crumbs.at(-1)?.label ?? 'Dashboard'
-    const parent = crumbs.at(-2)?.label ?? 'MeetingHQ'
+    const leaf = crumbs.at(-1)?.label ?? 'Home'
+    const parent = crumbs.at(-2)?.label ?? 'OfficeFlow'
     recordRecentPage(user.id, {
       path: `${pathname}${search ? `?${search}` : ''}`,
       label: leaf,

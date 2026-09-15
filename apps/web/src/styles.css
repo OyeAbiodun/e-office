@@ -12,19 +12,33 @@
     'Segoe UI',
     sans-serif;
   color-scheme: light;
-  --background: oklch(0.985 0.004 250);
-  --foreground: oklch(0.21 0.025 255);
+  --background: oklch(0.982 0.004 245);
+  --foreground: oklch(0.205 0.025 253);
   --card: oklch(1 0 0);
-  --primary: oklch(0.56 0.19 255);
+  --surface-elevated: oklch(1 0 0);
+  --primary: oklch(0.59 0.185 252);
+  --primary-hover: oklch(0.53 0.195 253);
+  --primary-subtle: oklch(0.95 0.035 249);
+  --primary-border: oklch(0.84 0.075 250);
   --primary-foreground: oklch(0.99 0 0);
-  --muted: oklch(0.96 0.008 250);
-  --muted-foreground: oklch(0.51 0.025 255);
-  --border: oklch(0.91 0.012 250);
-  --sidebar: oklch(0.975 0.007 250);
+  --muted: oklch(0.956 0.008 246);
+  --muted-foreground: oklch(0.5 0.025 253);
+  --border: oklch(0.905 0.012 247);
+  --success: oklch(0.57 0.14 153);
+  --warning: oklch(0.72 0.15 75);
+  --danger: oklch(0.59 0.205 25);
+  --info: oklch(0.61 0.16 244);
+  --sidebar: oklch(0.972 0.006 245);
   --sidebar-foreground: oklch(0.24 0.025 255);
-  --sidebar-border: oklch(0.91 0.012 250);
-  --sidebar-accent: oklch(0.93 0.025 250);
-  --sidebar-accent-foreground: oklch(0.28 0.035 255);
+  --sidebar-border: oklch(0.9 0.012 247);
+  --sidebar-accent: oklch(0.938 0.03 249);
+  --sidebar-accent-foreground: oklch(0.47 0.15 253);
+  --shadow-color: 220 35% 15%;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-overlay: 0.875rem;
+  --motion-fast: 140ms;
+  --motion-standard: 190ms;
 }
 
 .dark {
@@ -32,11 +46,19 @@
   --background: oklch(0.17 0.018 255);
   --foreground: oklch(0.95 0.008 250);
   --card: oklch(0.205 0.02 255);
+  --surface-elevated: oklch(0.225 0.022 255);
   --primary: oklch(0.68 0.17 250);
+  --primary-hover: oklch(0.73 0.15 248);
+  --primary-subtle: oklch(0.265 0.045 252);
+  --primary-border: oklch(0.39 0.075 251);
   --primary-foreground: oklch(0.15 0.025 255);
   --muted: oklch(0.25 0.02 255);
   --muted-foreground: oklch(0.7 0.02 250);
   --border: oklch(0.29 0.02 255);
+  --success: oklch(0.7 0.13 153);
+  --warning: oklch(0.79 0.13 79);
+  --danger: oklch(0.72 0.17 25);
+  --info: oklch(0.73 0.14 242);
   --sidebar: oklch(0.185 0.02 255);
   --sidebar-foreground: oklch(0.94 0.008 250);
   --sidebar-border: oklch(0.27 0.02 255);
@@ -48,11 +70,19 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
+  --color-elevated: var(--surface-elevated);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-border: var(--primary-border);
   --color-primary-foreground: var(--primary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-border: var(--sidebar-border);
@@ -69,6 +99,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: var(--background);
+  color: var(--foreground);
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -80,6 +112,180 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+@layer components {
+  .page-container {
+    width: 100%;
+    max-width: 100rem;
+    margin-inline: auto;
+    padding: 1.25rem;
+  }
+
+  .page-title {
+    font-size: clamp(1.75rem, 2.4vw, 2rem);
+    line-height: 1.15;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+  }
+
+  .page-eyebrow {
+    margin-bottom: 0.35rem;
+    color: var(--primary);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .page-description {
+    max-width: 48rem;
+    margin-top: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.9rem;
+    line-height: 1.45rem;
+  }
+
+  .surface {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--card);
+    box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.035);
+  }
+
+  .metric-link {
+    display: flex;
+    min-height: 7rem;
+    align-items: center;
+    gap: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--card);
+    padding: 1rem;
+    box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.035);
+    transition:
+      border-color var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease,
+      transform var(--motion-fast) ease;
+  }
+
+  .metric-link:hover {
+    border-color: var(--primary-border);
+    box-shadow: 0 8px 24px hsl(var(--shadow-color) / 0.08);
+    transform: translateY(-1px);
+  }
+
+  .metric-icon {
+    display: grid;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: none;
+    place-items: center;
+    border-radius: 0.65rem;
+    background: var(--primary-subtle);
+    color: var(--primary);
+  }
+
+  .metric-icon-danger {
+    color: var(--danger);
+    background: color-mix(in oklch, var(--danger) 11%, transparent);
+  }
+  .metric-icon-warning {
+    color: var(--warning);
+    background: color-mix(in oklch, var(--warning) 13%, transparent);
+  }
+  .metric-icon-success {
+    color: var(--success);
+    background: color-mix(in oklch, var(--success) 11%, transparent);
+  }
+
+  .button-primary,
+  .button-secondary,
+  .button-ghost {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-control);
+    padding-inline: 0.9rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    transition:
+      background var(--motion-fast) ease,
+      border-color var(--motion-fast) ease,
+      color var(--motion-fast) ease;
+  }
+
+  .button-primary {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .button-primary:hover {
+    background: var(--primary-hover);
+  }
+  .button-secondary {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--foreground);
+  }
+  .button-secondary:hover {
+    border-color: var(--primary-border);
+    background: var(--muted);
+  }
+  .button-ghost {
+    color: var(--muted-foreground);
+  }
+  .button-ghost:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .state-panel {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-card);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--muted);
+    padding: 0.15rem 0.45rem;
+    color: var(--muted-foreground);
+    font-size: 0.675rem;
+    line-height: 1rem;
+    font-weight: 650;
+    text-transform: capitalize;
+    white-space: nowrap;
+  }
+
+  .skeleton {
+    border-radius: var(--radius-card);
+    background: var(--muted);
+    animation: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@media (min-width: 640px) {
+  .page-container {
+    padding: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .page-container {
+    padding: 2rem;
+  }
 }
 
 :focus-visible {

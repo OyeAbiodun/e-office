@@ -242,9 +242,10 @@ export async function apiRequest<T>(
       return result
     }
     if (authenticated && error instanceof ApiError && error.status === 403) {
-      authLog('permission_denied', { path, action: 'show_access_denied' })
-      if (window.location.pathname !== '/forbidden')
-        window.location.assign('/forbidden')
+      authLog('permission_denied', {
+        path,
+        action: 'return_to_requesting_surface',
+      })
     }
     if (mutation && feedback)
       notify({

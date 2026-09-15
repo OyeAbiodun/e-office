@@ -505,7 +505,7 @@ function BrowserPushPrompt({ onEnabled }: { onEnabled: () => void }) {
       <MonitorUp className="size-6 text-primary" />
       <div className="min-w-[16rem] flex-1">
         <h2 className="font-semibold">
-          Stay updated when you’re away from MeetingHQ
+          Stay updated when you’re away from OfficeFlow
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Enable alerts for direct messages, mentions, meeting invitations,

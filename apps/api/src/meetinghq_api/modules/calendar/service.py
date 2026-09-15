@@ -335,7 +335,7 @@ class CalendarService:
         lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            "PRODID:-//MeetingHQ//Calendar//EN",
+            "PRODID:-//OfficeFlow//Calendar//EN",
             f"X-WR-CALNAME:{self._ics_escape(calendar.name)}",
         ]
         for event in events:

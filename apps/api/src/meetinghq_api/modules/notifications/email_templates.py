@@ -50,7 +50,7 @@ _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 class EmailBranding:
     """Safe display-only tenant branding with durable MeetingHQ fallbacks."""
 
-    organization_name: str = "MeetingHQ"
+    organization_name: str = "OfficeFlow"
     accent_color: str = "#2563eb"
     logo_url: str | None = None
     support_url: str | None = None
@@ -59,7 +59,7 @@ class EmailBranding:
     def __post_init__(self) -> None:
         """Defend the renderer even when callers construct a branding object directly."""
         object.__setattr__(
-            self, "organization_name", _safe_text(self.organization_name, "MeetingHQ", 160)
+            self, "organization_name", _safe_text(self.organization_name, "OfficeFlow", 160)
         )
         object.__setattr__(self, "accent_color", _safe_color(self.accent_color))
         object.__setattr__(self, "logo_url", _safe_url(self.logo_url))
@@ -72,7 +72,7 @@ class EmailBranding:
             return cls()
         settings = organization.settings if isinstance(organization.settings, dict) else {}
         return cls(
-            organization_name=_safe_text(organization.name, "MeetingHQ", 160),
+            organization_name=_safe_text(organization.name, "OfficeFlow", 160),
             accent_color=_safe_color(organization.brand_color),
             logo_url=_safe_url(organization.logo_url),
             support_url=_safe_url(settings.get("support_url")),
@@ -366,14 +366,14 @@ class EmailTemplateRegistry:
     def _password_reset(data: PasswordResetEmailData, brand: EmailBranding) -> RenderedEmail:
         url = _required_url(data.reset_url)
         text = (
-            "Reset your MeetingHQ password\n\n"
+            "Reset your OfficeFlow password\n\n"
             f"Use this secure link within {data.expires_in}:\n{url}\n\n"
             "If you did not request this, you can safely ignore this email."
         )
         body = "".join(
             [
                 _heading("Reset your password"),
-                _paragraph("We received a request to reset your MeetingHQ password."),
+                _paragraph("We received a request to reset your OfficeFlow password."),
                 _button(url, "Reset password", brand),
                 _paragraph(
                     f"This link expires in {_safe_text(data.expires_in, '20 minutes', 80)}."
@@ -386,7 +386,7 @@ class EmailTemplateRegistry:
         )
         return _render(
             "auth.password_reset",
-            "MeetingHQ | Reset your password",
+            "OfficeFlow | Reset your password",
             text,
             body,
             brand,
@@ -396,16 +396,16 @@ class EmailTemplateRegistry:
     @staticmethod
     def _verification(data: VerificationEmailData, brand: EmailBranding) -> RenderedEmail:
         url = _required_url(data.verification_url)
-        text = f"Verify your MeetingHQ email\n\nVerify your email address:\n{url}"
+        text = f"Verify your OfficeFlow email\n\nVerify your email address:\n{url}"
         body = (
             _heading("Verify your email")
-            + _paragraph("Confirm your email address to finish securing your MeetingHQ account.")
+            + _paragraph("Confirm your email address to finish securing your OfficeFlow account.")
             + _button(url, "Verify email", brand)
             + _fallback_link(url, "Verify email")
         )
         return _render(
             "auth.email_verification",
-            "MeetingHQ | Verify your email",
+            "OfficeFlow | Verify your email",
             text,
             body,
             brand,
@@ -416,14 +416,14 @@ class EmailTemplateRegistry:
     def _invitation(data: UserInvitationEmailData, brand: EmailBranding) -> RenderedEmail:
         url = _required_url(data.invitation_url)
         organization = _safe_text(data.organization_name, brand.organization_name, 160)
-        text = f"You're invited to {organization} on MeetingHQ\n\nAccept your invitation:\n{url}"
+        text = f"You're invited to {organization} on OfficeFlow\n\nAccept your invitation:\n{url}"
         body = (
             _heading("You’re invited")
-            + _paragraph(f"You have been invited to join {organization} in MeetingHQ.")
+            + _paragraph(f"You have been invited to join {organization} in OfficeFlow.")
             + _button(url, "Accept invitation", brand)
             + _fallback_link(url, "Accept invitation")
         )
-        return _render("user.invitation", "MeetingHQ | You’re invited", text, body, brand)
+        return _render("user.invitation", "OfficeFlow | You’re invited", text, body, brand)
 
     @staticmethod
     def _temporary_password(
@@ -431,25 +431,25 @@ class EmailTemplateRegistry:
     ) -> RenderedEmail:
         url = _required_url(data.login_url)
         password = _safe_text(data.temporary_password, "", 512)
-        text = f"Your MeetingHQ account is ready\n\nSign in: {url}\nTemporary password: {password}\n\nYou must change this password at first sign-in."
+        text = f"Your OfficeFlow account is ready\n\nSign in: {url}\nTemporary password: {password}\n\nYou must change this password at first sign-in."
         body = (
             _heading("Your account is ready")
-            + _paragraph("An administrator created your MeetingHQ account.")
+            + _paragraph("An administrator created your OfficeFlow account.")
             + _detail_rows(
                 [
                     ("Temporary password", password),
                     ("Next step", "Change this password at your first sign-in."),
                 ]
             )
-            + _button(url, "Sign in to MeetingHQ", brand)
+            + _button(url, "Sign in to OfficeFlow", brand)
             + _notice(
-                "Keep this temporary password private. MeetingHQ support will never ask you to share it."
+                "Keep this temporary password private. OfficeFlow support will never ask you to share it."
             )
-            + _fallback_link(url, "Sign in to MeetingHQ")
+            + _fallback_link(url, "Sign in to OfficeFlow")
         )
         return _render(
             "user.temporary_password",
-            "MeetingHQ | Your account is ready",
+            "OfficeFlow | Your account is ready",
             text,
             body,
             brand,
@@ -532,16 +532,16 @@ class EmailTemplateRegistry:
             brand,
         )
         if key == "meeting.invitation":
-            body += _paragraph("Use MeetingHQ to respond: Accept, Tentative, or Decline.")
+            body += _paragraph("Use OfficeFlow to respond: Accept, Tentative, or Decline.")
         body += _fallback_link(meeting_url, "View meeting")
         return _render(
-            key, f"MeetingHQ | {subject_prefix}: {title}", "\n".join(text_lines), body, brand
+            key, f"OfficeFlow | {subject_prefix}: {title}", "\n".join(text_lines), body, brand
         )
 
     @staticmethod
     def _smtp_test(data: SmtpTestEmailData, brand: EmailBranding) -> RenderedEmail:
         text = (
-            "MeetingHQ SMTP test successful\n\n"
+            "OfficeFlow SMTP test successful\n\n"
             "The configured SMTP provider accepted this test message.\n"
             f"Accepted at: {_safe_text(data.accepted_at, 'Unknown', 120)}\n"
             f"Environment: {_safe_text(data.environment, 'Unknown', 80)}\n\n"
@@ -550,7 +550,7 @@ class EmailTemplateRegistry:
         body = (
             _heading("SMTP test successful")
             + _paragraph(
-                "MeetingHQ submitted this message through the configured outbound email path."
+                "OfficeFlow submitted this message through the configured outbound email path."
             )
             + _detail_rows(
                 [("Provider acceptance", data.accepted_at), ("Environment", data.environment)]
@@ -559,7 +559,7 @@ class EmailTemplateRegistry:
                 "SMTP acceptance does not by itself prove final mailbox delivery. Confirm receipt in this mailbox."
             )
         )
-        return _render("smtp.test", "MeetingHQ | SMTP test successful", text, body, brand)
+        return _render("smtp.test", "OfficeFlow | SMTP test successful", text, body, brand)
 
     @staticmethod
     def _voucher(key: TemplateKey, data: VoucherEmailData, brand: EmailBranding) -> RenderedEmail:
@@ -612,7 +612,7 @@ class EmailTemplateRegistry:
         )
         return _render(
             key,
-            f"MeetingHQ | {heading}: {voucher_number}",
+            f"OfficeFlow | {heading}: {voucher_number}",
             "\n".join(text_lines),
             body,
             brand,
@@ -655,7 +655,7 @@ class EmailTemplateRegistry:
         body += _button(leave_url, "View leave request", brand) + _fallback_link(
             leave_url, "View leave request"
         )
-        return _render(key, f"MeetingHQ | {heading}", text, body, brand)
+        return _render(key, f"OfficeFlow | {heading}", text, body, brand)
 
     @staticmethod
     def _payroll(data: PayrollEmailData, brand: EmailBranding) -> RenderedEmail:
@@ -689,7 +689,7 @@ class EmailTemplateRegistry:
         )
         return _render(
             "payroll.payslip_available",
-            f"MeetingHQ | {period_name} payslip available",
+            f"OfficeFlow | {period_name} payslip available",
             text,
             body,
             brand,
@@ -708,15 +708,15 @@ def _render(
     logo = (
         f'<img src="{html.escape(brand.logo_url, quote=True)}" width="32" height="32" alt="{html.escape(brand.organization_name)} logo" style="display:block;border:0;border-radius:6px;" />'
         if brand.logo_url
-        else f'<div style="width:32px;height:32px;line-height:32px;text-align:center;background:{brand.accent_color};border-radius:6px;color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:700;">M</div>'
+        else f'<div style="width:32px;height:32px;line-height:32px;text-align:center;background:{brand.accent_color};border-radius:6px;color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:700;">O</div>'
     )
     support = (
         f'<a href="{html.escape(brand.support_url, quote=True)}" style="color:#475569;text-decoration:underline;">Help and support</a>'
         if brand.support_url
-        else html.escape(brand.support_email or "Contact your MeetingHQ administrator")
+        else html.escape(brand.support_email or "Contact your OfficeFlow administrator")
     )
     security_notice = (
-        '<p style="margin:16px 0 0;color:#64748b;font-family:Arial,sans-serif;font-size:12px;line-height:18px;">For your security, MeetingHQ will never ask you to send your password or verification code by email.</p>'
+        '<p style="margin:16px 0 0;color:#64748b;font-family:Arial,sans-serif;font-size:12px;line-height:18px;">For your security, OfficeFlow will never ask you to send your password or verification code by email.</p>'
         if security
         else ""
     )
@@ -726,15 +726,15 @@ def _render(
 <body style="margin:0;padding:0;background:#f1f5f9;color:#0f172a;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f1f5f9;"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe3ee;border-radius:12px;overflow:hidden;">
-<tr><td style="padding:24px 28px;border-bottom:1px solid #e2e8f0;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td style="padding-right:12px;vertical-align:middle;">{logo}</td><td style="vertical-align:middle;"><div style="font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#0f172a;">MeetingHQ</div><div style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;margin-top:2px;">Schedule. Meet. Collaborate.</div></td></tr></table></td></tr>
+<tr><td style="padding:24px 28px;border-bottom:1px solid #e2e8f0;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td style="padding-right:12px;vertical-align:middle;">{logo}</td><td style="vertical-align:middle;"><div style="font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#0f172a;">OfficeFlow</div><div style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;margin-top:2px;">Work. Manage. Deliver.</div></td></tr></table></td></tr>
 <tr><td style="padding:30px 28px 24px;">{content}</td></tr>
-<tr><td style="padding:20px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;"><p style="margin:0;color:#64748b;font-family:Arial,sans-serif;font-size:12px;line-height:18px;">This email was sent by MeetingHQ for {html.escape(brand.organization_name)}.</p>{security_notice}<p style="margin:12px 0 0;color:#64748b;font-family:Arial,sans-serif;font-size:12px;line-height:18px;">{support} · © {year} MeetingHQ</p></td></tr>
+<tr><td style="padding:20px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;"><p style="margin:0;color:#64748b;font-family:Arial,sans-serif;font-size:12px;line-height:18px;">This email was sent by OfficeFlow for {html.escape(brand.organization_name)}.</p>{security_notice}<p style="margin:12px 0 0;color:#64748b;font-family:Arial,sans-serif;font-size:12px;line-height:18px;">{support} · © {year} OfficeFlow</p></td></tr>
 </table></td></tr></table></body></html>"""
     return RenderedEmail(key=key, subject=subject, text=text, html=html_body)
 
 
 def _heading(value: str) -> str:
-    return f'<h1 style="margin:0 0 12px;font-family:Arial,sans-serif;font-size:24px;line-height:32px;color:#0f172a;">{html.escape(_safe_text(value, "MeetingHQ", 250))}</h1>'
+    return f'<h1 style="margin:0 0 12px;font-family:Arial,sans-serif;font-size:24px;line-height:32px;color:#0f172a;">{html.escape(_safe_text(value, "OfficeFlow", 250))}</h1>'
 
 
 def _paragraph(value: str) -> str:
@@ -763,7 +763,7 @@ def _meeting_card(title: str, rows: list[tuple[str, str | None]], brand: EmailBr
 
 def _button(url: str, label: str, brand: EmailBranding) -> str:
     safe_url = _required_url(url)
-    safe_label = html.escape(_safe_text(label, "Open MeetingHQ", 100))
+    safe_label = html.escape(_safe_text(label, "Open OfficeFlow", 100))
     return f'<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:24px 0;"><tr><td bgcolor="{brand.accent_color}" style="border-radius:6px;"><a href="{html.escape(safe_url, quote=True)}" style="display:inline-block;padding:12px 18px;font-family:Arial,sans-serif;font-size:14px;font-weight:700;line-height:20px;color:#ffffff;text-decoration:none;">{safe_label}</a></td></tr></table>'
 
 

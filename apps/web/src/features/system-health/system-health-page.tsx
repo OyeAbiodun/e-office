@@ -95,7 +95,7 @@ export function SystemHealthPage() {
             System Health
           </h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
-            Live operational status across MeetingHQ services, providers,
+            Live operational status across OfficeFlow services, providers,
             queues, and storage.
           </p>
         </div>

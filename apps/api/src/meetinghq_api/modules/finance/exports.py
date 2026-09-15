@@ -189,13 +189,13 @@ def document(
         story += [table, Spacer(1, 5 * mm)]
     story.append(
         Paragraph(
-            f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M UTC} · MeetingHQ", styles["BodyText"]
+            f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M UTC} · OfficeFlow", styles["BodyText"]
         )
     )
     SimpleDocTemplate(
         output,
         title=title,
-        author="MeetingHQ",
+        author="OfficeFlow",
         pagesize=(210 * mm, 297 * mm),
         leftMargin=17 * mm,
         rightMargin=17 * mm,

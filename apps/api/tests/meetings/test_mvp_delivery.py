@@ -150,7 +150,7 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
     assert rescheduled.json()["data"]["timezone"] == "America/New_York"
     assert datetime.fromisoformat(rescheduled.json()["data"]["start_datetime"]).tzinfo is not None
     update_ics = next(
-        ics for _, subject, ics in sent if subject.startswith("MeetingHQ | Meeting updated:")
+        ics for _, subject, ics in sent if subject.startswith("OfficeFlow | Meeting updated:")
     )
     assert update_ics is not None
     assert "METHOD:REQUEST" in update_ics
@@ -176,7 +176,7 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
     assert cancelled.status_code == 200, cancelled.text
     assert cancelled.json()["data"]["status"] == "cancelled"
     cancellation_ics = next(
-        ics for _, subject, ics in sent if subject.startswith("MeetingHQ | Meeting cancelled:")
+        ics for _, subject, ics in sent if subject.startswith("OfficeFlow | Meeting cancelled:")
     )
     assert cancellation_ics is not None
     assert "METHOD:CANCEL" in cancellation_ics

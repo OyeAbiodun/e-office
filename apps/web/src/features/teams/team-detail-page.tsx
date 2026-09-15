@@ -551,7 +551,7 @@ function Meetings({ data }: { data: TeamOverview }) {
           <Empty
             icon={Video}
             title="No upcoming meetings"
-            detail="Schedule from MeetingHQ Calendar."
+            detail="Schedule from OfficeFlow Calendar."
           />
         )}
       </div>

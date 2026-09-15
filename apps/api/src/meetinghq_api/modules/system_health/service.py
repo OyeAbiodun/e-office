@@ -68,10 +68,10 @@ class SystemHealthService:
             self._application_component(
                 "meeting-provider",
                 "Meeting provider",
-                "MeetingHQ native meeting lifecycle is available.",
+                "OfficeFlow native meeting lifecycle is available.",
             ),
             self._application_component(
-                "license", "License", "Self-managed MeetingHQ license is active."
+                "license", "License", "Self-managed OfficeFlow license is active."
             ),
             self._security(),
             self._queue_component(queue),

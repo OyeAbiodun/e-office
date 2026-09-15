@@ -318,7 +318,7 @@ class MeetingService:
             meeting,
             "meeting_updated",
             f"Meeting updated: {meeting.title}",
-            f"{meeting.title} was updated. Open MeetingHQ for the latest details.",
+            f"{meeting.title} was updated. Open OfficeFlow for the latest details.",
             calendar_method="REQUEST",
         )
         await self._record("MeetingUpdated", meeting, actor_id)

@@ -6,7 +6,7 @@ export interface BreadcrumbItem {
 
 const labels: Record<string, string> = {
   vouchers: 'Vouchers',
-  finance: 'Finance Center',
+  finance: 'Finance',
   payroll: 'Payroll',
   projects: 'Projects',
   reports: 'Reports & Intelligence',
@@ -20,7 +20,9 @@ const labels: Record<string, string> = {
   organization: 'Organization',
   workspaces: 'Workspaces',
   teams: 'Teams',
-  members: 'Members',
+  members: 'People',
+  tasks: 'Tasks & Activities',
+  'my-space': 'My Space',
   invitations: 'Invitations',
   profile: 'Profile Center',
   security: 'Security & MFA',
@@ -32,7 +34,7 @@ const labels: Record<string, string> = {
   settings: 'Settings',
   platform: 'Platform Management',
   administration: 'Administration',
-  help: 'Help Center',
+  help: 'Help & Support',
   notifications: 'Notification Center',
   users: 'User Management',
   roles: 'Roles & Permissions',
@@ -59,6 +61,8 @@ const icons: Record<string, string> = {
   payroll: 'wallet-cards',
   projects: 'folder-kanban',
   reports: 'chart-no-axes-combined',
+  tasks: 'check-square',
+  'my-space': 'briefcase',
 }
 
 const administrationRoutes = new Set([
@@ -100,7 +104,7 @@ export function resolveBreadcrumbs(
 ): BreadcrumbItem[] {
   const parts = pathname.split('/').filter(Boolean)
   if (parts.length === 0)
-    return [{ label: 'Dashboard', path: '/', icon: 'layout-dashboard' }]
+    return [{ label: 'Home', path: '/', icon: 'layout-dashboard' }]
 
   const crumbs: BreadcrumbItem[] = []
   const root = parts[0]!

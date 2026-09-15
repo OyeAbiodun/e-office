@@ -87,7 +87,7 @@ export function ProfileMenu() {
               {user.email}
             </p>
             <p className="mt-1 text-xs font-medium text-primary">
-              {user.roles[0] ?? 'MeetingHQ member'}
+              {user.roles[0] ?? 'OfficeFlow member'}
             </p>
           </div>
           <div className="py-2">

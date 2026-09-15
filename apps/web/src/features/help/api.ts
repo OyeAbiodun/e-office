@@ -39,6 +39,20 @@ export interface HelpContext {
   tour: ProductTour | null
 }
 
+export interface SupportRequest {
+  id: string
+  reference: string
+  request_type: 'help' | 'issue' | 'feature' | 'administration'
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  subject: string
+  description: string
+  status: string
+  page_url: string | null
+  module: string | null
+  created_at: string
+  updated_at: string
+}
+
 export const helpApi = {
   articles: (search = '') =>
     apiRequest<HelpArticle[]>(
@@ -60,6 +74,22 @@ export const helpApi = {
     apiRequest<{ favorite: boolean }>(
       `/help/articles/${articleId}/favorite`,
       { method: 'POST' },
+      true,
+    ),
+  supportRequests: () =>
+    apiRequest<SupportRequest[]>('/help/support', {}, true),
+  createSupportRequest: (body: {
+    request_type: SupportRequest['request_type']
+    priority: SupportRequest['priority']
+    subject: string
+    description: string
+    page_url?: string
+    module?: string
+    diagnostics?: Record<string, unknown>
+  }) =>
+    apiRequest<SupportRequest>(
+      '/help/support',
+      { method: 'POST', body: JSON.stringify(body) },
       true,
     ),
 }

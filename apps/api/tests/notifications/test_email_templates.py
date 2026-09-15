@@ -41,10 +41,10 @@ from meetinghq_api.modules.notifications.service import MeetingEmailSender
 def test_every_registered_template_renders_html_and_plain_text(key: str) -> None:
     rendered = EmailTemplateRegistry.preview(key)  # type: ignore[arg-type]
 
-    assert rendered.subject.startswith("MeetingHQ |")
+    assert rendered.subject.startswith("OfficeFlow |")
     assert rendered.text.strip()
     assert "<!doctype html>" in rendered.html.lower()
-    assert "Schedule. Meet. Collaborate." in rendered.html
+    assert "Work. Manage. Deliver." in rendered.html
     assert "text/html" not in rendered.html
     assert "javascript:" not in rendered.html.lower()
 

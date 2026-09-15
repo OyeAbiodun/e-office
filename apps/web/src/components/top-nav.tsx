@@ -7,6 +7,7 @@ import {
   CalendarRange,
   Circle,
   CircleHelp,
+  ChevronRight,
   FileClock,
   Flag,
   LayoutDashboard,
@@ -26,6 +27,7 @@ import {
 import { ThemeToggle } from '@/components/theme-toggle'
 import { ProfileMenu } from '@/features/auth/profile-menu'
 import { notificationApi } from '@/features/notifications/api'
+import { PRODUCT } from '@/lib/product'
 
 interface TopNavProps {
   breadcrumbs: Array<{ label: string; path: string; icon?: string }>
@@ -72,8 +74,8 @@ export function TopNav({
     circle: Circle,
   }
   return (
-    <header className="app-top-nav sticky top-0 z-30 border-b border-border bg-background/88 backdrop-blur-xl">
-      <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
+    <header className="app-top-nav sticky top-0 z-30 border-b border-border bg-background/92 backdrop-blur-xl">
+      <div className="flex h-[60px] items-center gap-3 px-3 sm:px-5">
         <button
           aria-label="Open navigation"
           className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
@@ -82,14 +84,54 @@ export function TopNav({
         >
           <Menu aria-hidden="true" className="size-5" />
         </button>
+        <nav
+          aria-label="Breadcrumb"
+          className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm text-muted-foreground lg:flex"
+        >
+          <Link className="shrink-0 hover:text-foreground" to="/">
+            {PRODUCT.name}
+          </Link>
+          {breadcrumbs.map((crumb, index) => {
+            const Icon =
+              breadcrumbIcons[crumb.icon as keyof typeof breadcrumbIcons] ??
+              Circle
+            return (
+              <span
+                className="flex min-w-0 shrink items-center gap-1.5"
+                key={crumb.path}
+              >
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0"
+                />
+                <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+                {index === breadcrumbs.length - 1 ? (
+                  <span
+                    aria-current="page"
+                    className="truncate font-medium text-foreground"
+                  >
+                    {crumb.label}
+                  </span>
+                ) : (
+                  <Link
+                    className="truncate hover:text-foreground"
+                    to={crumb.path as never}
+                  >
+                    {crumb.label}
+                  </Link>
+                )}
+              </span>
+            )
+          })}
+        </nav>
         <button
-          aria-label="Search MeetingHQ. Shortcut Control K"
-          className="hidden h-10 max-w-lg flex-1 items-center gap-3 rounded-xl border bg-muted/45 px-3 text-left text-sm text-muted-foreground transition hover:border-primary/40 hover:bg-muted sm:flex"
+          aria-label="Search OfficeFlow. Shortcut Control K"
+          className="hidden h-9 w-full max-w-[28rem] items-center gap-3 rounded-lg border bg-card px-3 text-left text-sm text-muted-foreground transition hover:border-primary-border hover:bg-muted/60 sm:flex"
           onClick={onCommand}
           type="button"
         >
           <Search className="size-4" />
-          <span className="flex-1">Search people, meetings, channels…</span>
+          <span className="flex-1">Search or run a command…</span>
           <kbd className="rounded-md border bg-background px-2 py-0.5 text-[11px]">
             Ctrl K
           </kbd>
@@ -97,7 +139,7 @@ export function TopNav({
         <div className="ml-auto flex items-center gap-2">
           <button
             aria-label="Quick create"
-            className="flex h-9 items-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/15"
+            className="button-primary h-9 min-h-9 px-3"
             onClick={onQuickCreate}
             type="button"
           >
@@ -107,7 +149,7 @@ export function TopNav({
           <ThemeToggle />
           <button
             aria-label="Help for this page"
-            className="rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="button-ghost size-9 min-h-9 p-0"
             onClick={() => onHelp?.()}
             title="Help for this page"
             type="button"
@@ -116,7 +158,7 @@ export function TopNav({
           </button>
           <button
             aria-label="Notifications and activity"
-            className="relative rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="button-ghost relative size-9 min-h-9 p-0"
             onClick={onNotifications}
             type="button"
           >
@@ -134,32 +176,21 @@ export function TopNav({
         </div>
       </div>
       <nav
-        aria-label="Breadcrumb"
-        className="flex h-9 items-center gap-2 overflow-x-auto border-t px-4 text-xs text-muted-foreground sm:px-6"
+        aria-label="Mobile breadcrumb"
+        className="flex h-8 items-center gap-1.5 overflow-x-auto border-t px-4 text-xs text-muted-foreground lg:hidden"
       >
         <Link className="shrink-0 hover:text-foreground" to="/">
-          MeetingHQ
+          {PRODUCT.name}
         </Link>
-        {breadcrumbs.map((crumb, index) => (
-          <span className="flex shrink-0 items-center gap-2" key={crumb.path}>
-            <span aria-hidden="true">/</span>
-            {(() => {
-              const Icon =
-                breadcrumbIcons[crumb.icon as keyof typeof breadcrumbIcons] ??
-                Circle
-              return <Icon aria-hidden="true" className="size-3.5" />
-            })()}
-            {index === breadcrumbs.length - 1 ? (
-              <span aria-current="page" className="capitalize text-foreground">
+        {breadcrumbs.slice(-2).map((crumb, index, values) => (
+          <span className="flex shrink-0 items-center gap-1.5" key={crumb.path}>
+            <ChevronRight aria-hidden="true" className="size-3" />
+            {index === values.length - 1 ? (
+              <span aria-current="page" className="text-foreground">
                 {crumb.label}
               </span>
             ) : (
-              <Link
-                className="capitalize hover:text-foreground"
-                to={crumb.path as never}
-              >
-                {crumb.label}
-              </Link>
+              <Link to={crumb.path as never}>{crumb.label}</Link>
             )}
           </span>
         ))}

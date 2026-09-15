@@ -107,10 +107,10 @@ const managedConfigurations: Record<
   branding: {
     key: 'platform_branding',
     category: 'branding',
-    title: 'MeetingHQ branding',
+    title: 'OfficeFlow branding',
     description: 'Platform identity presented across tenant administration.',
     defaults: {
-      product_name: 'MeetingHQ',
+      product_name: 'OfficeFlow',
       support_url: '/help',
       accent_color: '#2563eb',
     },
@@ -270,7 +270,7 @@ export function PlatformPage() {
             Platform Management
           </h1>
           <p className="mt-2 max-w-3xl text-muted-foreground">
-            Govern MeetingHQ capabilities, runtime behavior, security, and
+            Govern OfficeFlow capabilities, runtime behavior, security, and
             commercial policy without changing application code.
           </p>
         </div>
@@ -932,7 +932,7 @@ function MenuManager({
                 await confirm({
                   title: 'Reset navigation defaults?',
                   description:
-                    'Custom labels, groups, order, badges, and visibility will be replaced by the MeetingHQ defaults.',
+                    'Custom labels, groups, order, badges, and visibility will be replaced by the OfficeFlow defaults.',
                   confirmLabel: 'Reset defaults',
                   tone: 'danger',
                 })
@@ -1147,7 +1147,7 @@ function SystemModules() {
   return (
     <>
       <SectionHeader
-        description="Protected operational centers installed with MeetingHQ."
+        description="Protected operational centers installed with OfficeFlow."
         title="System Modules"
       />
       <section className="grid gap-4 md:grid-cols-2">

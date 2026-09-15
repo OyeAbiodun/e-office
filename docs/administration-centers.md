@@ -1,6 +1,6 @@
 # Administration Centers
 
-MeetingHQ exposes Super Admin-only operational modules under the dynamic
+OfficeFlow exposes Super Admin-only operational modules under the dynamic
 Administration menu.
 
 ## Platform Management
@@ -23,7 +23,7 @@ Successful changes are recorded in the Audit Center.
 
 Integration Center is the external-provider configuration boundary. It supports
 mail, calendar, storage, AI, meeting, productivity, and developer providers.
-Platform Management must enable a provider before MeetingHQ uses it, while
+Platform Management must enable a provider before OfficeFlow uses it, while
 Integration Center stores its connection settings and credentials.
 
 Every provider exposes the same administration contract: Overview,

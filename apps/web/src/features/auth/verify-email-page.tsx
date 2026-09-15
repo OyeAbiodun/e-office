@@ -44,7 +44,7 @@ export function VerifyEmailPage() {
           className="mt-7 inline-block font-medium text-primary"
           to={state === 'success' ? '/' : '/login'}
         >
-          {state === 'success' ? 'Open MeetingHQ' : 'Return to sign in'}
+          {state === 'success' ? 'Open OfficeFlow' : 'Return to sign in'}
         </Link>
       )}
     </section>

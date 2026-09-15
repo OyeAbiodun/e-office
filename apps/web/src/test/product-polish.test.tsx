@@ -65,7 +65,7 @@ test('top navigation exposes functional global actions', () => {
       </ThemeProvider>
     </QueryClientProvider>,
   )
-  fireEvent.click(screen.getByRole('button', { name: /Search MeetingHQ/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Search OfficeFlow/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Quick create' }))
   fireEvent.click(
     screen.getByRole('button', { name: 'Notifications and activity' }),

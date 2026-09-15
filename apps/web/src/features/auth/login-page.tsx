@@ -39,7 +39,7 @@ export function LoginPage() {
     <section>
       <h2 className="text-3xl font-semibold tracking-tight">Welcome back</h2>
       <p className="mt-2 text-muted-foreground">
-        Sign in to your MeetingHQ workspace.
+        Sign in to continue to your OfficeFlow workspace.
       </p>
       <form className="mt-8 space-y-5" onSubmit={submit}>
         {error && (
@@ -86,7 +86,7 @@ export function LoginPage() {
         </div>
         <button
           disabled={isSubmitting}
-          className="flex h-11 w-full items-center justify-center rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60"
+          className="button-primary h-11 w-full disabled:opacity-60"
           type="submit"
         >
           {isSubmitting ? (

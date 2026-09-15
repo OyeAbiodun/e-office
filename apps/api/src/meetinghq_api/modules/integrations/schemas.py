@@ -70,7 +70,7 @@ class SmtpConfigurationUpdate(BaseModel):
     username: str | None = Field(default=None, max_length=320)
     password: str | None = Field(default=None, max_length=2048, repr=False)
     from_email: EmailStr
-    from_name: str = Field(default="MeetingHQ", min_length=1, max_length=120)
+    from_name: str = Field(default="OfficeFlow", min_length=1, max_length=120)
     reply_to: EmailStr | None = None
     return_path: EmailStr | None = None
     enabled: bool = True

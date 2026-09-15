@@ -427,7 +427,7 @@ async def payslip_bytes(svc: PayrollService, user: User, result_id: uuid.UUID) -
     data = await asyncio.to_thread(
         documents.payslip_pdf,
         response,
-        organization.name if organization else "MeetingHQ",
+        organization.name if organization else "OfficeFlow",
         period.name,
     )
     svc.audit(user, "payroll.payslip.downloaded", "payroll_result", result.id)

@@ -368,7 +368,7 @@ const smtpDefaults: SmtpConfigurationUpdate = {
   username: '',
   password: '',
   from_email: '',
-  from_name: 'MeetingHQ',
+  from_name: 'OfficeFlow',
   reply_to: null,
   return_path: null,
   enabled: true,
@@ -679,7 +679,7 @@ function SmtpConfigurationPanel({
                 <Send className="size-6 text-primary" />
                 <h3 className="mt-4 text-lg font-semibold">Send test email</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Uses the exact outbound transport used by MeetingHQ. SMTP
+                  Uses the exact outbound transport used by OfficeFlow. SMTP
                   acceptance is not final mailbox-delivery proof.
                 </p>
                 <label className="mt-5 block text-sm font-medium">
@@ -1359,7 +1359,7 @@ function ConfigurationPanel({
           )}
           {tab === 'permissions' && (
             <InfoSection
-              description="MeetingHQ requests the minimum provider capabilities required for enabled workflows."
+              description="OfficeFlow requests the minimum provider capabilities required for enabled workflows."
               icon={ShieldCheck}
               title="Provider permissions"
             >
@@ -1525,7 +1525,7 @@ function ConfigurationForm({
       {!provider.enabled && (
         <p className="mt-4 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700">
           This provider is disabled in Platform Management. Configuration can be
-          prepared, but MeetingHQ will not use it until enabled.
+          prepared, but OfficeFlow will not use it until enabled.
         </p>
       )}
       <form
@@ -1702,8 +1702,8 @@ function providerScopes(provider: IntegrationProvider) {
   if (provider.category === 'Storage')
     return [
       'Read authorized objects',
-      'Create MeetingHQ objects',
-      'Manage MeetingHQ object metadata',
+      'Create OfficeFlow objects',
+      'Manage OfficeFlow object metadata',
     ]
   if (provider.category === 'AI')
     return ['Invoke configured models', 'Read provider usage metadata']

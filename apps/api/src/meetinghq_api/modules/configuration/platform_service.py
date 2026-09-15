@@ -103,15 +103,24 @@ PROVIDER_NAVIGATION_ALIASES = {
 }
 
 DEFAULT_MENUS = (
-    ("dashboard", "Dashboard", "/", "layout-dashboard", "dashboard.view", None, "work"),
-    ("tasks", "My Work", "/tasks", "check-square", "tasks.view_own", "tasks", "work"),
+    ("dashboard", "Home", "/", "layout-dashboard", "dashboard.view", None, "work"),
+    ("my-space", "My Space", "/my-space", "briefcase", "tasks.view_own", "tasks", "work"),
     ("projects", "Projects", "/projects", "folder-kanban", "projects.view", "projects", "work"),
+    (
+        "tasks",
+        "Tasks & Activities",
+        "/tasks",
+        "check-square",
+        "tasks.view_own",
+        "tasks",
+        "work",
+    ),
     ("leave", "Leave", "/leave", "calendar-range", "leave.view_own", "leave", "work"),
     ("payroll", "My Payroll", "/payroll", "wallet-cards", "payroll.view_own", "payroll", "work"),
     ("vouchers", "Vouchers", "/vouchers", "file-clock", "vouchers.view_own", "vouchers", "work"),
     (
         "finance",
-        "Finance Center",
+        "Finance",
         "/finance",
         "building",
         "finance.accounts.view",
@@ -140,7 +149,7 @@ DEFAULT_MENUS = (
         "notifications",
         "work",
     ),
-    ("members", "Members", "/members", "users", "members.view", None, "work"),
+    ("members", "People", "/members", "users", "members.view", None, "work"),
     (
         "administration",
         "Administration",
@@ -173,8 +182,24 @@ DEFAULT_MENUS = (
         None,
         "admin",
     ),
-    ("help", "Help Center", "/help", "circle-help", "dashboard.view", "help-center", "support"),
+    (
+        "help",
+        "Help & Support",
+        "/help",
+        "circle-help",
+        "dashboard.view",
+        "help-center",
+        "support",
+    ),
 )
+
+LEGACY_MENU_LABELS = {
+    "dashboard": "Dashboard",
+    "tasks": "My Work",
+    "finance": "Finance Center",
+    "members": "Members",
+    "help": "Help Center",
+}
 
 
 class PlatformService:
@@ -256,6 +281,15 @@ class PlatformService:
                         enabled=True,
                     )
                 )
+            else:
+                menu = await self.session.scalar(
+                    select(MenuDefinition).where(
+                        MenuDefinition.organization_id == organization_id,
+                        MenuDefinition.key == key,
+                    )
+                )
+                if menu is not None and menu.label == LEGACY_MENU_LABELS.get(key):
+                    menu.label = label
         await self.session.flush()
 
     async def features(self, organization_id: uuid.UUID) -> list[FeatureFlag]:
@@ -306,7 +340,7 @@ class PlatformService:
         features = {row.key: row for row in await self.features(user.organization_id)}
         permissions = {permission.name for role in user.roles for permission in role.permissions}
         roles = {role.name for role in user.roles}
-        return [
+        visible = [
             item
             for item in menus
             if item.enabled
@@ -322,6 +356,55 @@ class PlatformService:
                 )
             )
         ]
+        role_names = {role.name for role in user.roles}
+        priority: dict[str, int]
+        if role_names & {"Super Admin", "Admin"}:
+            priority = {
+                "dashboard": 0,
+                "administration": 1,
+                "my-space": 2,
+                "members": 3,
+                "projects": 4,
+                "tasks": 5,
+                "reports": 6,
+            }
+        elif role_names & {"Accountant", "Payroll Officer", "Payroll Approver", "Auditor"}:
+            priority = {
+                "dashboard": 0,
+                "finance": 1,
+                "vouchers": 2,
+                "payroll": 3,
+                "reports": 4,
+                "projects": 5,
+                "tasks": 6,
+            }
+        elif role_names & {"Team Manager", "Meeting Organizer"}:
+            priority = {
+                "dashboard": 0,
+                "my-space": 1,
+                "projects": 2,
+                "tasks": 3,
+                "reports": 4,
+                "leave": 5,
+            }
+        else:
+            priority = {
+                "dashboard": 0,
+                "my-space": 1,
+                "projects": 2,
+                "tasks": 3,
+                "calendar": 4,
+                "meetings": 5,
+                "chat": 6,
+            }
+        return sorted(
+            visible,
+            key=lambda item: (
+                priority.get(item.key, 50),
+                item.position,
+                item.label,
+            ),
+        )
 
     async def update_menu(
         self, organization_id: uuid.UUID, key: str, body: MenuUpdate, actor: User

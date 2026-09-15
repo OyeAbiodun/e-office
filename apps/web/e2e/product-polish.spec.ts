@@ -38,11 +38,11 @@ test('authenticated shell, command center, and navigation work', async ({
   await login(page)
   await page.keyboard.press('Control+k')
   await expect(
-    page.getByRole('dialog', { name: 'Search MeetingHQ' }),
+    page.getByRole('dialog', { name: 'Search OfficeFlow' }),
   ).toBeVisible()
   await page.getByLabel('Search commands').fill('calendar')
   await page
-    .getByRole('dialog', { name: 'Search MeetingHQ' })
+    .getByRole('dialog', { name: 'Search OfficeFlow' })
     .getByRole('link', { name: 'Calendar Work navigation' })
     .click()
   await expect(page).toHaveURL('/calendar')
@@ -53,9 +53,10 @@ test('authenticated shell, command center, and navigation work', async ({
   await page.goto('/profile/security/mfa')
   await page.reload()
   await expect(page).toHaveURL('/profile/security/mfa')
-  await expect(
-    page.getByRole('link', { name: 'Profile Center', exact: true }),
-  ).toBeVisible()
+  if ((page.viewportSize()?.width ?? 1280) >= 640)
+    await expect(
+      page.getByRole('link', { name: 'Profile Center', exact: true }),
+    ).toBeVisible()
   await expect(
     page.getByRole('link', { name: 'Security & MFA', exact: true }),
   ).toBeVisible()

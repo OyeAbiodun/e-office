@@ -68,3 +68,35 @@ async def test_help_articles_are_seeded_searchable_and_admin_extensible(
     analytics = await meeting_client.get("/api/v1/help/analytics", headers=headers)
     assert analytics.status_code == 200
     assert analytics.json()["data"]["total_views"] >= 2
+
+
+async def test_support_requests_are_persisted_with_safe_context(
+    meeting_client: AsyncClient,
+    meeting_identity: tuple[dict[str, str], str],
+) -> None:
+    headers, _ = meeting_identity
+    created = await meeting_client.post(
+        "/api/v1/help/support",
+        headers=headers,
+        json={
+            "request_type": "issue",
+            "priority": "high",
+            "subject": "Calendar workflow is blocked",
+            "description": "The event editor remains unavailable after the calendar loads.",
+            "page_url": "http://localhost/calendar",
+            "module": "calendar",
+            "diagnostics": {
+                "route": "/calendar",
+                "viewport": "1440x900",
+                "password": "must-not-be-stored",
+            },
+        },
+    )
+    assert created.status_code == 201
+    request = created.json()["data"]
+    assert request["reference"].startswith("OF-")
+    assert request["status"] == "open"
+
+    history = await meeting_client.get("/api/v1/help/support", headers=headers)
+    assert history.status_code == 200
+    assert any(row["reference"] == request["reference"] for row in history.json()["data"])

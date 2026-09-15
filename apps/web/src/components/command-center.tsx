@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
   Bell,
@@ -8,6 +8,7 @@ import {
   CircleHelp,
   FileClock,
   FileText,
+  FolderPlus,
   Hash,
   LayoutDashboard,
   Mail,
@@ -16,6 +17,7 @@ import {
   Plug,
   Search,
   ShieldCheck,
+  SquareCheckBig,
   Users,
   Video,
   X,
@@ -47,12 +49,60 @@ const resultIcons = {
 } as const
 
 const createActions = [
-  { label: 'Schedule meeting', to: '/meetings/new', icon: Video },
-  { label: 'Start conversation', to: '/chat/new', icon: MessageSquarePlus },
-  { label: 'Compose mail', to: '/mail/compose', icon: MailPlus },
-  { label: 'Request leave', to: '/leave', icon: CalendarRange },
-  { label: 'Invite teammate', to: '/invitations', icon: MailPlus },
-  { label: 'Create workspace', to: '/workspaces', icon: FileText },
+  {
+    label: 'Create task',
+    to: '/tasks?create=task',
+    icon: SquareCheckBig,
+    permissions: ['tasks.create_own', 'tasks.manage'],
+  },
+  {
+    label: 'Record daily activity',
+    to: '/tasks?create=activity',
+    icon: Activity,
+    permissions: ['activity.create_own', 'activity.manage'],
+  },
+  {
+    label: 'Create project',
+    to: '/projects?create=project',
+    icon: FolderPlus,
+    permissions: ['projects.create'],
+  },
+  {
+    label: 'Schedule meeting',
+    to: '/meetings/new',
+    icon: Video,
+    permissions: ['meetings.create'],
+  },
+  {
+    label: 'Request leave',
+    to: '/leave?create=request',
+    icon: CalendarRange,
+    permissions: ['leave.request'],
+  },
+  {
+    label: 'Create voucher',
+    to: '/vouchers/new',
+    icon: FileText,
+    permissions: ['vouchers.create'],
+  },
+  {
+    label: 'Generate report',
+    to: '/reports?create=report',
+    icon: FileText,
+    permissions: ['reports.create_own', 'reports.generate'],
+  },
+  {
+    label: 'Start conversation',
+    to: '/chat/new',
+    icon: MessageSquarePlus,
+    permissions: ['chat.create', 'chat.send'],
+  },
+  {
+    label: 'Compose mail',
+    to: '/mail/compose',
+    icon: MailPlus,
+    permissions: ['mail.create'],
+  },
 ] as const
 
 export function CommandCenter({
@@ -63,7 +113,9 @@ export function CommandCenter({
   onClose: () => void
 }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const notifications = useQuery({
     queryKey: ['notifications'],
@@ -87,7 +139,10 @@ export function CommandCenter({
     if (panel === 'command')
       window.setTimeout(() => inputRef.current?.focus(), 0)
     if (!panel) setQuery('')
+    setActiveIndex(0)
   }, [panel])
+
+  useEffect(() => setActiveIndex(0), [query])
 
   const results = useMemo(() => {
     if (query.trim().length >= 2) return search.data?.results ?? []
@@ -116,21 +171,16 @@ export function CommandCenter({
   }, [navigation.data, query, search.data?.results, user])
 
   const permittedCreateActions = useMemo(() => {
-    const paths = new Set((navigation.data ?? []).map((item) => item.path))
-    return createActions.filter((item) => {
-      if (item.to.startsWith('/meetings')) return paths.has('/meetings')
-      if (item.to.startsWith('/chat')) return paths.has('/chat')
-      if (item.to.startsWith('/mail')) return paths.has('/mail')
-      if (item.to.startsWith('/invitations'))
-        return paths.has('/members') || paths.has('/users')
-      return paths.has('/workspaces') || paths.has('/administration')
-    })
-  }, [navigation.data])
+    const permissions = new Set(user?.permissions ?? [])
+    return createActions.filter((item) =>
+      item.permissions.some((permission) => permissions.has(permission)),
+    )
+  }, [user?.permissions])
 
   if (!panel) return null
   const title =
     panel === 'command'
-      ? 'Search MeetingHQ'
+      ? 'Search OfficeFlow'
       : panel === 'notifications'
         ? 'Activity center'
         : 'Quick create'
@@ -154,6 +204,23 @@ export function CommandCenter({
                 aria-label="Search commands and workspace resources"
                 className="h-full flex-1 bg-transparent text-sm outline-none"
                 onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    setActiveIndex((current) =>
+                      Math.min(current + 1, Math.max(0, results.length - 1)),
+                    )
+                  }
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault()
+                    setActiveIndex((current) => Math.max(0, current - 1))
+                  }
+                  if (event.key === 'Enter' && results[activeIndex]) {
+                    event.preventDefault()
+                    onClose()
+                    void navigate({ to: results[activeIndex].url as never })
+                  }
+                }}
                 placeholder="Search pages, people, meetings, mail, help, and settings…"
                 ref={inputRef}
                 value={query}
@@ -173,12 +240,13 @@ export function CommandCenter({
         </header>
         <div className="max-h-[65vh] overflow-y-auto p-2">
           {panel === 'command' &&
-            results.map((item) => {
+            results.map((item, index) => {
               const Icon =
                 resultIcons[item.icon as keyof typeof resultIcons] ?? Search
               return (
                 <Link
-                  className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-muted focus:bg-muted focus:outline-none"
+                  aria-current={index === activeIndex ? 'true' : undefined}
+                  className="flex items-center gap-3 rounded-lg p-3 transition hover:bg-muted focus:bg-muted focus:outline-none aria-[current=true]:bg-primary-subtle"
                   key={`${item.url}-${item.id}`}
                   onClick={onClose}
                   to={item.url as never}
@@ -200,7 +268,7 @@ export function CommandCenter({
           {panel === 'quick-create' &&
             permittedCreateActions.map(({ label, to, icon: Icon }) => (
               <Link
-                className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-muted focus:bg-muted focus:outline-none"
+                className="flex items-center gap-3 rounded-lg p-3 transition hover:bg-muted focus:bg-muted focus:outline-none"
                 key={label}
                 onClick={onClose}
                 to={to}

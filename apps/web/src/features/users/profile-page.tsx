@@ -164,7 +164,7 @@ export function ProfilePage() {
                 'Profile Center'}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {profile.data?.job_title || 'MeetingHQ member'}
+              {profile.data?.job_title || 'OfficeFlow member'}
               {profile.data?.department ? ` · ${profile.data.department}` : ''}
             </p>
           </div>
@@ -1003,7 +1003,7 @@ function NotificationPreferencesSection() {
   ] as const
   return (
     <Section
-      subtitle="Choose how MeetingHQ reaches you while preserving mandatory account-security notices."
+      subtitle="Choose how OfficeFlow reaches you while preserving mandatory account-security notices."
       title="Notification preferences"
     >
       <div className="grid gap-3 sm:grid-cols-3">
@@ -1454,14 +1454,14 @@ function resolveSection(pathname: string, search: string): Section {
 function downloadRecoveryCodes(codes: string[]) {
   const blob = new Blob(
     [
-      `MeetingHQ recovery codes\nGenerated: ${new Date().toISOString()}\n\n${codes.join('\n')}\n`,
+      `OfficeFlow recovery codes\nGenerated: ${new Date().toISOString()}\n\n${codes.join('\n')}\n`,
     ],
     { type: 'text/plain;charset=utf-8' },
   )
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'meetinghq-recovery-codes.txt'
+  link.download = 'officeflow-recovery-codes.txt'
   link.click()
   URL.revokeObjectURL(url)
 }

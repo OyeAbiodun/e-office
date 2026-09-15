@@ -74,7 +74,7 @@ PROVIDERS = (
         "azure-blob", "Azure Blob", "Storage", "Microsoft Azure object storage.", "storage"
     ),
     ProviderDefinition(
-        "openai", "OpenAI", "AI", "OpenAI models for MeetingHQ intelligence.", "api_key"
+        "openai", "OpenAI", "AI", "OpenAI models for OfficeFlow intelligence.", "api_key"
     ),
     ProviderDefinition(
         "azure-openai", "Azure OpenAI", "AI", "Enterprise OpenAI models hosted in Azure.", "api_key"

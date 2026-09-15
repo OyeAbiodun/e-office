@@ -109,7 +109,7 @@ class UserService:
     ) -> tuple[User, str]:
         email = str(body.email).lower()
         if await self.session.scalar(select(User.id).where(User.email == email)):
-            raise ConflictError("Email is already assigned to a MeetingHQ account")
+            raise ConflictError("Email is already assigned to an OfficeFlow account")
         roles = await self._roles(organization_id, body.role_ids)
         await self._validate_context(organization_id, body.workspace_id, body.team_id)
         await self._validate_employment_context(
@@ -198,7 +198,7 @@ class UserService:
                 select(User.id).where(User.email == email, User.id != user.id)
             )
             if duplicate:
-                raise ConflictError("Email is already assigned to a MeetingHQ account")
+                raise ConflictError("Email is already assigned to an OfficeFlow account")
             values["email"] = email
         await self._validate_context(
             organization_id,
@@ -534,7 +534,7 @@ class UserService:
         row.mfa_enabled = False
         row.recovery_code_hashes = []
         await self.session.flush()
-        uri = provisioning_uri(secret, "MeetingHQ", user.email)
+        uri = provisioning_uri(secret, "OfficeFlow", user.email)
         image = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
         output = io.BytesIO()
         image.save(output)

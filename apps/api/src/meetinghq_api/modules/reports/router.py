@@ -197,7 +197,7 @@ async def export_report(
         suffix = "xlsx"
     else:
         data = await asyncio.to_thread(
-            exports.report_pdf, report, organization.name if organization else "MeetingHQ"
+            exports.report_pdf, report, organization.name if organization else "OfficeFlow"
         )
         content_type = "application/pdf"
         suffix = "pdf"

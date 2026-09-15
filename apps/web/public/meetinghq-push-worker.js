@@ -1,7 +1,7 @@
 self.addEventListener('push', (event) => {
   const payload = event.data ? event.data.json() : {}
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'MeetingHQ', {
+    self.registration.showNotification(payload.title || 'OfficeFlow', {
       body: payload.body || 'You have a new update.',
       data: { actionUrl: payload.action_url || '/' },
       icon: '/favicon.ico',

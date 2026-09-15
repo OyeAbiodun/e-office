@@ -1,8 +1,26 @@
-# MeetingHQ Design System
+# OfficeFlow Design System
 
-This document is the permanent implementation contract for MeetingHQ product UI.
+This document is the permanent implementation contract for OfficeFlow product UI.
 New visual or interaction patterns must be added here before they are introduced
 in feature code.
+
+## Product identity
+
+- Product: **OfficeFlow**
+- Category: **Workplace & Business Operations Platform**
+- Tagline: **Work. Manage. Deliver.**
+- The temporary typographic wordmark is rendered only through the shared
+  `ProductWordmark` component so a final logo can replace it without page changes.
+- Internal `MeetingHQ` identifiers are compatibility boundaries and must not be
+  renamed as part of visual product work.
+
+## Foundations
+
+All surfaces use semantic theme tokens rather than raw light/dark colors. Light mode
+uses a light navigation rail and white content surfaces; dark mode preserves contrast
+without becoming the product's only visual identity. Theme choices are System, Light,
+and Dark, with System as the default. Shared page headers, surfaces, metrics, loading,
+empty, and error states live in `apps/web/src/components/page.tsx`.
 
 ## Management page anatomy
 

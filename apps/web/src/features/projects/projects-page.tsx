@@ -60,7 +60,7 @@ export function ProjectsPage() {
             Projects
           </h1>
           <p className="mt-2 max-w-3xl text-muted-foreground">
-            Coordinate outcomes, milestones, people and canonical MeetingHQ
+            Coordinate outcomes, milestones, people and canonical OfficeFlow
             tasks in one place.
           </p>
         </div>

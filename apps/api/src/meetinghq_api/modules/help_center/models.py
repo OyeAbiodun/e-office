@@ -101,3 +101,35 @@ class ProductTour(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class SupportRequest(Base):
+    """Tenant-scoped request raised from the OfficeFlow Help & Support experience."""
+
+    __tablename__ = "support_requests"
+    __table_args__ = (UniqueConstraint("organization_id", "reference"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    requester_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    reference: Mapped[str] = mapped_column(String(32), index=True)
+    request_type: Mapped[str] = mapped_column(String(32), index=True)
+    priority: Mapped[str] = mapped_column(String(16), default="normal", index=True)
+    subject: Mapped[str] = mapped_column(String(240))
+    description: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="open", index=True)
+    page_url: Mapped[str | None] = mapped_column(String(1000))
+    module: Mapped[str | None] = mapped_column(String(120), index=True)
+    diagnostics: Mapped[dict[str, object]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -12,12 +12,14 @@ from meetinghq_api.modules.help_center.models import (
     HelpArticle,
     HelpInteraction,
     ProductTour,
+    SupportRequest,
 )
 from meetinghq_api.modules.help_center.schemas import (
     HelpAnalyticsResponse,
     HelpArticleInput,
     HelpArticleUpdate,
     ProductTourInput,
+    SupportRequestInput,
 )
 from meetinghq_api.shared.exceptions import ConflictError, NotFoundError
 
@@ -26,12 +28,20 @@ ARTICLES = (
     ("installation", "Installation", "Getting Started", ["administration"]),
     ("first-login", "First Login", "Getting Started", ["login"]),
     ("dashboard", "Dashboard", "User Handbook", ["dashboard"]),
+    ("my-space", "My Space", "User Handbook", ["my-space", "tasks"]),
+    ("projects", "Projects", "User Handbook", ["projects", "projects.detail"]),
+    ("tasks-activities", "Tasks & Activities", "User Handbook", ["tasks", "activities"]),
     ("users", "Users", "Administrator Handbook", ["users", "members"]),
     ("roles-permissions", "Roles & Permissions", "Administrator Handbook", ["roles"]),
     ("meetings", "Meetings", "User Handbook", ["meetings", "meetings.detail", "meetings.new"]),
     ("calendar", "Calendar", "User Handbook", ["calendar"]),
     ("invitations", "Invitations", "Administrator Handbook", ["invitations"]),
     ("chat", "Chat", "User Handbook", ["chat", "chat.detail"]),
+    ("people-directory", "People & Directory", "User Handbook", ["people", "employees"]),
+    ("leave", "Leave Management", "User Handbook", ["leave"]),
+    ("payroll", "Payroll & Payslips", "User Handbook", ["payroll"]),
+    ("finance", "Finance Center", "User Handbook", ["finance"]),
+    ("vouchers", "Vouchers", "User Handbook", ["vouchers"]),
     ("notifications", "Notifications", "User Handbook", ["notifications"]),
     ("email", "Email Delivery", "Administrator Handbook", ["mail"]),
     ("profile", "Profile & Security", "User Handbook", ["profile", "account"]),
@@ -42,6 +52,8 @@ ARTICLES = (
         ["reports", "reports.detail"],
     ),
     ("settings", "Organization Settings", "Administrator Handbook", ["settings", "organization"]),
+    ("integrations", "Integration Center", "Administrator Handbook", ["integrations"]),
+    ("security", "Security & Access", "Administrator Handbook", ["security", "audit"]),
     ("keyboard-shortcuts", "Keyboard Shortcuts", "User Handbook", ["global"]),
     ("faq", "Frequently Asked Questions", "Troubleshooting", ["global"]),
     ("troubleshooting", "Troubleshooting", "Troubleshooting", ["health"]),
@@ -78,13 +90,16 @@ class HelpCenterService:
                     article.related_slugs = (
                         ["troubleshooting"] if slug != "troubleshooting" else ["faq"]
                     )
+                if article.updated_by is None and "MeetingHQ" in article.content:
+                    article.summary = f"Learn how OfficeFlow {title.lower()} works."
+                    article.content = self._default_content(title, category)
                 continue
             self.session.add(
                 HelpArticle(
                     organization_id=organization_id,
                     slug=slug,
                     title=title,
-                    summary=f"Learn how MeetingHQ {title.lower()} works.",
+                    summary=f"Learn how OfficeFlow {title.lower()} works.",
                     category=category,
                     position=position,
                     content=self._default_content(title, category),
@@ -370,6 +385,68 @@ class HelpCenterService:
         await self.session.flush()
         return tour
 
+    async def create_support_request(
+        self,
+        organization_id: uuid.UUID,
+        requester_id: uuid.UUID,
+        body: SupportRequestInput,
+    ) -> SupportRequest:
+        request_id = uuid.uuid4()
+        reference = f"OF-{datetime.now(UTC):%Y%m%d}-{request_id.hex[:6].upper()}"
+        safe_diagnostics = {
+            key: value
+            for key, value in body.diagnostics.items()
+            if key in {"app_version", "browser", "viewport", "route"}
+        }
+        request = SupportRequest(
+            id=request_id,
+            organization_id=organization_id,
+            requester_id=requester_id,
+            reference=reference,
+            request_type=body.request_type,
+            priority=body.priority,
+            subject=body.subject,
+            description=body.description,
+            status="open",
+            page_url=body.page_url,
+            module=body.module,
+            diagnostics=safe_diagnostics,
+        )
+        self.session.add(request)
+        self.session.add(
+            AuditLog(
+                organization_id=organization_id,
+                user_id=requester_id,
+                action="support.request_created",
+                resource="support_request",
+                resource_id=request.id,
+                audit_metadata={
+                    "reference": reference,
+                    "request_type": body.request_type,
+                    "priority": body.priority,
+                },
+            )
+        )
+        await self.session.flush()
+        return request
+
+    async def support_requests(
+        self,
+        organization_id: uuid.UUID,
+        requester_id: uuid.UUID,
+        can_manage: bool,
+    ) -> builtins.list[SupportRequest]:
+        query = select(SupportRequest).where(SupportRequest.organization_id == organization_id)
+        if not can_manage:
+            query = query.where(SupportRequest.requester_id == requester_id)
+        return list(
+            (
+                await self.session.scalars(
+                    query.order_by(SupportRequest.created_at.desc()).limit(50)
+                )
+            ).all()
+        )
+
     async def _tenant_article(
         self, organization_id: uuid.UUID, article_id: uuid.UUID
     ) -> HelpArticle:
@@ -424,17 +501,30 @@ class HelpCenterService:
     def _default_content(title: str, category: str) -> str:
         return (
             f"# {title}\n\n"
-            f"This {category.lower()} article explains {title.lower()} in MeetingHQ.\n\n"
-            "## Before you begin\n\n"
-            "- Sign in with your MeetingHQ account.\n"
+            f"This {category.lower()} guide explains how {title.lower()} works in OfficeFlow.\n\n"
+            "## What this feature does\n\n"
+            f"{title} connects your work to the people, records, and decisions "
+            "already in OfficeFlow.\n\n"
+            "## Who can use it\n\n"
+            "Availability follows your role, permissions, and your organization's "
+            "enabled features.\n\n"
+            "## Before you start\n\n"
+            "- Sign in with your OfficeFlow account.\n"
             "- Confirm the required menu is visible for your assigned role.\n"
             "- Contact an administrator if a required permission is unavailable.\n\n"
-            "## Procedure\n\n"
-            f"1. Open the relevant MeetingHQ workspace for **{title}**.\n"
+            "## How to use it\n\n"
+            f"1. Open **{title}** from the OfficeFlow navigation.\n"
             "2. Complete the required fields and review the visible validation guidance.\n"
             "3. Save the change and confirm the success state.\n\n"
-            "```text\nTip: Press Ctrl+K to open MeetingHQ search.\n```\n\n"
+            "## What happens next\n\n"
+            "OfficeFlow updates related dashboards, notifications, and activity "
+            "history when applicable.\n\n"
+            "```text\nTip: Press Ctrl+K to search OfficeFlow or start a quick action.\n```\n\n"
             "> Settings and menu availability are controlled by your administrator.\n\n"
-            "## Need more help?\n\n"
-            "Search Troubleshooting or contact your MeetingHQ administrator."
+            "## Common problems\n\n"
+            "If an action is unavailable, confirm your permission, the record status, "
+            "and your connection.\n\n"
+            "## Related features\n\n"
+            "Search Help & Support for related workflows or submit a support request "
+            "with the page context."
         )

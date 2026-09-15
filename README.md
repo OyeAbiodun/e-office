@@ -1,11 +1,15 @@
-# MeetingHQ
+# OfficeFlow
 
-**Schedule. Meet. Collaborate.**
+**Work. Manage. Deliver.**
 
-MeetingHQ is an AI-powered digital workplace. This repository contains its production
-foundation: an asynchronous FastAPI API, a React application, tenant-aware
-authentication, calendars, meeting lifecycle, collaboration, Internal Mail,
-administration centers, infrastructure, quality gates, and CI.
+OfficeFlow is a Workplace & Business Operations Platform. It connects people,
+projects, tasks, meetings, leave, payroll, finance, reporting, and administration in
+one coherent workspace. This repository contains its asynchronous FastAPI API, React
+application, tenant-aware security, infrastructure, quality gates, and CI.
+
+The original `MeetingHQ` package names, environment-variable prefixes, database
+identifiers, and compatibility contracts remain intentionally unchanged. OfficeFlow is
+the customer-facing product identity; internal renaming is outside this rebrand.
 
 This repository is under release-candidate hardening. Passing local checks is not a
 production-readiness claim; promotion requires the staging, SMTP, PostgreSQL migration,

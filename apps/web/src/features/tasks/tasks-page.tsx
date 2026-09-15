@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { CheckCircle2, Clock3, ListChecks, Plus, Sparkles } from 'lucide-react'
-import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 
 import {
   tasksApi,
@@ -26,16 +32,23 @@ const statuses: Array<[TaskStatus, string]> = [
 const priorities: TaskPriority[] = ['low', 'normal', 'high', 'urgent']
 
 export function TasksPage() {
+  const initial = useMemo(() => new URLSearchParams(window.location.search), [])
   const client = useQueryClient()
   const { user } = useAuth()
   const permissions = new Set(user?.permissions ?? [])
-  const [scope, setScope] = useState('mine')
-  const [due, setDue] = useState<string | undefined>('today')
-  const [status, setStatus] = useState<string | undefined>()
+  const [scope, setScope] = useState(initial.get('scope') ?? 'mine')
+  const [due, setDue] = useState<string | undefined>(
+    initial.get('due') ?? 'today',
+  )
+  const [status, setStatus] = useState<string | undefined>(
+    initial.get('status') ?? undefined,
+  )
   const [priority, setPriority] = useState<string | undefined>()
   const [search, setSearch] = useState('')
-  const [showCreate, setShowCreate] = useState(false)
-  const [showActivity, setShowActivity] = useState(false)
+  const [showCreate, setShowCreate] = useState(initial.get('create') === 'task')
+  const [showActivity, setShowActivity] = useState(
+    initial.get('create') === 'activity',
+  )
   const [editingActivity, setEditingActivity] = useState<DailyActivity | null>(
     null,
   )
@@ -113,6 +126,26 @@ export function TasksPage() {
     },
   })
   const rows = tasks.data?.items ?? []
+
+  useEffect(() => {
+    const parameters = new URLSearchParams()
+    if (scope !== 'mine') parameters.set('scope', scope)
+    if (due) parameters.set('due', due)
+    if (status) parameters.set('status', status)
+    if (priority) parameters.set('priority', priority)
+    if (search) parameters.set('search', search)
+    if (page > 1) parameters.set('page', String(page))
+    const next = parameters.size
+      ? `${window.location.pathname}?${parameters}`
+      : window.location.pathname
+    window.history.replaceState(window.history.state, '', next)
+  }, [due, page, priority, scope, search, status])
+
+  useEffect(() => {
+    const taskId = initial.get('task')
+    if (taskId && rows.length && !selected)
+      setSelected(rows.find((task) => task.id === taskId) ?? null)
+  }, [initial, rows, selected])
   const overdue = rows.filter((task) => task.is_overdue).length
   const today = rows.filter((task) => task.due_date === todayDate).length
   const scopeTabs: Array<[string, string]> = [
@@ -134,7 +167,7 @@ export function TasksPage() {
         <div>
           <p className="text-sm font-medium text-primary">Work management</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            My Work
+            Tasks & Activities
           </h1>
           <p className="mt-2 text-muted-foreground">
             Focus on the work that needs attention, then capture the outcome.

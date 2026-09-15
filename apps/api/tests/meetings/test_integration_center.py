@@ -329,7 +329,7 @@ async def test_smtp_template_preview_uses_safe_sample_data_and_is_audited(
     data = response.json()["data"]
     assert data["key"] == "meeting.invitation"
     assert data["version"]
-    assert data["subject"].startswith("MeetingHQ | Invitation:")
+    assert data["subject"].startswith("OfficeFlow | Invitation:")
     assert "<!doctype html>" in data["html"].lower()
     assert "javascript:" not in data["html"].lower()
     assert "Quarterly planning" in data["text"]

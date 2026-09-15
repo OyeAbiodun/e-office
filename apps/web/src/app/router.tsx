@@ -79,6 +79,11 @@ const DashboardPage = lazy(() =>
     default: module.DashboardPage,
   })),
 )
+const MySpacePage = lazy(() =>
+  import('@/features/dashboard/my-space-page').then((module) => ({
+    default: module.MySpacePage,
+  })),
+)
 const HelpCenterPage = lazy(() =>
   import('@/features/help/help-center-page').then((module) => ({
     default: module.HelpCenterPage,
@@ -339,6 +344,11 @@ const protectedPages = [
     getParentRoute: () => appShellRoute,
     path: '/',
     component: DashboardPage,
+  }),
+  createRoute({
+    getParentRoute: () => appShellRoute,
+    path: '/my-space',
+    component: MySpacePage,
   }),
   createRoute({
     getParentRoute: () => appShellRoute,

@@ -439,7 +439,7 @@ async def export_voucher_pdf(
     name = await session.scalar(
         select(Organization.name).where(Organization.id == user.organization_id)
     )
-    data = await asyncio.to_thread(exports.voucher_pdf, detail, name or "MeetingHQ")
+    data = await asyncio.to_thread(exports.voucher_pdf, detail, name or "OfficeFlow")
     return download(data, f"{detail.voucher.voucher_number}.pdf", "application/pdf")
 
 
@@ -625,5 +625,5 @@ async def statement_export(
     name = await session.scalar(
         select(Organization.name).where(Organization.id == user.organization_id)
     )
-    data = await asyncio.to_thread(exports.statement_pdf, statement, name or "MeetingHQ")
+    data = await asyncio.to_thread(exports.statement_pdf, statement, name or "OfficeFlow")
     return download(data, "statement.pdf", "application/pdf")

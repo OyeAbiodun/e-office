@@ -22,6 +22,8 @@ from meetinghq_api.modules.help_center.schemas import (
     HelpContextResponse,
     ProductTourInput,
     ProductTourResponse,
+    SupportRequestInput,
+    SupportRequestResponse,
 )
 from meetinghq_api.modules.help_center.service import HelpCenterService
 from meetinghq_api.modules.storage.local import LocalStorageProvider
@@ -188,4 +190,22 @@ async def create_tour(
 ) -> ProductTourResponse:
     return ProductTourResponse.model_validate(
         await HelpCenterService(session).create_tour(user.organization_id, body, user.id)
+    )
+
+
+@router.get("/support", response_model=list[SupportRequestResponse])
+async def support_requests(session: Session, user: CurrentUser) -> list[SupportRequestResponse]:
+    can_manage = any(role.name in {"Super Admin", "Admin"} for role in user.roles)
+    rows = await HelpCenterService(session).support_requests(
+        user.organization_id, user.id, can_manage
+    )
+    return [SupportRequestResponse.model_validate(row) for row in rows]
+
+
+@router.post("/support", response_model=SupportRequestResponse, status_code=201)
+async def create_support_request(
+    body: SupportRequestInput, session: Session, user: CurrentUser
+) -> SupportRequestResponse:
+    return SupportRequestResponse.model_validate(
+        await HelpCenterService(session).create_support_request(user.organization_id, user.id, body)
     )
