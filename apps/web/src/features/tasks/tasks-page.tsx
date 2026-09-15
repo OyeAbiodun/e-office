@@ -162,7 +162,7 @@ export function TasksPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-8">
+    <div className="page-container space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium text-primary">Work management</p>

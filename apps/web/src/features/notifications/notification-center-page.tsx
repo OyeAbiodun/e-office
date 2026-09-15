@@ -76,7 +76,7 @@ export function NotificationCenterPage() {
   }, [category, unreadOnly, search])
 
   return (
-    <div className="mx-auto max-w-7xl p-4 sm:p-6">
+    <div className="page-container">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-primary">

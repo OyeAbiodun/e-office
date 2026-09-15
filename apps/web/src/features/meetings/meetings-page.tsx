@@ -27,7 +27,7 @@ export function MeetingsPage({ view = 'dashboard' }: { view?: View }) {
         ? (data?.recent ?? [])
         : []
   return (
-    <div className="mx-auto max-w-7xl space-y-8 p-5 sm:p-8">
+    <div className="page-container space-y-8">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-sm font-medium text-primary">Meetings</p>

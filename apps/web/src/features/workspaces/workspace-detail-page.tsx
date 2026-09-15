@@ -44,7 +44,7 @@ export function WorkspaceDetailPage() {
 
   if (overview.isLoading)
     return (
-      <div className="mx-auto max-w-7xl space-y-5 p-8">
+      <div className="page-container space-y-5">
         <div className="h-36 animate-pulse rounded-3xl bg-muted" />
         <div className="h-72 animate-pulse rounded-3xl bg-muted" />
       </div>
@@ -78,7 +78,7 @@ export function WorkspaceDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-4 sm:p-8">
+    <div className="page-container">
       <Link
         className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
         to="/workspaces"

@@ -42,7 +42,7 @@ export function AuditCenterPage() {
     URL.revokeObjectURL(url)
   }
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-8">
+    <div className="page-container space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Compliance</p>

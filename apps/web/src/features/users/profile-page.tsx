@@ -130,7 +130,7 @@ export function ProfilePage() {
   })
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 p-5 sm:p-8">
+    <div className="page-container space-y-6">
       <header className="overflow-hidden rounded-3xl border bg-card">
         <div
           className="h-32 bg-gradient-to-r from-primary/25 via-cyan-500/15 to-violet-500/20"

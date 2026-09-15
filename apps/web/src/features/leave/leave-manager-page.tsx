@@ -117,7 +117,7 @@ export function LeaveManagerPage() {
     ['reviewed', 'Recently reviewed'],
   ]
   return (
-    <div className="mx-auto max-w-[1480px] space-y-7 p-4 sm:p-6 lg:p-8">
+    <div className="page-container space-y-7">
       <PageHeader
         actions={
           <Link

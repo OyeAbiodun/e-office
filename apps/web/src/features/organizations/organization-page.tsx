@@ -56,7 +56,7 @@ export function OrganizationPage() {
   if (overview.isLoading)
     return (
       <div
-        className="mx-auto max-w-7xl space-y-5 p-5 sm:p-8"
+        className="page-container space-y-5"
         aria-label="Loading organization"
       >
         <div className="h-32 animate-pulse rounded-3xl bg-muted" />
@@ -97,7 +97,7 @@ export function OrganizationPage() {
 
   const organization = overview.data.organization
   return (
-    <div className="mx-auto max-w-7xl p-4 sm:p-8">
+    <div className="page-container">
       <header className="overflow-hidden rounded-3xl border bg-card shadow-sm">
         <div
           className="h-2"

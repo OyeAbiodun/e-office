@@ -262,7 +262,7 @@ export function PlatformPage() {
   if (!user?.roles.includes('Super Admin')) return <Navigate to="/forbidden" />
   const activeSection = sections.find(([id]) => id === section)
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6 p-5 sm:p-8">
+    <div className="page-container space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Super Admin</p>

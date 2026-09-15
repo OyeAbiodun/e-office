@@ -94,7 +94,7 @@ export function LeavePage() {
   const upcoming = summary.data.upcoming_approved
   const pending = summary.data.pending_requests
   return (
-    <div className="mx-auto max-w-[1480px] space-y-7 p-4 sm:p-6 lg:p-8">
+    <div className="page-container space-y-7">
       <PageHeader
         actions={
           <>
@@ -816,7 +816,7 @@ export function LeaveRequestDetailPage() {
   const canReject =
     user?.permissions.includes('leave.reject') && item.status === 'submitted'
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="page-container space-y-6">
       <PageHeader
         actions={
           <>

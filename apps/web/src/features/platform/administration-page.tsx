@@ -43,7 +43,7 @@ export function AdministrationPage() {
   if (!user?.roles.includes('Super Admin'))
     return <Navigate to="/unauthorized" />
   return (
-    <div className="mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
+    <div className="page-container space-y-7">
       <header>
         <p className="text-sm font-semibold text-primary">Super Admin</p>
         <h1 className="mt-1 text-3xl font-semibold">Administration</h1>

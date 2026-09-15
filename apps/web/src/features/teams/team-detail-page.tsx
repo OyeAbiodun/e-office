@@ -100,7 +100,7 @@ export function TeamDetailPage() {
 
   if (overview.isLoading)
     return (
-      <div className="mx-auto max-w-[1500px] space-y-5 p-8">
+      <div className="page-container space-y-5">
         <div className="h-40 animate-pulse rounded-3xl bg-muted" />
         <div className="h-96 animate-pulse rounded-3xl bg-muted" />
       </div>
@@ -134,7 +134,7 @@ export function TeamDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px] p-3 sm:p-6">
+    <div className="page-container">
       <Link
         className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
         to="/teams"

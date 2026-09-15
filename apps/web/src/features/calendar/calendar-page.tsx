@@ -918,7 +918,7 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
   })
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5 p-4 sm:p-6">
+    <div className="page-container space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-primary">

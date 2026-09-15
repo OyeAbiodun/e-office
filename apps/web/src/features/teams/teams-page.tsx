@@ -43,7 +43,7 @@ export function TeamsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-4 sm:p-8">
+    <div className="page-container">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Collaboration</p>

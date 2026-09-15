@@ -66,7 +66,7 @@ export function SystemHealthPage() {
   if (health.isLoading) return <HealthLoading />
   if (health.isError || !health.data)
     return (
-      <div className="mx-auto max-w-7xl p-5 sm:p-8">
+      <div className="page-container">
         <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-6">
           <XCircle className="size-7 text-red-600" />
           <h1 className="mt-3 text-xl font-semibold">
@@ -87,7 +87,7 @@ export function SystemHealthPage() {
     )
   const data = health.data
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 p-5 sm:p-8">
+    <div className="page-container space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Operations</p>

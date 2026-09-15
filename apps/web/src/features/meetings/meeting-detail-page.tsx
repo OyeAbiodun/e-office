@@ -141,7 +141,7 @@ export function MeetingDetailPage() {
   }
   const items = itemsBySection[section]
   return (
-    <div className="mx-auto max-w-7xl p-5 sm:p-8">
+    <div className="page-container">
       <div className="rounded-3xl border bg-gradient-to-br from-card via-card to-primary/5 p-6 shadow-sm sm:p-8">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
           <div>
