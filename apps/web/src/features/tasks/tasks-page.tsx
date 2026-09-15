@@ -125,7 +125,7 @@ export function TasksPage() {
       void client.invalidateQueries({ queryKey: ['task-weekly-summary'] })
     },
   })
-  const rows = tasks.data?.items ?? []
+  const rows = useMemo(() => tasks.data?.items ?? [], [tasks.data?.items])
 
   useEffect(() => {
     const parameters = new URLSearchParams()

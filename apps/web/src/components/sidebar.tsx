@@ -80,9 +80,7 @@ export function Sidebar({
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(['administration']),
-  )
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const organization = useQuery({
     queryKey: ['organization'],
     queryFn: organizationApi.organization,
@@ -112,6 +110,9 @@ export function Sidebar({
   const organizationLabel = organization.data?.name ?? 'Your organization'
   const workspace = workspaces.data?.[0]
   const allItems = navigation.data ?? []
+  const sidebarItems = allItems.filter(
+    (item) => item.parent_key !== 'administration',
+  )
   const dynamicBadge = (item: MenuDefinition) => {
     const displayCount = (count: number) => (count > 99 ? '99+' : String(count))
     if (item.key === 'notifications' && notificationSummary.data?.unread)
@@ -132,7 +133,7 @@ export function Sidebar({
       )}
       {items.map((item) => {
         const Icon = icons[item.icon as keyof typeof icons] ?? LayoutDashboard
-        const children = allItems
+        const children = sidebarItems
           .filter((candidate) => candidate.parent_key === item.key)
           .sort((left, right) => left.position - right.position)
         const expanded = expandedGroups.has(item.key)
@@ -215,7 +216,9 @@ export function Sidebar({
     : ['work', 'administration', 'support']
   const sections = [
     ...new Set(
-      allItems.filter((item) => !item.parent_key).map((item) => item.section),
+      sidebarItems
+        .filter((item) => !item.parent_key)
+        .map((item) => item.section),
     ),
   ].sort((left, right) => {
     const leftIndex = sectionOrder.indexOf(left)
@@ -286,7 +289,7 @@ export function Sidebar({
           {sections.map((section) => (
             <div key={section}>
               {renderNavigation(
-                allItems
+                sidebarItems
                   .filter(
                     (item) => item.section === section && !item.parent_key,
                   )

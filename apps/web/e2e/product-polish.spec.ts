@@ -53,13 +53,9 @@ test('authenticated shell, command center, and navigation work', async ({
   await page.goto('/profile/security/mfa')
   await page.reload()
   await expect(page).toHaveURL('/profile/security/mfa')
-  if ((page.viewportSize()?.width ?? 1280) >= 640)
-    await expect(
-      page.getByRole('link', { name: 'Profile Center', exact: true }),
-    ).toBeVisible()
   await expect(
-    page.getByRole('link', { name: 'Security & MFA', exact: true }),
-  ).toBeVisible()
+    page.locator('nav[aria-label$="readcrumb"]:visible'),
+  ).toContainText('Multi-factor Authentication')
 
   const secondPage = await page.context().newPage()
   await secondPage.goto('/profile')
@@ -90,6 +86,57 @@ test('Help & Support provides learning, support, and admin content workflows', a
   await page.getByRole('tab', { name: 'Manage content' }).click()
   await expect(page.getByText('Content studio')).toBeVisible()
   await expect(page.getByLabel('Search help content')).toBeVisible()
+})
+
+test('compact Administration and Help empty states remain usable', async ({
+  page,
+}) => {
+  await login(page)
+
+  const sidebar = page.getByRole('navigation', { name: 'Primary navigation' })
+  await expect(
+    sidebar.getByRole('link', { name: 'Administration', exact: true }),
+  ).toHaveCount(1)
+  await expect(sidebar.getByRole('link', { name: 'Users' })).toHaveCount(0)
+  await navigateTo(page, 'Administration')
+  await expect(page).toHaveURL('/administration')
+  await expect(
+    page.getByRole('heading', { name: 'Administration' }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('navigation', { name: 'People & access' }),
+  ).toBeVisible()
+  await expect(page.getByRole('link', { name: /Users/ })).toBeVisible()
+
+  await navigateTo(page, 'Help & Support')
+  await page
+    .getByLabel('Search OfficeFlow help')
+    .fill(`no-result-${Date.now()}`)
+  await expect(page.getByText('No guides found')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Clear filters' }),
+  ).toBeVisible()
+})
+
+test('themes and tablet layout remain readable without horizontal overflow', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await login(page)
+
+  await page.getByRole('button', { name: 'Light theme' }).click()
+  await expect(page.locator('html')).not.toHaveClass(/dark/)
+  await page.getByRole('button', { name: 'Dark theme' }).click()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await navigateTo(page, 'Administration')
+  await expect(
+    page.getByRole('heading', { name: 'Administration' }),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
 })
 
 test('calendar can create, edit, and delete a real event', async ({ page }) => {

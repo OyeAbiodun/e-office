@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, type LucideIcon, RefreshCw } from 'lucide-react'
+import { ArrowRight, Inbox, type LucideIcon, RefreshCw } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 export function Page({
@@ -51,7 +51,7 @@ export function Surface({
 }: {
   children: ReactNode
   className?: string
-  as?: 'section' | 'article' | 'div'
+  as?: 'section' | 'article' | 'div' | 'main' | 'aside'
 }) {
   return <Element className={`surface ${className}`.trim()}>{children}</Element>
 }
@@ -142,18 +142,18 @@ export function ErrorState({
 }
 
 export function EmptyState({
-  icon: Icon,
+  icon: Icon = Inbox,
   title,
   description,
   action,
 }: {
-  icon: LucideIcon
+  icon?: LucideIcon
   title: string
   description: string
   action?: ReactNode
 }) {
   return (
-    <div className="state-panel">
+    <div className="state-panel" role="status">
       <span className="mx-auto grid size-10 place-items-center rounded-xl bg-primary-subtle text-primary">
         <Icon aria-hidden="true" className="size-5" />
       </span>

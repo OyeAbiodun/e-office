@@ -40,7 +40,7 @@ import { humanizeEvent } from '@/lib/activity'
 
 type HomePersona = 'administrator' | 'finance' | 'manager' | 'employee'
 
-export function resolveHomePersona(
+function resolveHomePersona(
   roles: string[],
   permissions: string[],
 ): HomePersona {

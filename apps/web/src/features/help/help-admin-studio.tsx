@@ -1,13 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Eye,
-  FileClock,
-  ImagePlus,
-  Plus,
-  Save,
-  Search,
-  Sparkles,
-} from 'lucide-react'
+import { Eye, FileClock, ImagePlus, Plus, Save, Search } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { EmptyState, LoadingState, Surface } from '@/components/page'
@@ -431,7 +423,8 @@ export function HelpAdminStudio() {
 }
 
 function withoutSlug(draft: HelpArticleDraft): Omit<HelpArticleDraft, 'slug'> {
-  const { slug: _, ...body } = draft
+  const { slug, ...body } = draft
+  void slug
   return body
 }
 function splitValues(value: string) {
