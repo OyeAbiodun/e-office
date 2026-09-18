@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   statutory: vi.fn(),
   loans: vi.fn(),
   reports: vi.fn(),
+  run: vi.fn(),
   updateComponent: vi.fn(),
 }))
 
@@ -49,7 +50,7 @@ vi.mock('@/features/payroll/api', async (original) => {
       loans: mocks.loans,
       createPeriod: vi.fn(),
       prepare: vi.fn(),
-      run: vi.fn(),
+      run: mocks.run,
       action: vi.fn(),
       createStructure: vi.fn(),
       previewStructure: vi.fn(),
@@ -80,6 +81,7 @@ beforeEach(() => {
   mocks.permissions = ['payroll.view_own', 'payroll.payslip.download_own']
   mocks.periods.mockResolvedValue([])
   mocks.runs.mockResolvedValue([])
+  mocks.run.mockResolvedValue(undefined)
   mocks.payslips.mockResolvedValue([
     {
       id: 'result-1',
@@ -102,12 +104,33 @@ beforeEach(() => {
 it('shows employees only their own secure payslips', async () => {
   renderPage(<PayrollPage />)
   expect(await screen.findByText('Latest payslip')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'My payslips' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'My payslips' }))
   expect(await screen.findByText('Ada Employee')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument()
   expect(
     screen.queryByRole('button', { name: /new period/i }),
   ).not.toBeInTheDocument()
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+    'Overview',
+    'My payslips',
+  ])
+})
+
+it('renders actionable payroll KPIs and a structured administrator empty state', async () => {
+  mocks.permissions = [
+    'payroll.periods.view',
+    'payroll.periods.manage',
+    'payroll.prepare',
+  ]
+  renderPage(<PayrollPage />)
+  expect(
+    await screen.findByRole('button', {
+      name: 'Payroll periods: 0. Open details',
+    }),
+  ).toBeVisible()
+  expect(screen.getByText('No payroll run has been prepared yet')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: /prepare payroll/i }))
+  expect(await screen.findByText('Payroll periods')).toBeVisible()
 })
 
 it('shows permission-aware payroll administration sections', async () => {
@@ -117,13 +140,13 @@ it('shows permission-aware payroll administration sections', async () => {
     'payroll.salary_structure.view',
   ]
   renderPage(<PayrollPage />)
-  expect(await screen.findByText('Payroll overview')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Payroll runs' }))
+  expect(await screen.findByText('Current payroll cycle')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: 'Payroll runs' }))
   expect(await screen.findByText(/no payroll periods yet/i)).toBeInTheDocument()
   expect(
     screen.getByRole('button', { name: /new period/i }),
   ).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Salary structures' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Salary structures' }))
   expect(
     await screen.findByText('Effective-dated salary structures'),
   ).toBeInTheDocument()
@@ -157,8 +180,8 @@ it('edits salary component policy without replacing payroll history', async () =
     },
   ])
   renderPage(<PayrollPage />)
-  await screen.findByText('Payroll overview')
-  fireEvent.click(screen.getByRole('button', { name: 'Components' }))
+  const componentsTab = await screen.findByRole('tab', { name: 'Components' })
+  fireEvent.click(componentsTab)
   await screen.findByText('Travel allowance')
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
   const form = screen.getByRole('form', { name: 'Edit Travel allowance' })
@@ -184,8 +207,8 @@ it('edits salary component policy without replacing payroll history', async () =
 it('shows payroll reports only when the report permission is granted', async () => {
   mocks.permissions = ['payroll.periods.view', 'payroll.reports.view']
   renderPage(<PayrollPage />)
-  await screen.findByText('Payroll overview')
-  fireEvent.click(screen.getByRole('button', { name: 'Reports' }))
+  await screen.findByText('Current payroll cycle')
+  fireEvent.click(screen.getByRole('tab', { name: 'Reports' }))
   expect(
     await screen.findByText(/select a payroll run to view/i),
   ).toBeInTheDocument()

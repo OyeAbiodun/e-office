@@ -69,12 +69,6 @@ export function buildSidebarNavigation(
         const financeChildren: MenuDefinition[] = [
           {
             ...finance,
-            id: `${finance.id}-overview`,
-            key: 'finance-overview',
-            label: 'Overview',
-          },
-          {
-            ...finance,
             id: `${finance.id}-accounts`,
             key: 'finance-accounts',
             label: 'Accounts',
@@ -89,7 +83,7 @@ export function buildSidebarNavigation(
           },
         ]
         if (permissions.has('finance.transactions.view'))
-          financeChildren.splice(2, 0, {
+          financeChildren.splice(1, 0, {
             ...finance,
             id: `${finance.id}-transactions`,
             key: 'finance-transactions',
@@ -115,10 +109,14 @@ export function buildSidebarNavigation(
 
 export const sidebarGroupStorageKey = 'officeflow.sidebar.groups.v1'
 
+export function toggleSidebarGroup(current: Set<string>, key: string) {
+  return current.has(key) ? new Set<string>() : new Set([key])
+}
+
 export function groupIsActive(group: SidebarGroup, pathname: string) {
   return group.items.some(
     (item) =>
-      pathname === item.path ||
-      (item.path !== '/' && pathname.startsWith(`${item.path}/`)),
+      pathname === item.path.split('?')[0] ||
+      (item.path !== '/' && pathname.startsWith(`${item.path.split('?')[0]}/`)),
   )
 }

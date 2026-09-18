@@ -34,6 +34,7 @@ import {
   buildSidebarNavigation,
   groupIsActive,
   sidebarGroupStorageKey,
+  toggleSidebarGroup,
   type SidebarGroup,
 } from '@/components/sidebar-navigation'
 import { useAuth } from '@/features/auth/auth-store'
@@ -136,11 +137,11 @@ export function Sidebar({
   )
   useEffect(() => {
     setExpandedGroups((current) => {
-      const next = new Set(current)
-      groupedNavigation.groups
-        .filter((group) => groupIsActive(group, pathname))
-        .forEach((group) => next.add(group.key))
-      return next
+      const active = groupedNavigation.groups.find((group) =>
+        groupIsActive(group, pathname),
+      )
+      if (!active) return current
+      return new Set([active.key])
     })
   }, [groupedNavigation.groups, pathname])
   useEffect(() => {
@@ -221,12 +222,9 @@ export function Sidebar({
             active ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() =>
-            setExpandedGroups((current) => {
-              const next = new Set(current)
-              if (next.has(group.key)) next.delete(group.key)
-              else next.add(group.key)
-              return next
-            })
+            setExpandedGroups((current) =>
+              toggleSidebarGroup(current, group.key),
+            )
           }
           title={collapsed ? group.label : undefined}
           type="button"

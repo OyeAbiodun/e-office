@@ -89,6 +89,8 @@ test('grouped navigation and live decision charts support drill-down', async ({
   page,
 }) => {
   await login(page)
+  if ((page.viewportSize()?.width ?? 1280) < 1024)
+    await page.getByRole('button', { name: 'Open navigation' }).click()
   const sidebar = page.getByRole('navigation', { name: 'Primary navigation' })
   await expect(sidebar.getByRole('button', { name: 'My work' })).toBeVisible()
   await expect(
@@ -97,6 +99,36 @@ test('grouped navigation and live decision charts support drill-down', async ({
   await expect(
     sidebar.getByRole('button', { name: 'Finance & payroll' }),
   ).toBeVisible()
+  const myWorkGroup = sidebar.getByRole('button', { name: 'My work' })
+  const communicationGroup = sidebar.getByRole('button', {
+    name: 'Communication',
+  })
+  await myWorkGroup.click()
+  await expect(myWorkGroup).toHaveAttribute('aria-expanded', 'true')
+  await communicationGroup.click()
+  await expect(communicationGroup).toHaveAttribute('aria-expanded', 'true')
+  await expect(myWorkGroup).toHaveAttribute('aria-expanded', 'false')
+
+  await sidebar.getByRole('button', { name: 'Finance & payroll' }).click()
+  await sidebar.getByRole('link', { name: 'My Payroll' }).click()
+  await expect(page).toHaveURL('/payroll')
+  if ((page.viewportSize()?.width ?? 1280) < 1024)
+    await expect(sidebar).not.toBeInViewport()
+  await expect(page.getByRole('heading', { name: 'Payroll' })).toBeVisible()
+  await expect(
+    sidebar.getByRole('button', { name: 'Finance & payroll' }),
+  ).toHaveAttribute('aria-expanded', 'true')
+  await expect(sidebar.getByRole('link', { name: 'Overview' })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: /Payroll periods/ }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: /Payroll periods/ }).click()
+  await expect(page.getByRole('tab', { name: 'Payroll runs' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+
+  await page.goto('/')
   await expect(page.locator('[data-decision-chart]')).toHaveCount(2)
   const chartLink = page.locator('[data-decision-chart] a').first()
   await chartLink.click()

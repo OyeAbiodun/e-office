@@ -1,15 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Banknote,
+  CalendarRange,
+  CheckCircle2,
   Download,
   Eye,
+  FileText,
+  Hourglass,
   Plus,
   RotateCcw,
   ShieldCheck,
   Trash2,
+  Users,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import { useConfirmation } from '@/components/feedback/confirmation'
+import { EmptyState } from '@/components/page'
 import { useAuth } from '@/features/auth/auth-store'
 import { financeApi } from '@/features/finance/api'
 import {
@@ -86,7 +93,11 @@ export function PayrollPage() {
         </span>
       }
     >
-      <nav aria-label="Payroll sections" className="finance-tabs">
+      <nav
+        aria-label="Payroll sections"
+        className="finance-tabs"
+        role="tablist"
+      >
         {tabs
           .filter(
             ([key, , permission]) =>
@@ -95,34 +106,73 @@ export function PayrollPage() {
           .map(([key, label]) => (
             <button
               key={key}
+              id={`payroll-tab-${key}`}
+              aria-controls="payroll-panel"
               aria-selected={tab === key}
+              role="tab"
+              tabIndex={tab === key ? 0 : -1}
               onClick={() => setTab(key)}
+              onKeyDown={(event) => {
+                if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+                event.preventDefault()
+                const visible = tabs.filter(
+                  ([candidate, , permission]) =>
+                    candidate === 'overview' || permissions.has(permission),
+                )
+                const index = visible.findIndex(
+                  ([candidate]) => candidate === key,
+                )
+                const direction = event.key === 'ArrowRight' ? 1 : -1
+                const next =
+                  visible[(index + direction + visible.length) % visible.length]
+                if (next) {
+                  setTab(next[0])
+                  document.getElementById(`payroll-tab-${next[0]}`)?.focus()
+                }
+              }}
             >
               {label}
             </button>
           ))}
       </nav>
-      {tab === 'overview' && <PayrollOverview permissions={permissions} />}
-      {tab === 'runs' && <Runs permissions={permissions} />}
-      {tab === 'payslips' && <Payslips />}
-      {tab === 'structures' && (
-        <Structures
-          canManage={permissions.has('payroll.salary_structure.manage')}
-        />
-      )}
-      {tab === 'components' && (
-        <Components canManage={permissions.has('payroll.components.manage')} />
-      )}
-      {tab === 'statutory' && (
-        <Statutory canManage={permissions.has('payroll.statutory.manage')} />
-      )}
-      {tab === 'loans' && <Loans />}
-      {tab === 'reports' && <Reports />}
+      <div
+        id="payroll-panel"
+        aria-labelledby={`payroll-tab-${tab}`}
+        role="tabpanel"
+        tabIndex={0}
+      >
+        {tab === 'overview' && (
+          <PayrollOverview permissions={permissions} onSelectTab={setTab} />
+        )}
+        {tab === 'runs' && <Runs permissions={permissions} />}
+        {tab === 'payslips' && <Payslips />}
+        {tab === 'structures' && (
+          <Structures
+            canManage={permissions.has('payroll.salary_structure.manage')}
+          />
+        )}
+        {tab === 'components' && (
+          <Components
+            canManage={permissions.has('payroll.components.manage')}
+          />
+        )}
+        {tab === 'statutory' && (
+          <Statutory canManage={permissions.has('payroll.statutory.manage')} />
+        )}
+        {tab === 'loans' && <Loans />}
+        {tab === 'reports' && <Reports />}
+      </div>
     </FinanceLayout>
   )
 }
 
-function PayrollOverview({ permissions }: { permissions: Set<string> }) {
+function PayrollOverview({
+  permissions,
+  onSelectTab,
+}: {
+  permissions: Set<string>
+  onSelectTab: (tab: Tab) => void
+}) {
   const canViewPeriods = permissions.has('payroll.periods.view')
   const canViewOwn = permissions.has('payroll.view_own')
   const periods = useQuery({
@@ -139,6 +189,12 @@ function PayrollOverview({ permissions }: { permissions: Set<string> }) {
     queryKey: ['payroll', 'payslips'],
     queryFn: payrollApi.payslips,
     enabled: canViewOwn,
+  })
+  const latestRun = runs.data?.[0]
+  const latestRunDetail = useQuery({
+    queryKey: ['payroll', 'run', latestRun?.id, 'overview'],
+    queryFn: () => payrollApi.run(latestRun!.id, { page: 1, pageSize: 10 }),
+    enabled: Boolean(latestRun && canViewPeriods),
   })
   const error = periods.error ?? runs.error ?? payslips.error
   if (periods.isLoading || runs.isLoading || payslips.isLoading)
@@ -157,7 +213,6 @@ function PayrollOverview({ permissions }: { permissions: Set<string> }) {
       />
     )
   const runRows = runs.data ?? []
-  const latestRun = runRows[0]
   const pendingReview = runRows.filter(
     (row) => row.status === 'under_review',
   ).length
@@ -168,57 +223,166 @@ function PayrollOverview({ permissions }: { permissions: Set<string> }) {
     ['paid', 'closed'].includes(row.status),
   ).length
   const latestPayslip = payslips.data?.[0]
+  const nextAction = latestRun
+    ? latestRun.status === 'under_review'
+      ? 'Review payroll exceptions'
+      : latestRun.status === 'approved'
+        ? 'Record controlled payment'
+        : ['paid', 'closed'].includes(latestRun.status)
+          ? 'Review completed payroll'
+          : 'Continue payroll preparation'
+    : 'Prepare the first payroll run'
   return (
-    <Section title="Payroll overview">
-      <div className="finance-summary" aria-label="Live payroll summary">
+    <div className="space-y-5">
+      <section className="payroll-kpis" aria-label="Live payroll summary">
         {canViewPeriods && (
           <>
             <Metric
+              icon={<CalendarRange />}
               label="Payroll periods"
-              value={String(periods.data?.length ?? 0)}
+              value={periods.data?.length ?? 0}
+              onClick={() => onSelectTab('runs')}
             />
-            <Metric label="Pending review" value={String(pendingReview)} />
-            <Metric label="Awaiting payment" value={String(awaitingPayment)} />
-            <Metric label="Paid or closed" value={String(completed)} />
+            <Metric
+              icon={<Hourglass />}
+              label="Pending review"
+              value={pendingReview}
+              onClick={() => onSelectTab('runs')}
+            />
+            <Metric
+              icon={<Banknote />}
+              label="Awaiting payment"
+              value={awaitingPayment}
+              onClick={() => onSelectTab('runs')}
+            />
+            <Metric
+              icon={<CheckCircle2 />}
+              label="Paid or closed"
+              value={completed}
+              onClick={() => onSelectTab('runs')}
+            />
           </>
         )}
         {canViewOwn && (
           <Metric
+            icon={<FileText />}
             label="Available payslips"
-            value={String(payslips.data?.length ?? 0)}
+            value={payslips.data?.length ?? 0}
+            onClick={() => onSelectTab('payslips')}
           />
         )}
-      </div>
+      </section>
       <div className="finance-grid">
         {canViewPeriods && (
-          <article className="finance-card">
-            <h3>Current processing state</h3>
-            {latestRun ? (
-              <>
-                <Status value={latestRun.status} />
-                <p className="text-muted-foreground">
-                  Version {latestRun.version}. Review exceptions before any
-                  controlled approval or payment transition.
-                </p>
-              </>
+          <article className="finance-card payroll-cycle">
+            <header>
+              <div>
+                <p className="finance-eyebrow">CURRENT CYCLE</p>
+                <h2>Current payroll cycle</h2>
+              </div>
+              {latestRun && <Status value={latestRun.status} />}
+            </header>
+            {latestRunDetail.isError ? (
+              <ErrorState
+                error={latestRunDetail.error}
+                retry={() => void latestRunDetail.refetch()}
+              />
+            ) : latestRun ? (
+              <dl className="payroll-cycle-grid">
+                <CycleValue
+                  label="Period"
+                  value={latestRunDetail.data?.period.name ?? 'Current period'}
+                />
+                <CycleValue
+                  label="Employees"
+                  value={latestRunDetail.data?.summary.employee_count ?? '—'}
+                />
+                <CycleValue
+                  label="Gross payroll"
+                  value={
+                    latestRunDetail.data
+                      ? payrollMoney(
+                          latestRunDetail.data.summary.gross_payroll,
+                          latestRunDetail.data.summary.currency,
+                        )
+                      : 'Loading…'
+                  }
+                />
+                <CycleValue
+                  label="Deductions"
+                  value={
+                    latestRunDetail.data
+                      ? payrollMoney(
+                          latestRunDetail.data.summary.total_deductions,
+                          latestRunDetail.data.summary.currency,
+                        )
+                      : 'Loading…'
+                  }
+                />
+                <CycleValue
+                  label="Net payroll"
+                  value={
+                    latestRunDetail.data
+                      ? payrollMoney(
+                          latestRunDetail.data.summary.net_payroll,
+                          latestRunDetail.data.summary.currency,
+                        )
+                      : 'Loading…'
+                  }
+                />
+                <CycleValue label="Next action" value={nextAction} />
+              </dl>
             ) : (
-              <p className="text-muted-foreground">
-                No payroll run has been prepared yet.
-              </p>
+              <EmptyState
+                action={
+                  permissions.has('payroll.prepare') ? (
+                    <button
+                      className="finance-primary"
+                      onClick={() => onSelectTab('runs')}
+                      type="button"
+                    >
+                      <Plus size={16} /> Prepare payroll
+                    </button>
+                  ) : undefined
+                }
+                description="Create a payroll period and prepare employee calculations when processing is ready."
+                icon={Users}
+                title="No payroll run has been prepared yet"
+              />
             )}
           </article>
         )}
         {canViewOwn && (
-          <article className="finance-card">
-            <h3>Latest payslip</h3>
+          <article className="finance-card payroll-payslip">
+            <header>
+              <div>
+                <p className="finance-eyebrow">MY PAY</p>
+                <h2>Latest payslip</h2>
+              </div>
+            </header>
             {latestPayslip ? (
-              <>
-                <strong>
-                  {payrollMoney(latestPayslip.net_pay, latestPayslip.currency)}
-                </strong>
-                <p className="text-muted-foreground">
-                  {latestPayslip.period_name ?? 'Latest paid payroll period'}
-                </p>
+              <div className="payroll-payslip-content">
+                <dl>
+                  <CycleValue
+                    label="Period"
+                    value={
+                      latestPayslip.period_name ?? 'Latest paid payroll period'
+                    }
+                  />
+                  <CycleValue
+                    label="Net pay"
+                    value={payrollMoney(
+                      latestPayslip.net_pay,
+                      latestPayslip.currency,
+                    )}
+                  />
+                  <CycleValue
+                    label="Payment date"
+                    value={
+                      latestPayslip.payment_date ?? 'Recorded with payroll'
+                    }
+                  />
+                </dl>
                 <button
                   onClick={() =>
                     void downloadPayroll(
@@ -229,16 +393,18 @@ function PayrollOverview({ permissions }: { permissions: Set<string> }) {
                 >
                   <Download size={16} /> Download secure PDF
                 </button>
-              </>
+              </div>
             ) : (
-              <p className="text-muted-foreground">
-                No paid payslip is available yet.
-              </p>
+              <EmptyState
+                description="Paid payroll results will appear here with a secure PDF download."
+                icon={FileText}
+                title="No paid payslip is available yet"
+              />
             )}
           </article>
         )}
       </div>
-    </Section>
+    </div>
   )
 }
 
@@ -2076,11 +2242,44 @@ function Reports() {
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function CycleValue({
+  label,
+  value,
+}: {
+  label: string
+  value: string | number
+}) {
   return (
-    <div className="finance-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
+  )
+}
+
+function Metric({
+  label,
+  value,
+  icon,
+  onClick,
+}: {
+  label: string
+  value: string | number
+  icon?: ReactNode
+  onClick?: () => void
+}) {
+  return (
+    <button
+      aria-label={`${label}: ${value}. Open details`}
+      className="payroll-kpi"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="payroll-kpi-icon">{icon}</span>
+      <span>
+        <small>{label}</small>
+        <strong>{value}</strong>
+      </span>
+    </button>
   )
 }

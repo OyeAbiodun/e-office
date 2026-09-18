@@ -2,7 +2,10 @@ import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 
 import { DecisionBarChart } from '@/components/decision-chart'
-import { buildSidebarNavigation } from '@/components/sidebar-navigation'
+import {
+  buildSidebarNavigation,
+  toggleSidebarGroup,
+} from '@/components/sidebar-navigation'
 import type { MenuDefinition } from '@/features/platform/api'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -68,7 +71,6 @@ test('finance navigation exposes functional children according to permission', (
   )?.items
   expect(basicItems).toBeDefined()
   expect(basicItems?.map((entry) => entry.label)).toEqual([
-    'Overview',
     'Accounts',
     'Statements',
     'My Payroll',
@@ -81,13 +83,16 @@ test('finance navigation exposes functional children according to permission', (
     withTransactions.groups
       .find((group) => group.key === 'finance-payroll')
       ?.items.map((entry) => entry.label),
-  ).toEqual([
-    'Overview',
-    'Accounts',
-    'Transactions',
-    'Statements',
-    'My Payroll',
-  ])
+  ).toEqual(['Accounts', 'Transactions', 'Statements', 'My Payroll'])
+})
+
+test('sidebar accordion keeps only one business group open', () => {
+  const communication = toggleSidebarGroup(
+    new Set(['my-work']),
+    'communication',
+  )
+  expect([...communication]).toEqual(['communication'])
+  expect(toggleSidebarGroup(communication, 'communication').size).toBe(0)
 })
 
 test('decision chart provides numerical summaries and drill-down links', () => {

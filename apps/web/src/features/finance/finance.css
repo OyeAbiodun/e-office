@@ -300,6 +300,107 @@
   background: var(--color-primary);
   color: var(--color-primary-foreground);
 }
+.finance-tabs [role='tab'] {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.payroll-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 12px;
+}
+.finance-page .payroll-kpi {
+  min-height: 88px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 15px;
+  text-align: left;
+  box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.035);
+  transition:
+    border-color var(--motion-fast),
+    transform var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+.finance-page .payroll-kpi:hover {
+  border-color: var(--primary-border);
+  box-shadow: 0 8px 20px hsl(var(--shadow-color) / 0.07);
+  transform: translateY(-1px);
+}
+.payroll-kpi-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--primary-subtle);
+  color: var(--primary);
+}
+.payroll-kpi-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.payroll-kpi small,
+.payroll-kpi strong {
+  display: block;
+}
+.payroll-kpi small {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.payroll-kpi strong {
+  color: var(--foreground);
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.finance-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  padding: 20px;
+}
+.finance-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.finance-card h2 {
+  font-size: 16px;
+  font-weight: 650;
+}
+.payroll-cycle-grid,
+.payroll-payslip-content dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--border);
+}
+.payroll-cycle-grid > div,
+.payroll-payslip-content dl > div {
+  padding: 13px 10px 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+.payroll-cycle-grid dt,
+.payroll-payslip-content dt {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+.payroll-cycle-grid dd,
+.payroll-payslip-content dd {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.payroll-payslip-content > button {
+  margin-top: 16px;
+}
 .finance-page details > summary {
   cursor: pointer;
   font-size: 13px;
@@ -322,6 +423,17 @@
     font-size: 23px;
   }
   .finance-grid {
+    grid-template-columns: 1fr;
+  }
+  .payroll-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finance-page .payroll-kpi {
+    min-height: 82px;
+    padding: 12px;
+  }
+  .payroll-cycle-grid,
+  .payroll-payslip-content dl {
     grid-template-columns: 1fr;
   }
   .finance-totals {
