@@ -136,8 +136,8 @@ export function Sidebar({
     (item) => item.parent_key !== 'administration',
   )
   const groupedNavigation = useMemo(
-    () => buildSidebarNavigation(sidebarItems, permissions),
-    [permissions, sidebarItems],
+    () => buildSidebarNavigation(sidebarItems),
+    [sidebarItems],
   )
   const activeGroupKey = groupedNavigation.groups.find((group) =>
     groupIsActive(group, pathname),

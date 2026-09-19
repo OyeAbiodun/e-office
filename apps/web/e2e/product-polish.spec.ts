@@ -189,7 +189,9 @@ test('sidebar groups remain switchable after child navigation and deep links', a
   await finance.click()
   await expect(finance).toHaveAttribute('aria-expanded', 'true')
   await expect(people).toHaveAttribute('aria-expanded', 'false')
-  await sidebar.getByRole('link', { name: 'Accounts' }).click()
+  await sidebar.getByRole('link', { name: 'Finance', exact: true }).click()
+  await expect(page).toHaveURL('/finance')
+  await page.getByRole('tab', { name: 'Accounts' }).click()
   await expect(page).toHaveURL('/finance?tab=accounts')
 
   await page.goto('/payroll')
@@ -200,6 +202,55 @@ test('sidebar groups remain switchable after child navigation and deep links', a
   await communication.click()
   await expect(communication).toHaveAttribute('aria-expanded', 'true')
   await expect(finance).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('finance sections are distinct while vouchers and payroll remain available', async ({
+  page,
+}) => {
+  const isMobile = (page.viewportSize()?.width ?? 1280) < 1024
+  const openMobileNavigation = async () => {
+    if (isMobile)
+      await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
+
+  await login(page)
+  await openMobileNavigation()
+  const sidebar = page.getByRole('navigation', { name: 'Primary navigation' })
+  await sidebar.getByRole('button', { name: 'Finance & payroll' }).click()
+  await expect(sidebar.getByRole('link', { name: 'Finance' })).toHaveCount(1)
+  await expect(sidebar.getByRole('link', { name: 'Accounts' })).toHaveCount(0)
+  await expect(sidebar.getByRole('link', { name: 'Transactions' })).toHaveCount(
+    0,
+  )
+  await expect(sidebar.getByRole('link', { name: 'Statements' })).toHaveCount(0)
+  await sidebar.getByRole('link', { name: 'Finance', exact: true }).click()
+
+  await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Accounts' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await page.getByRole('tab', { name: 'Transactions' }).click()
+  await expect(page).toHaveURL('/finance?tab=transactions')
+  await expect(
+    page.getByRole('heading', { name: 'Transactions' }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Search transactions')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Statements' }).click()
+  await expect(page).toHaveURL('/finance?tab=statements')
+  await expect(page.getByRole('heading', { name: 'Statements' })).toBeVisible()
+  await expect(page.getByLabel('Statement account')).toBeVisible()
+
+  await openMobileNavigation()
+  await sidebar.getByRole('link', { name: 'Vouchers' }).click()
+  await expect(page).toHaveURL('/vouchers')
+  await expect(page.getByRole('heading', { name: 'Vouchers' })).toBeVisible()
+
+  await openMobileNavigation()
+  await sidebar.getByRole('link', { name: 'My Payroll' }).click()
+  await expect(page).toHaveURL('/payroll')
+  await expect(page.getByRole('heading', { name: 'Payroll' })).toBeVisible()
 })
 
 test('Help & Support provides learning, support, and admin content workflows', async ({

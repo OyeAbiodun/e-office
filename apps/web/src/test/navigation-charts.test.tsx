@@ -63,28 +63,36 @@ test('groups only server-authorized destinations without duplicates', () => {
   expect(groupedKeys).not.toContain('payroll')
 })
 
-test('finance navigation exposes functional children according to permission', () => {
+test('finance navigation exposes one coherent destination without synthetic duplicates', () => {
   const finance = item('finance', 'Finance', '/finance', 1)
+  const vouchers = item('vouchers', 'Vouchers', '/vouchers', 2)
   const payroll = item('payroll', 'My Payroll', '/payroll', 2)
-  const withoutTransactions = buildSidebarNavigation([finance, payroll])
-  const basicItems = withoutTransactions.groups.find(
+  const navigation = buildSidebarNavigation([finance, vouchers, payroll])
+  const financeItems = navigation.groups.find(
     (group) => group.key === 'finance-payroll',
   )?.items
-  expect(basicItems).toBeDefined()
-  expect(basicItems?.map((entry) => entry.label)).toEqual([
-    'Accounts',
-    'Statements',
+  expect(financeItems?.map((entry) => entry.label)).toEqual([
+    'Finance',
+    'Vouchers',
     'My Payroll',
   ])
-  const withTransactions = buildSidebarNavigation(
-    [finance, payroll],
-    new Set(['finance.transactions.view']),
-  )
   expect(
-    withTransactions.groups
-      .find((group) => group.key === 'finance-payroll')
-      ?.items.map((entry) => entry.label),
-  ).toEqual(['Accounts', 'Transactions', 'Statements', 'My Payroll'])
+    financeItems?.filter((entry) => entry.path === '/finance'),
+  ).toHaveLength(1)
+})
+
+test('finance grouping preserves server-authorized role boundaries', () => {
+  const finance = item('finance', 'Finance', '/finance', 1)
+  const payroll = item('payroll', 'My Payroll', '/payroll', 2)
+  const payrollOnly = buildSidebarNavigation([payroll])
+  const accountantOnly = buildSidebarNavigation([finance])
+  expect(
+    payrollOnly.groups.find((group) => group.key === 'finance-payroll')?.items,
+  ).toEqual([payroll])
+  expect(
+    accountantOnly.groups.find((group) => group.key === 'finance-payroll')
+      ?.items,
+  ).toEqual([finance])
 })
 
 test('sidebar accordion keeps only one business group open', () => {

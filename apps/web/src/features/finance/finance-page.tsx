@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useParams, useSearch } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { useAuth } from '@/features/auth/auth-store'
@@ -27,11 +27,18 @@ import { label } from './utils'
 export function FinancePage() {
   const { user } = useAuth()
   const permissions = new Set(user?.permissions)
-  const initialQuery = new URLSearchParams(window.location.search)
-  const [tab, setTab] = useState(
-    initialQuery.get('tab') === 'transactions' ? 'transactions' : 'accounts',
-  )
-  const statementIntent = initialQuery.get('intent') === 'statement'
+  const search = useSearch({ strict: false }) as {
+    tab?: string
+    intent?: string
+  }
+  const requestedSection =
+    search.intent === 'statement' ? 'statements' : search.tab
+  const section =
+    requestedSection &&
+    ['transactions', 'statements'].includes(requestedSection) &&
+    permissions.has('finance.transactions.view')
+      ? requestedSection
+      : 'accounts'
   const [create, setCreate] = useState(false)
   const [transfer, setTransfer] = useState(false)
   if (!permissions.has('finance.accounts.view'))
@@ -50,48 +57,117 @@ export function FinancePage() {
       subtitle="A clear view of accounts, payments, and reconciled records."
       actions={
         <>
-          {permissions.has('finance.transactions.manage') && (
-            <button onClick={() => setTransfer(!transfer)}>
-              {transfer ? 'Close transfer form' : 'Transfer funds'}
-            </button>
-          )}
-          {permissions.has('finance.accounts.manage') && (
-            <button
-              className="finance-primary"
-              onClick={() => setCreate(!create)}
-            >
-              <Plus size={16} />
-              {create ? 'Close account form' : 'New account'}
-            </button>
-          )}
+          {section !== 'statements' &&
+            permissions.has('finance.transactions.manage') && (
+              <button onClick={() => setTransfer(!transfer)}>
+                {transfer ? 'Close transfer form' : 'Transfer funds'}
+              </button>
+            )}
+          {section === 'accounts' &&
+            permissions.has('finance.accounts.manage') && (
+              <button
+                className="finance-primary"
+                onClick={() => setCreate(!create)}
+              >
+                <Plus size={16} />
+                {create ? 'Close account form' : 'New account'}
+              </button>
+            )}
         </>
       }
     >
       {create && <AccountForm done={() => setCreate(false)} />}
       {transfer && <TransferForm done={() => setTransfer(false)} />}
-      <nav aria-label="Finance sections" className="finance-tabs">
-        <button
-          aria-current={tab === 'accounts' ? 'page' : undefined}
-          onClick={() => setTab('accounts')}
+      <nav
+        aria-label="Finance sections"
+        className="finance-tabs"
+        role="tablist"
+      >
+        <Link
+          aria-selected={section === 'accounts'}
+          role="tab"
+          search={{ tab: 'accounts' } as never}
+          to="/finance"
         >
           Accounts
-        </button>
+        </Link>
         {permissions.has('finance.transactions.view') && (
-          <button
-            aria-current={tab === 'transactions' ? 'page' : undefined}
-            onClick={() => setTab('transactions')}
-          >
-            Transactions
-          </button>
+          <>
+            <Link
+              aria-selected={section === 'transactions'}
+              role="tab"
+              search={{ tab: 'transactions' } as never}
+              to="/finance"
+            >
+              Transactions
+            </Link>
+            <Link
+              aria-selected={section === 'statements'}
+              role="tab"
+              search={{ tab: 'statements' } as never}
+              to="/finance"
+            >
+              Statements
+            </Link>
+          </>
         )}
       </nav>
-      {statementIntent && tab === 'accounts' && (
-        <p className="finance-callout" role="status">
-          Choose an account to open its transactions and downloadable statement.
-        </p>
-      )}
-      {tab === 'accounts' ? <Accounts /> : <Transactions />}
+      {section === 'accounts' && <Accounts />}
+      {section === 'transactions' &&
+        permissions.has('finance.transactions.view') && <Transactions />}
+      {section === 'statements' &&
+        permissions.has('finance.transactions.view') && <Statements />}
     </FinanceLayout>
+  )
+}
+
+function Statements() {
+  const accounts = useQuery({
+    queryKey: ['finance', 'accounts'],
+    queryFn: financeApi.accounts,
+  })
+  const [accountId, setAccountId] = useState('')
+  const account = accounts.data?.find((candidate) => candidate.id === accountId)
+
+  return (
+    <>
+      <Section title="Statements">
+        <div className="finance-toolbar">
+          <Field label="Account">
+            <select
+              aria-label="Statement account"
+              value={accountId}
+              onChange={(event) => setAccountId(event.target.value)}
+            >
+              <option value="">Select an account</option>
+              {accounts.data?.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.account_name} · {candidate.account_code}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        {accounts.isLoading ? (
+          <Loading />
+        ) : accounts.error ? (
+          <ErrorState
+            error={accounts.error}
+            retry={() => void accounts.refetch()}
+          />
+        ) : !accounts.data?.length ? (
+          <p className="finance-empty">
+            No finance account is available for statement generation.
+          </p>
+        ) : !account ? (
+          <p className="finance-empty">
+            Select an account to review opening and closing balances, period
+            transactions, and statement exports.
+          </p>
+        ) : null}
+      </Section>
+      {account && <StatementPanel account={account} />}
+    </>
   )
 }
 

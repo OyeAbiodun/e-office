@@ -41,10 +41,7 @@ const DIRECT_KEYS = new Set(['dashboard', 'administration', 'help'])
  * It never introduces a capability: hidden, disabled, feature-gated and
  * permission-gated entries have already been removed by the navigation API.
  */
-export function buildSidebarNavigation(
-  items: MenuDefinition[],
-  permissions: ReadonlySet<string> = new Set(),
-) {
+export function buildSidebarNavigation(items: MenuDefinition[]) {
   const roots = items
     .filter(
       (item) =>
@@ -60,42 +57,9 @@ export function buildSidebarNavigation(
     return true
   })
   const groups = GROUPS.map((definition) => {
-    let groupItems = definition.itemKeys
+    const groupItems = definition.itemKeys
       .map((key) => byKey.get(key))
       .filter((item): item is MenuDefinition => Boolean(item))
-    if (definition.key === 'finance-payroll') {
-      const finance = byKey.get('finance')
-      if (finance) {
-        const financeChildren: MenuDefinition[] = [
-          {
-            ...finance,
-            id: `${finance.id}-accounts`,
-            key: 'finance-accounts',
-            label: 'Accounts',
-            path: '/finance?tab=accounts',
-          },
-          {
-            ...finance,
-            id: `${finance.id}-statements`,
-            key: 'finance-statements',
-            label: 'Statements',
-            path: '/finance?tab=accounts&intent=statement',
-          },
-        ]
-        if (permissions.has('finance.transactions.view'))
-          financeChildren.splice(1, 0, {
-            ...finance,
-            id: `${finance.id}-transactions`,
-            key: 'finance-transactions',
-            label: 'Transactions',
-            path: '/finance?tab=transactions',
-          })
-        groupItems = [
-          ...financeChildren,
-          ...groupItems.filter((item) => item.key !== 'finance'),
-        ]
-      }
-    }
     definition.itemKeys.forEach((key) => {
       if (byKey.has(key)) consumed.add(key)
     })
