@@ -28,11 +28,12 @@ import {
   WalletCards,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import {
   buildSidebarNavigation,
   groupIsActive,
+  itemIsActive,
   sidebarGroupStorageKey,
   toggleSidebarGroup,
   type SidebarGroup,
@@ -90,6 +91,9 @@ export function Sidebar({
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
+  const search = useRouterState({
+    select: (state) => state.location.searchStr,
+  })
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
     try {
       return new Set(
@@ -135,15 +139,20 @@ export function Sidebar({
     () => buildSidebarNavigation(sidebarItems, permissions),
     [permissions, sidebarItems],
   )
+  const activeGroupKey = groupedNavigation.groups.find((group) =>
+    groupIsActive(group, pathname),
+  )?.key
+  const initiallyOriented = useRef(false)
   useEffect(() => {
-    setExpandedGroups((current) => {
-      const active = groupedNavigation.groups.find((group) =>
-        groupIsActive(group, pathname),
-      )
-      if (!active) return current
-      return new Set([active.key])
-    })
-  }, [groupedNavigation.groups, pathname])
+    if (initiallyOriented.current || groupedNavigation.groups.length === 0)
+      return
+    initiallyOriented.current = true
+    if (activeGroupKey) setExpandedGroups(new Set([activeGroupKey]))
+  }, [activeGroupKey, groupedNavigation.groups.length])
+  useEffect(() => {
+    if (mobileOpen && activeGroupKey)
+      setExpandedGroups(new Set([activeGroupKey]))
+  }, [activeGroupKey, mobileOpen])
   useEffect(() => {
     localStorage.setItem(
       sidebarGroupStorageKey,
@@ -158,12 +167,14 @@ export function Sidebar({
       return displayCount(mailSummary.data.unread)
     return item.badge
   }
-  const renderItem = (item: MenuDefinition, nested = false): ReactNode => {
+  const renderItem = (
+    item: MenuDefinition,
+    nested = false,
+    parentGroupKey?: string,
+  ): ReactNode => {
     const Icon = icons[item.icon as keyof typeof icons] ?? LayoutDashboard
     const badge = dynamicBadge(item)
-    const active =
-      pathname === item.path ||
-      (item.path !== '/' && pathname.startsWith(`${item.path}/`))
+    const active = itemIsActive(item, pathname, search)
     return (
       <a
         aria-current={active ? 'page' : undefined}
@@ -182,6 +193,7 @@ export function Sidebar({
             !event.altKey
           ) {
             event.preventDefault()
+            if (parentGroupKey) setExpandedGroups(new Set([parentGroupKey]))
             onCloseMobile()
             void navigate({ to: item.path as never })
           }
@@ -218,14 +230,16 @@ export function Sidebar({
       <div key={group.key}>
         <button
           aria-expanded={expanded}
+          aria-label={collapsed ? group.label : undefined}
           className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-semibold outline-none transition hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-primary ${
             active ? 'text-primary' : 'text-muted-foreground'
           }`}
-          onClick={() =>
+          onClick={() => {
+            if (collapsed) onToggle()
             setExpandedGroups((current) =>
               toggleSidebarGroup(current, group.key),
             )
-          }
+          }}
           title={collapsed ? group.label : undefined}
           type="button"
         >
@@ -241,7 +255,7 @@ export function Sidebar({
         </button>
         {!collapsed && expanded && (
           <div className="mt-1 space-y-0.5">
-            {group.items.map((item) => renderItem(item, true))}
+            {group.items.map((item) => renderItem(item, true, group.key))}
           </div>
         )}
       </div>

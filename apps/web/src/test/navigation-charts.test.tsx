@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { DecisionBarChart } from '@/components/decision-chart'
 import {
   buildSidebarNavigation,
+  itemIsActive,
   toggleSidebarGroup,
 } from '@/components/sidebar-navigation'
 import type { MenuDefinition } from '@/features/platform/api'
@@ -93,6 +94,28 @@ test('sidebar accordion keeps only one business group open', () => {
   )
   expect([...communication]).toEqual(['communication'])
   expect(toggleSidebarGroup(communication, 'communication').size).toBe(0)
+})
+
+test('active route matching remains independent and query-aware', () => {
+  const accounts = {
+    ...item('finance-accounts', 'Accounts', '/finance?tab=accounts', 1),
+  }
+  const statements = {
+    ...item(
+      'finance-statements',
+      'Statements',
+      '/finance?tab=accounts&intent=statement',
+      2,
+    ),
+  }
+  expect(itemIsActive(accounts, '/finance', '?tab=accounts')).toBe(true)
+  expect(
+    itemIsActive(accounts, '/finance', '?tab=accounts&intent=statement'),
+  ).toBe(false)
+  expect(
+    itemIsActive(statements, '/finance', '?tab=accounts&intent=statement'),
+  ).toBe(true)
+  expect(itemIsActive(statements, '/payroll', '')).toBe(false)
 })
 
 test('decision chart provides numerical summaries and drill-down links', () => {

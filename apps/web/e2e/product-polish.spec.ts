@@ -147,6 +147,61 @@ test('grouped navigation and live decision charts support drill-down', async ({
   await expect(page.getByText(/Page \d+ of \d+/)).toBeVisible()
 })
 
+test('sidebar groups remain switchable after child navigation and deep links', async ({
+  page,
+}) => {
+  const isMobile = (page.viewportSize()?.width ?? 1280) < 1024
+  const openMobileNavigation = async () => {
+    if (isMobile)
+      await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
+
+  await login(page)
+  await openMobileNavigation()
+  const sidebar = page.getByRole('navigation', { name: 'Primary navigation' })
+  const finance = sidebar.getByRole('button', { name: 'Finance & payroll' })
+  const communication = sidebar.getByRole('button', { name: 'Communication' })
+  const people = sidebar.getByRole('button', { name: 'People', exact: true })
+
+  await finance.click()
+  await expect(finance).toHaveAttribute('aria-expanded', 'true')
+  await sidebar.getByRole('link', { name: 'My Payroll' }).click()
+  await expect(page).toHaveURL('/payroll')
+  if (isMobile) await expect(sidebar).not.toBeInViewport()
+
+  await openMobileNavigation()
+  await expect(finance).toHaveAttribute('aria-expanded', 'true')
+  await communication.focus()
+  await page.keyboard.press('Enter')
+  await expect(communication).toHaveAttribute('aria-expanded', 'true')
+  await expect(finance).toHaveAttribute('aria-expanded', 'false')
+  await sidebar.getByRole('link', { name: 'Chat' }).click()
+  await expect(page).toHaveURL('/chat')
+
+  await openMobileNavigation()
+  await people.click()
+  await expect(people).toHaveAttribute('aria-expanded', 'true')
+  await expect(communication).toHaveAttribute('aria-expanded', 'false')
+  await sidebar.getByRole('link', { name: 'People', exact: true }).click()
+  await expect(page).toHaveURL('/members')
+
+  await openMobileNavigation()
+  await finance.click()
+  await expect(finance).toHaveAttribute('aria-expanded', 'true')
+  await expect(people).toHaveAttribute('aria-expanded', 'false')
+  await sidebar.getByRole('link', { name: 'Accounts' }).click()
+  await expect(page).toHaveURL('/finance?tab=accounts')
+
+  await page.goto('/payroll')
+  await page.reload()
+  await expect(page).toHaveURL('/payroll')
+  await openMobileNavigation()
+  await expect(finance).toHaveAttribute('aria-expanded', 'true')
+  await communication.click()
+  await expect(communication).toHaveAttribute('aria-expanded', 'true')
+  await expect(finance).toHaveAttribute('aria-expanded', 'false')
+})
+
 test('Help & Support provides learning, support, and admin content workflows', async ({
   page,
 }) => {

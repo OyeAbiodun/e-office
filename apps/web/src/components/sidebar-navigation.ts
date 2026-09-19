@@ -113,6 +113,26 @@ export function toggleSidebarGroup(current: Set<string>, key: string) {
   return current.has(key) ? new Set<string>() : new Set([key])
 }
 
+export function itemIsActive(
+  item: MenuDefinition,
+  pathname: string,
+  search = '',
+) {
+  const [itemPathname, itemSearch = ''] = item.path.split('?')
+  const pathMatches =
+    pathname === itemPathname ||
+    (itemPathname !== '/' && pathname.startsWith(`${itemPathname}/`))
+  if (!pathMatches) return false
+  if (!itemSearch) return true
+
+  const expected = new URLSearchParams(itemSearch)
+  const current = new URLSearchParams(
+    search.startsWith('?') ? search.slice(1) : search,
+  )
+  if (expected.size !== current.size) return false
+  return [...expected].every(([key, value]) => current.get(key) === value)
+}
+
 export function groupIsActive(group: SidebarGroup, pathname: string) {
   return group.items.some(
     (item) =>
