@@ -21,6 +21,7 @@ class HelpArticleResponse(BaseModel):
     workflow_status: str
     search_weight: int
     context_ids: list[str]
+    keywords: list[str]
     related_slugs: list[str]
     video_metadata: dict[str, object] | None
     updated_at: datetime
@@ -38,6 +39,7 @@ class HelpArticleInput(BaseModel):
     workflow_status: Literal["draft", "review", "published", "archived"] = "published"
     search_weight: int = Field(default=100, ge=0, le=1000)
     context_ids: list[str] = Field(default_factory=list, max_length=30)
+    keywords: list[str] = Field(default_factory=list, max_length=50)
     related_slugs: list[str] = Field(default_factory=list, max_length=30)
     video_metadata: dict[str, object] | None = None
 
@@ -50,6 +52,7 @@ class HelpArticleUpdate(BaseModel):
     workflow_status: Literal["draft", "review", "published", "archived"] = "draft"
     search_weight: int = Field(default=100, ge=0, le=1000)
     context_ids: list[str] = Field(default_factory=list, max_length=30)
+    keywords: list[str] = Field(default_factory=list, max_length=50)
     related_slugs: list[str] = Field(default_factory=list, max_length=30)
     video_metadata: dict[str, object] | None = None
 

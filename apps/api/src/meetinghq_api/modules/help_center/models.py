@@ -39,6 +39,9 @@ class HelpArticle(Base):
     context_ids: Mapped[list[str]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), default=list
     )
+    keywords: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=list
+    )
     related_slugs: Mapped[list[str]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), default=list
     )

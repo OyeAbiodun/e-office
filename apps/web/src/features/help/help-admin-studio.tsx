@@ -19,6 +19,7 @@ const emptyDraft: HelpArticleDraft = {
   workflow_status: 'draft',
   search_weight: 100,
   context_ids: [],
+  keywords: [],
   related_slugs: [],
   video_metadata: null,
 }
@@ -54,9 +55,9 @@ export function HelpAdminStudio() {
   })
 
   useEffect(() => {
-    if (!selected && articles.data?.[0] && !isNew)
+    if (!selectedSlug && articles.data?.[0] && !isNew)
       setSelectedSlug(articles.data[0].slug)
-  }, [articles.data, isNew, selected])
+  }, [articles.data, isNew, selectedSlug])
   useEffect(() => {
     if (!selected || isNew) return
     setDraft({
@@ -68,6 +69,7 @@ export function HelpAdminStudio() {
       workflow_status: selected.workflow_status,
       search_weight: selected.search_weight,
       context_ids: selected.context_ids,
+      keywords: selected.keywords,
       related_slugs: selected.related_slugs,
       video_metadata: selected.video_metadata,
     })
@@ -328,6 +330,17 @@ export function HelpAdminStudio() {
               )}
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Search keywords"
+                hint="Comma-separated phrases users may search for"
+                value={draft.keywords.join(', ')}
+                onChange={(value) =>
+                  setDraft((current) => ({
+                    ...current,
+                    keywords: splitValues(value),
+                  }))
+                }
+              />
               <Field
                 label="Page context IDs"
                 hint="Comma-separated, for example calendar, meetings.detail"

@@ -264,6 +264,35 @@ test('Help & Support provides learning, support, and admin content workflows', a
   ).toBeVisible()
   await expect(page.getByLabel('Search OfficeFlow help')).toBeVisible()
 
+  const searches = [
+    ['request leave', 'Leave Management'],
+    ['download payslip', 'Payroll & Payslips'],
+    ['approve voucher', 'Vouchers'],
+    ['weekly report', 'Reports & Management Intelligence'],
+    ['create project', 'Projects'],
+    ['access denied', 'Quick Start Guide'],
+    ['change password', 'First Login'],
+  ] as const
+  for (const [phrase, expectedGuide] of searches) {
+    await page.getByLabel('Search OfficeFlow help').fill(phrase)
+    await expect(
+      page.getByRole('button', { name: expectedGuide }),
+    ).toBeVisible()
+  }
+
+  await page.getByLabel('Search OfficeFlow help').fill('')
+  await page.getByRole('button', { name: 'Learning Paths' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Employee Learning Path' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Employee Learning Path' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'How to use this path' }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Recommended sequence' }),
+  ).toBeVisible()
+
   await page.getByRole('tab', { name: 'Get support' }).click()
   await expect(
     page.getByRole('heading', { name: 'How can we help?' }),
@@ -273,6 +302,61 @@ test('Help & Support provides learning, support, and admin content workflows', a
   await page.getByRole('tab', { name: 'Manage content' }).click()
   await expect(page.getByText('Content studio')).toBeVisible()
   await expect(page.getByLabel('Search help content')).toBeVisible()
+  await page.getByLabel('Search help content').fill('Finance Center')
+  await page.getByRole('button', { name: /Finance Center/ }).click()
+  await expect(page.getByText(/Edit Finance Center/)).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Save revision' }),
+  ).toBeEnabled()
+
+  const acceptanceTitle = 'OfficeFlow Help Publishing Acceptance'
+  await page.getByLabel('Search help content').fill(acceptanceTitle)
+  const acceptanceGuide = page.getByRole('button', { name: acceptanceTitle })
+  if ((await acceptanceGuide.count()) === 0) {
+    await page.getByLabel('Create guide').click()
+    await page.getByLabel('Title').fill(acceptanceTitle)
+    await page
+      .getByLabel('Slug', { exact: true })
+      .fill('officeflow-help-publishing-acceptance')
+    await page.getByLabel('Category').fill('Administrator Handbook')
+    await page
+      .getByLabel('Summary')
+      .fill('Controlled guide used to verify Help publishing and search.')
+    await page.getByLabel('Workflow').selectOption('published')
+    await page
+      .getByLabel('Guide Markdown content')
+      .fill(
+        '# Publishing acceptance\n\n## Procedure\n\n1. Verify the guide is searchable.',
+      )
+    await page.getByLabel('Search keywords').fill('help publishing acceptance')
+    await page
+      .getByRole('button', { name: 'Create guide' })
+      .filter({ hasText: 'Create guide' })
+      .click()
+    await expect(page.getByText(`Edit ${acceptanceTitle}`)).toBeVisible()
+  } else {
+    await acceptanceGuide.click()
+  }
+  await page
+    .getByLabel('Summary')
+    .fill('Controlled published guide verified through the Content Studio.')
+  await page.getByRole('button', { name: 'Save revision' }).click()
+  await expect(page.getByText(`Edit ${acceptanceTitle}`)).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Learn' }).click()
+  await page
+    .getByLabel('Search OfficeFlow help')
+    .fill('help publishing acceptance')
+  await expect(
+    page.getByRole('button', { name: acceptanceTitle }),
+  ).toBeVisible()
+
+  await navigateTo(page, 'Finance')
+  await page.getByRole('button', { name: 'Help for this page' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Help for this page' }),
+  ).toBeVisible()
+  await expect(page.getByText('Finance Center', { exact: true })).toBeVisible()
 })
 
 test('compact Administration and Help empty states remain usable', async ({

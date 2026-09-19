@@ -13,6 +13,7 @@ export interface HelpArticle {
   workflow_status: 'draft' | 'review' | 'published' | 'archived'
   search_weight: number
   context_ids: string[]
+  keywords: string[]
   related_slugs: string[]
   video_metadata: Record<string, unknown> | null
   updated_at: string
@@ -60,6 +61,7 @@ export interface HelpArticleDraft {
   workflow_status: HelpArticle['workflow_status']
   search_weight: number
   context_ids: string[]
+  keywords: string[]
   related_slugs: string[]
   video_metadata: Record<string, unknown> | null
 }

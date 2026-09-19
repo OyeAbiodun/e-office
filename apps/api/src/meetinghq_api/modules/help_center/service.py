@@ -4,10 +4,11 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Integer, func, or_, select
+from sqlalchemy import Integer, String, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.modules.audit.models import AuditLog
+from meetinghq_api.modules.help_center.baseline_content import baseline_content
 from meetinghq_api.modules.help_center.models import (
     HelpArticle,
     HelpInteraction,
@@ -23,12 +24,12 @@ from meetinghq_api.modules.help_center.schemas import (
 )
 from meetinghq_api.shared.exceptions import ConflictError, NotFoundError
 
-ARTICLES = (
+ARTICLES: tuple[tuple[str, str, str, list[str]], ...] = (
     ("quick-start", "Quick Start Guide", "Getting Started", ["dashboard"]),
-    ("installation", "Installation", "Getting Started", ["administration"]),
+    ("installation", "Installation", "Getting Started", ["platform"]),
     ("first-login", "First Login", "Getting Started", ["login"]),
     ("dashboard", "Dashboard", "User Handbook", ["dashboard"]),
-    ("my-space", "My Space", "User Handbook", ["my-space", "tasks"]),
+    ("my-space", "My Space", "User Handbook", ["my-space"]),
     ("projects", "Projects", "User Handbook", ["projects", "projects.detail"]),
     ("tasks-activities", "Tasks & Activities", "User Handbook", ["tasks", "activities"]),
     ("users", "Users", "Administrator Handbook", ["users", "members"]),
@@ -52,6 +53,7 @@ ARTICLES = (
         ["reports", "reports.detail"],
     ),
     ("settings", "Organization Settings", "Administrator Handbook", ["settings", "organization"]),
+    ("administration", "Administration", "Administrator Handbook", ["administration"]),
     ("integrations", "Integration Center", "Administrator Handbook", ["integrations"]),
     ("security", "Security & Access", "Administrator Handbook", ["security", "audit"]),
     ("keyboard-shortcuts", "Keyboard Shortcuts", "User Handbook", ["global"]),
@@ -65,7 +67,42 @@ ARTICLES = (
     ("deploy-kubernetes", "Kubernetes Deployment", "Deployment Guides", ["platform"]),
     ("backup-restore", "Backup & Restore", "Deployment Guides", ["administration"]),
     ("system-requirements", "System Requirements", "Deployment Guides", ["platform"]),
+    ("employee-learning-path", "Employee Learning Path", "Learning Paths", []),
+    ("manager-learning-path", "Manager Learning Path", "Learning Paths", []),
+    (
+        "project-manager-learning-path",
+        "Project Manager Learning Path",
+        "Learning Paths",
+        [],
+    ),
+    ("finance-learning-path", "Finance / Accountant Learning Path", "Learning Paths", []),
+    ("payroll-learning-path", "Payroll Officer Learning Path", "Learning Paths", []),
+    (
+        "people-admin-learning-path",
+        "HR / People Administrator Learning Path",
+        "Learning Paths",
+        [],
+    ),
+    (
+        "system-admin-learning-path",
+        "System Administrator Learning Path",
+        "Learning Paths",
+        [],
+    ),
 )
+
+BASELINE_KEYWORDS: dict[str, list[str]] = {
+    "quick-start": ["access denied", "sidebar", "command centre", "quick create"],
+    "first-login": ["change password", "temporary password", "sign in"],
+    "projects": ["create project", "project report", "milestone", "risk", "issue"],
+    "tasks-activities": ["create task", "daily activity", "reminder", "checklist"],
+    "leave": ["request leave", "leave balance", "half day", "supporting document"],
+    "vouchers": ["approve voucher", "disbursement", "separation of duties"],
+    "finance": ["finance account", "transaction", "statement", "export statement"],
+    "payroll": ["download payslip", "gross pay", "PAYE", "pension", "net pay"],
+    "reporting-intelligence": ["submit weekly report", "monthly report", "project report"],
+    "troubleshooting": ["cannot log in", "missing menu", "email not received"],
+}
 
 
 class HelpCenterService:
@@ -82,31 +119,34 @@ class HelpCenterService:
             ).all()
         }
         for position, (slug, title, category, context_ids) in enumerate(ARTICLES):
+            summary, content = baseline_content(slug, title, category)
             if slug in existing:
                 article = existing[slug]
-                if not article.context_ids:
+                if article.updated_by is None:
                     article.context_ids = context_ids
-                if not article.related_slugs:
-                    article.related_slugs = (
-                        ["troubleshooting"] if slug != "troubleshooting" else ["faq"]
-                    )
-                if article.updated_by is None and "MeetingHQ" in article.content:
-                    article.summary = f"Learn how OfficeFlow {title.lower()} works."
-                    article.content = self._default_content(title, category)
+                    article.keywords = BASELINE_KEYWORDS.get(slug, [])
+                    if not article.related_slugs:
+                        article.related_slugs = (
+                            ["troubleshooting"] if slug != "troubleshooting" else ["faq"]
+                        )
+                    if article.version == 1:
+                        article.summary = summary
+                        article.content = content
                 continue
             self.session.add(
                 HelpArticle(
                     organization_id=organization_id,
                     slug=slug,
                     title=title,
-                    summary=f"Learn how OfficeFlow {title.lower()} works.",
+                    summary=summary,
                     category=category,
                     position=position,
-                    content=self._default_content(title, category),
+                    content=content,
                     published=True,
                     workflow_status="published",
                     search_weight=100,
                     context_ids=context_ids,
+                    keywords=BASELINE_KEYWORDS.get(slug, []),
                     related_slugs=["troubleshooting"] if slug != "troubleshooting" else ["faq"],
                 )
             )
@@ -130,6 +170,7 @@ class HelpCenterService:
                     HelpArticle.title.ilike(term),
                     HelpArticle.summary.ilike(term),
                     HelpArticle.content.ilike(term),
+                    HelpArticle.keywords.cast(String).ilike(term),
                 )
             )
         if category:
@@ -499,32 +540,4 @@ class HelpCenterService:
 
     @staticmethod
     def _default_content(title: str, category: str) -> str:
-        return (
-            f"# {title}\n\n"
-            f"This {category.lower()} guide explains how {title.lower()} works in OfficeFlow.\n\n"
-            "## What this feature does\n\n"
-            f"{title} connects your work to the people, records, and decisions "
-            "already in OfficeFlow.\n\n"
-            "## Who can use it\n\n"
-            "Availability follows your role, permissions, and your organization's "
-            "enabled features.\n\n"
-            "## Before you start\n\n"
-            "- Sign in with your OfficeFlow account.\n"
-            "- Confirm the required menu is visible for your assigned role.\n"
-            "- Contact an administrator if a required permission is unavailable.\n\n"
-            "## How to use it\n\n"
-            f"1. Open **{title}** from the OfficeFlow navigation.\n"
-            "2. Complete the required fields and review the visible validation guidance.\n"
-            "3. Save the change and confirm the success state.\n\n"
-            "## What happens next\n\n"
-            "OfficeFlow updates related dashboards, notifications, and activity "
-            "history when applicable.\n\n"
-            "```text\nTip: Press Ctrl+K to search OfficeFlow or start a quick action.\n```\n\n"
-            "> Settings and menu availability are controlled by your administrator.\n\n"
-            "## Common problems\n\n"
-            "If an action is unavailable, confirm your permission, the record status, "
-            "and your connection.\n\n"
-            "## Related features\n\n"
-            "Search Help & Support for related workflows or submit a support request "
-            "with the page context."
-        )
+        return baseline_content("", title, category)[1]

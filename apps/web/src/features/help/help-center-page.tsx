@@ -63,6 +63,11 @@ const categoryCards = [
     GraduationCap,
     'Discover improvements and important changes.',
   ],
+  [
+    'Learning Paths',
+    GraduationCap,
+    'Follow role-focused onboarding for your responsibilities.',
+  ],
 ] as const
 
 export function HelpCenterPage() {
@@ -178,7 +183,10 @@ export function HelpCenterPage() {
               <input
                 aria-label="Search OfficeFlow help"
                 className="h-12 w-full rounded-xl border bg-background pl-12 pr-4 shadow-sm"
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  if (event.target.value) setCategory('')
+                }}
                 placeholder="Search features, workflows, setup, or troubleshooting"
                 value={search}
               />
@@ -503,7 +511,12 @@ function ArticleOutline({
       <ol className="mt-3 space-y-2">
         {toc.map((heading) => (
           <li className="text-sm text-muted-foreground" key={heading}>
-            {heading}
+            <a
+              className="hover:text-primary hover:underline"
+              href={`#${headingId(heading)}`}
+            >
+              {heading}
+            </a>
           </li>
         ))}
       </ol>
@@ -571,7 +584,11 @@ function MarkdownContent({ content }: { content: string }) {
       )
     else if (line.startsWith('## '))
       blocks.push(
-        <h2 className="pt-4 text-xl font-semibold" key={index}>
+        <h2
+          className="scroll-mt-24 pt-4 text-xl font-semibold"
+          id={headingId(line.slice(3))}
+          key={index}
+        >
           {line.slice(3)}
         </h2>,
       )
@@ -610,6 +627,12 @@ function MarkdownContent({ content }: { content: string }) {
       )
   })
   return <article className="space-y-4 leading-7">{blocks}</article>
+}
+function headingId(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
 }
 function renderInline(value: string) {
   return value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) =>
