@@ -1,11 +1,19 @@
 """End-to-end coverage for the usable meeting MVP."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from httpx import AsyncClient
 from pytest import MonkeyPatch
+from sqlalchemy import select
 
-from meetinghq_api.modules.notifications.service import EmailDeliveryError, MeetingEmailSender
+from meetinghq_api.core.config import get_settings
+from meetinghq_api.modules.notifications.models import MeetingReminder, Notification
+from meetinghq_api.modules.notifications.service import (
+    EmailDeliveryError,
+    MeetingEmailSender,
+    NotificationService,
+)
 
 
 async def test_meeting_invitation_calendar_notification_and_rsvp(
@@ -274,3 +282,55 @@ async def test_transient_email_failure_does_not_rollback_the_meeting(
     )
     assert detail.status_code == 200
     assert detail.json()["data"]["title"] == "Durable invitation delivery"
+
+    # A disabled or unavailable email channel must not suppress the independent
+    # in-app reminder, and retrying SMTP must not duplicate that notification.
+    factory = meeting_client._meetinghq_session_factory  # type: ignore[attr-defined]
+    meeting_id = uuid.UUID(created.json()["data"]["id"])
+    async with factory() as session:
+        reminder = (
+            await session.scalars(
+                select(MeetingReminder).where(MeetingReminder.meeting_id == meeting_id)
+            )
+        ).first()
+        assert reminder is not None
+        reminder.scheduled_for = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+
+    async with factory() as session:
+        assert await NotificationService(session, get_settings()).process_due_reminders() == 0
+        await session.commit()
+        notifications = list(
+            (
+                await session.scalars(
+                    select(Notification).where(
+                        Notification.meeting_id == meeting_id,
+                        Notification.notification_type == "meeting_reminder",
+                    )
+                )
+            ).all()
+        )
+        assert len(notifications) == 1
+        reminder = (
+            await session.scalars(
+                select(MeetingReminder).where(MeetingReminder.meeting_id == meeting_id)
+            )
+        ).first()
+        assert reminder is not None
+        reminder.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+
+    async with factory() as session:
+        assert await NotificationService(session, get_settings()).process_due_reminders() == 0
+        await session.commit()
+        notifications = list(
+            (
+                await session.scalars(
+                    select(Notification).where(
+                        Notification.meeting_id == meeting_id,
+                        Notification.notification_type == "meeting_reminder",
+                    )
+                )
+            ).all()
+        )
+        assert len(notifications) == 1

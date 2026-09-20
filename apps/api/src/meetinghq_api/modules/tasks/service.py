@@ -585,7 +585,7 @@ class TaskService:
         permissions = self.permissions(actor)
         if "activity.create_own" not in permissions and "activity.manage" not in permissions:
             raise AuthorizationError("You cannot record daily activity")
-        if body.activity_date > datetime.now(UTC).date():
+        if body.activity_date > date.today():
             raise ValidationError("Daily activity cannot be recorded for a future date")
         task: Task | None = None
         if body.task_id:
@@ -653,7 +653,7 @@ class TaskService:
         ):
             raise ValidationError("Activity date, summary, and visibility cannot be cleared")
         activity_date = changes.get("activity_date")
-        if isinstance(activity_date, date) and activity_date > datetime.now(UTC).date():
+        if isinstance(activity_date, date) and activity_date > date.today():
             raise ValidationError("Daily activity cannot be recorded for a future date")
 
         task: Task | None = None

@@ -105,8 +105,7 @@ async def test_help_articles_are_seeded_searchable_and_admin_extensible(
             "summary": "Administrator-approved finance operating procedure.",
             "category": "Finance & Payroll",
             "content": (
-                "# Finance Center\n\n## Organization procedure\n\n"
-                "Keep this approved guidance."
+                "# Finance Center\n\n## Organization procedure\n\n" "Keep this approved guidance."
             ),
             "workflow_status": "published",
             "context_ids": ["finance"],

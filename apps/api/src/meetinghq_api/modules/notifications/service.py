@@ -1332,6 +1332,25 @@ class NotificationService:
                 f"{meeting.title} starts in {self._offset_label(reminder.offset_minutes)} "
                 f"at {meeting.start_datetime.isoformat()} ({meeting.timezone})."
             )
+            # In-app delivery is an independent, durable channel. External email
+            # availability must never suppress the reminder inside OfficeFlow.
+            # Only create it on the first attempt so an SMTP retry cannot fan out
+            # duplicate notifications or browser-push jobs.
+            if reminder.attempt_count == 1:
+                await self.create_notification(
+                    organization_id=meeting.organization_id,
+                    user_id=user.id,
+                    meeting_id=meeting.id,
+                    notification_type="meeting_reminder",
+                    title=f"Upcoming: {meeting.title}",
+                    body=body,
+                    action_url=f"/meetings/{meeting.id}",
+                    category="meetings",
+                    metadata={
+                        "reminder_id": str(reminder.id),
+                        "offset_minutes": reminder.offset_minutes,
+                    },
+                )
             try:
                 sender = senders.get(meeting.organization_id)
                 if sender is None:
@@ -1348,16 +1367,6 @@ class NotificationService:
                     reminder_label=self._offset_label(reminder.offset_minutes),
                 )
                 await sender.send_rendered(user.email, rendered)
-                await self.create_notification(
-                    organization_id=meeting.organization_id,
-                    user_id=user.id,
-                    meeting_id=meeting.id,
-                    notification_type="meeting_reminder",
-                    title=f"Upcoming: {meeting.title}",
-                    body=body,
-                    action_url=f"/meetings/{meeting.id}",
-                    category="meetings",
-                )
                 reminder.status = "sent"
                 reminder.delivered_at = datetime.now(UTC)
                 reminder.error = None

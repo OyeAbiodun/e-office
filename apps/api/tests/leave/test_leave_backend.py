@@ -1,7 +1,7 @@
 """Core Leave policy, workflow, privacy, and idempotency regressions."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -59,6 +59,7 @@ async def _admin_id(client: AsyncClient) -> str:
 async def _foundation(
     client: AsyncClient, headers: dict[str, str]
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    current_year = date.today().year
     leave_type = (
         await client.post(
             "/api/v1/leave/types",
@@ -76,9 +77,9 @@ async def _foundation(
             "/api/v1/leave/periods",
             headers=headers,
             json={
-                "name": "FY 2026",
-                "start_date": "2026-01-01",
-                "end_date": "2026-12-31",
+                "name": f"FY {current_year}",
+                "start_date": f"{current_year}-01-01",
+                "end_date": f"{current_year + 1}-12-31",
                 "status": "open",
             },
         )
@@ -163,13 +164,16 @@ async def test_request_pending_reservation_and_duplicate_submit(
     organization_client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
     leave_type, _period, entitlement = await _foundation(organization_client, admin_headers)
+    days_until_monday = (7 - date.today().weekday()) % 7 or 7
+    start_date = date.today() + timedelta(days=days_until_monday)
+    end_date = start_date + timedelta(days=1)
     draft = await organization_client.post(
         "/api/v1/leave/requests",
         headers=admin_headers,
         json={
             "leave_type_id": leave_type["id"],
-            "start_date": "2026-09-14",
-            "end_date": "2026-09-15",
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "reason": "Personal",
         },
     )

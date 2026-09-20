@@ -34,6 +34,7 @@ async def meeting_client() -> AsyncIterator[AsyncClient]:
     # behavior remains covered by the meeting integration tests themselves.
     app.state.audit_session_factory = None
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+        client._meetinghq_session_factory = factory  # type: ignore[attr-defined]
         yield client
     app.state.audit_session_factory = original_audit_factory
     app.dependency_overrides.clear()
