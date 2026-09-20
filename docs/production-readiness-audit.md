@@ -1,91 +1,149 @@
-# Production Readiness Audit
+# OfficeFlow Production Readiness Audit
 
-Last verified: 2026-09-01
+Last verified: 2026-09-20
 
-The SMTP/PostgreSQL production-target checkpoint, including isolated PostgreSQL 17.6 on
-configuration-driven native port `5433`, migration head
-`0030_email_calendar_delivery_integrity`, backup/restore evidence, current quality gates, and
-the truthful external SMTP blocker, is recorded in
-[smtp-postgresql-readiness.md](./smtp-postgresql-readiness.md).
+Branch: `feature/pre-release-hardening`
+Baseline: `71d86804b8421d2b2f55800604fb98bae827998e`
 
-This document is the release evidence ledger for the Profile Center completion and production-readiness pass. `Green` means the behavior has direct local automated or browser evidence. `Yellow` means the implementation works locally but still needs deployment, operational, or broader acceptance evidence. `Red` means the required external production environment has not yet been provisioned or rehearsed.
-
-## Executive status
-
-| Area | Status | Evidence | Remaining work |
-| --- | --- | --- | --- |
-| Authentication and session continuity | Yellow | Email/password login, protected navigation, hard refresh, and a second authenticated tab were verified locally. | Re-run the same journey in staging behind the production ingress, domain, cookies, and TLS termination. |
-| Profile Center | Yellow | Profile navigation, personal data, avatar controls, security history, password flow, MFA enrollment UI, sessions, preferences, connected accounts, organization context, breadcrumbs, and pagination are implemented and locally verified. | Validate MFA with a real authenticator in staging and complete screen-reader acceptance testing. |
-| Notifications | Yellow | Notification inbox, unread count, live WebSocket updates, preferences, and route access are implemented. A connection-pool exhaustion defect was fixed and the reconnect/accessibility paths pass E2E. | Prove long-duration reconnect behavior and external browser notification delivery in staging. |
-| Provider and integration truthfulness | Yellow | Provider registry, official UI branding, configured-versus-validated status, connection testing, audit metadata, and health integration are implemented. | Configure and validate production credentials for each enabled provider. |
-| System Health | Yellow | Required, recommended, optional, configured, unavailable, and healthy semantics are separated; history and recommendations are exposed. | Connect production observability and prove alerts, history retention, and incident operations. |
-| Automated quality gates | Green | Ruff, Black, strict MyPy, 90 backend tests, ESLint, TypeScript, 28 frontend tests, production build, 12 Playwright journeys, and npm audit pass. | Resolve the documented Python 3.14/aiosqlite cleanup warnings and standardize local Node on 22. |
-| GCP deployment readiness | Red | A concrete deployment, migration, backup, restore, scaling, monitoring, and rollback runbook exists. | Provision a staging project and execute deployment, restore, failover, rollback, load, and security rehearsals. |
-
-## Browser acceptance evidence
-
-The local application was verified with the bootstrap Super Admin account. Credentials are intentionally not repeated in this document.
-
-- Login succeeded and returned the expected Super Admin identity.
-- Dashboard loaded live widgets and activity data.
-- The global account menu exposed Profile, Security & MFA, Notification Preferences, and Account Preferences.
-- `/profile/security` rendered the hierarchical breadcrumb `MeetingHQ / Profile Center / Security & MFA`.
-- A hard refresh retained the authenticated session.
-- A second browser tab opened `/profile/notifications` without requiring another login.
-- Session pagination rendered `Showing 1–8 of 189 active sessions` and limited row actions to the current page.
-- The authenticated route sweep covered Dashboard, Calendar, Meetings, Chat, Mail, Notifications, Users, Members, Roles, Platform Management, System Health, Integration Center, Help Center, Profile, and Administration.
-- A live API probe confirmed the bootstrap user has the Super Admin role and the dashboard returned 10 widgets and 10 recent activity records.
-
-Screenshots:
-
-- [Profile Center verification](./profile-center-verification.png)
-- [System Health verification](./system-health-verification.png)
-
-## Defect corrected during verification
-
-Repeated authenticated navigation originally exhausted the SQLAlchemy connection pool. The notification WebSocket kept one database session open for its entire lifetime, and closed browser tabs could leave polling loops alive because the server never consumed a receive event. The API then failed with `QueuePool limit of size 5 overflow 10 reached` and protected pages appeared to stall.
-
-The WebSocket now authenticates in a short-lived session, opens a fresh short-lived session only for each unread-count query, consumes incoming frames with a bounded timeout so disconnects are observed, and exits cleanly on disconnect. The complete desktop/mobile Playwright suite passed after this correction.
-
-## Quality-gate evidence
-
-| Gate | Result |
-| --- | --- |
-| Ruff | Passed |
-| Black check | Passed; 238 files unchanged |
-| MyPy strict | Passed; 158 source files checked |
-| Pytest | Passed; 90 tests, 79% measured coverage |
-| ESLint | Passed |
-| TypeScript | Passed |
-| Vitest | Passed; 28 tests |
-| Frontend production build | Passed; 5,767 modules transformed |
-| Playwright | Passed; 12 desktop/mobile journeys |
-| npm audit | Passed; 0 vulnerabilities |
-
-The Playwright suite covers desktop and mobile command navigation, calendar create/edit/delete, internal mail sending, login shell behavior, and serious axe accessibility checks for Dashboard and Chat.
-
-## Health-score interpretation
-
-The local health score is currently **90**, not 100. Eleven of twelve required components pass.
-The required failure is low remaining storage (7.3% free). Disk pressure (92.7% used) and memory
-pressure (92.5% used at the sampled instant) are degraded recommendations. SMTP is recommended
-but unconfigured. Optional unconfigured services—including external integrations,
-SSL/domain/certificate checks, backups, cron, search, AI, calendar providers, and file
-providers—do not lower the score.
-
-A score of 100 is therefore possible only when every required component passes; optional unconfigured services no longer create a permanent penalty.
-
-## Remaining release blockers and risks
-
-1. Provision the documented GCP staging architecture and run the complete deployment runbook.
-2. Configure a real SMTP provider and verify invitation, reset, notification, retry, bounce, and failure workflows end to end.
-3. Execute Cloud SQL backup/restore, migration rollback, application rollback, worker retry, WebSocket reconnect, and regional failure rehearsals.
-4. Run load and soak tests for API, WebSocket, database pool, Redis, scheduler, and notification worker behavior.
-5. Complete penetration testing, dependency/container scanning, IAM review, secret-rotation rehearsal, and tenant-isolation review across all modules.
-6. Complete manual acceptance for a non-admin member, denied permissions, cross-tenant access attempts, keyboard-only use, screen readers, high contrast, tablet, and supported mobile browsers.
-7. Resolve four non-failing Python 3.14/aiosqlite SQLAlchemy cleanup warnings observed after the backend test run.
-8. Standardize developer and CI Node.js on version 22; the current local machine uses 20.19.2 and emits an engine warning even though all frontend gates pass.
+This is the canonical release-evidence ledger. Credentials, tokens, personal data, salary data,
+and provider secrets are intentionally excluded.
 
 ## Release decision
 
-The Profile Center completion pass and all local quality gates are complete. MeetingHQ must **not** be presented as fully production-ready yet: the external staging deployment, real provider delivery, recovery rehearsals, load/security evidence, and broader manual acceptance above remain required release gates.
+**Classification: DEVELOPMENT HARDENED**
+
+Application-controlled static gates, unit/integration tests, database restore, authenticated
+desktop/mobile journeys, a bounded API load probe, and a bounded WebSocket soak pass. OfficeFlow
+is not a Release Candidate because container execution, authorized GCP staging, production TLS and
+domain configuration, automated staging recovery, full security acceptance, real-device push, and
+a production-like multi-user load test remain blocked or untested.
+
+## Verified baseline
+
+| Item | Result |
+| --- | --- |
+| Product | OfficeFlow (MeetingHQ compatibility identifiers retained internally) |
+| Alembic | One head/current revision: `a4f5d6e7c801`; `alembic check` reports no drift |
+| Local runtimes | Python 3.14.6; Node 20.19.2; PostgreSQL 17.6 |
+| Supported build runtimes | Python 3.13 and Node 22 in CI/project metadata |
+| Final acceptance services | Web 5174, API 8001, PostgreSQL 5432, Redis 6379; Office Platform ports 5173/8000 were not touched |
+| Backend | 168 passed; 83% measured coverage |
+| Frontend | 24 files, 81 tests passed |
+| Browser | 48 cases exercised in one aggregate run (41 passed initially); all 7 failures were corrected and passed in focused desktop/mobile reruns |
+| Dependencies | `pip-audit`: no known vulnerabilities after upgrading local pip tooling to 26.2.1; `npm audit --omit=dev`: 0 |
+| SMTP | Disabled and unconfigured in the final restored acceptance database; no external message was sent |
+| System Health | Degraded, score 80: storage/disk pressure and four delivery jobs require attention |
+
+The developer host does not match supported production toolchains. Passing local results under
+Python 3.14 and Node 20 are useful evidence, but CI/staging must remain authoritative for Python
+3.13 and Node 22.
+
+## Release-readiness matrix
+
+| Area | Classification | Evidence / reason |
+| --- | --- | --- |
+| Repository, migration chain, schema drift | PASS | Clean baseline audited; one migration head; current DB and models agree |
+| Backend lint, format, typing, tests | PASS | Ruff, Black, strict MyPy (198 source files), 168 Pytest tests, 83% coverage |
+| Frontend lint, format, typing, tests, build | PASS | Prettier, ESLint, TypeScript, 81 Vitest tests, Vite production build |
+| Authentication/session/RBAC | PASS | Automated replay/refresh/permission tests plus authenticated direct navigation and refresh journeys |
+| Employees, departments, tasks, projects | PASS | Backend suite and role-separated desktop/mobile acceptance; tenant-negative task/project paths pass |
+| Meetings, calendar, chat | PASS | Full meeting lifecycle, RSVP, reminder, reschedule, cancel, calendar, action-item link; authenticated WebSocket tests |
+| Leave | PASS | Entitlement, approval/rejection, insufficient balance, admin adjustment, calendar and mobile acceptance |
+| Payroll confidentiality and lifecycle | PASS | Preparer/reviewer/approver/accountant/employee separation, posting, payslip security, mobile and tenant isolation |
+| Reporting and Help Centre | PASS | Review workflow, automation controls, project reports, exports, content/search/support/admin browser flows |
+| Voucher/Finance backend integrity | PASS | Full backend suite covers lifecycle, SoD, idempotency, ledger, reversal and tenant boundaries |
+| Voucher full role-separated browser rerun | NOT TESTED | Current Playwright inventory has finance navigation but no complete Staff/Manager/Accountant/Auditor voucher spec |
+| Tenant isolation | PASS | Explicit automated negatives across major modules and runtime browser negatives for tasks, projects, attachments and payroll |
+| File authorization | PASS | MIME/filename/path/tenant tests plus authenticated task/project download browser proofs |
+| Database backup and restore | PASS | Custom-format backup restored to a separate temporary DB; revision and representative counts verified |
+| API bounded load | PASS | 10 concurrent workers, 200 authenticated reads, 0 failures; p50 411.8 ms, p95 1,024.1 ms, max 2,552.3 ms |
+| WebSocket bounded soak | PASS | 10 authenticated sockets held 60 seconds and reconnect verified, on desktop and mobile projects |
+| Production-like multi-user mixed load | NOT TESTED | The bounded probe used one authenticated identity and read-only requests |
+| SMTP connection | PASS | Provider handshake/authentication succeeded; no external message was sent in this sprint |
+| Email deliverability | BLOCKED | Previously accepted Gmail delivery landed in Spam; DNS/reputation/provider remediation remains external work |
+| Browser push real device | BLOCKED | Local VAPID keys, HTTPS and device/browser permission prerequisites are absent |
+| System Health | FAIL | Required application services are reachable, but storage is 93.5% used (6.5% free) and four delivery jobs need attention |
+| Docker execution | BLOCKED | Docker is not installed on this host; Compose was reviewed but not executed |
+| GCP staging | BLOCKED | No deployment authorization or staging credentials were supplied |
+| TLS/domain/certificate monitoring | BLOCKED | Production ingress and domain are not provisioned in this environment |
+| Production secrets/configuration | BLOCKED | Fail-closed validation exists; real production secrets and managed services require staging provisioning |
+
+## Defects corrected in this pass
+
+1. Daily Activity rejected/accepted future dates using UTC day boundaries instead of the user's
+   local calendar day. The service now uses the local application date consistently.
+2. A Leave integration test used fixed dates that became historical; fixtures now remain valid
+   relative to the execution date.
+3. Meeting reminders coupled in-app notification creation to SMTP success. In-app and browser-push
+   routing now occur independently on the first attempt; SMTP retries cannot duplicate them.
+4. Browser acceptance had stale MeetingHQ branding, heading, tab-role, report-action, and balance
+   expectations. Tests now target current OfficeFlow accessible semantics and actual ledger math.
+5. Frontend Prettier drift across 57 files was normalized.
+6. Chat/WebSocket acceptance assumed pre-existing conversation data. The tests now provision a
+   tenant-scoped workspace conversation when the authenticated tenant is empty.
+7. Reports, Help, and direct-navigation checks used empty-state-incompatible or ambiguous selectors
+   and a short lazy-route wait. They now assert accessible, deterministic page semantics.
+
+## Performance and resilience evidence
+
+Representative single-request local probes before the bounded run ranged from 51 ms (Help search)
+to 254 ms (Dashboard). The bounded run used 10 concurrent workers and 200 authenticated, read-only
+requests across Dashboard, Tasks, Projects, Users, Finance, Payroll, Leave, Reports, and Help. It
+completed in 10.679 seconds with no HTTP failures. These are development-host measurements, not an
+SLA or production capacity claim.
+
+The real-time soak opened 10 authenticated chat sockets concurrently, held them for 60 seconds,
+verified all remained open, closed them, and verified a fresh reconnect. It passed in both desktop
+and 390px mobile Playwright projects. Longer token-expiry, worker-restart, and production-ingress
+soaks remain staging gates.
+
+## Database recovery evidence
+
+A PostgreSQL custom-format backup (2,015,610 bytes) was created outside the repository, restored to
+a unique temporary database, and removed after verification. The restored database contained
+migration `a4f5d6e7c801`, 37 organizations, 241 users, and 48 Help articles. The active database was
+not overwritten during that rehearsal. For final browser acceptance, the available local database
+was backed up (274,295 bytes) and upgraded forward from `0028_postgres_alignment` to
+`a4f5d6e7c801`; its existing organization and user remained intact and `alembic check` reported no
+drift. Object-storage recovery and automated scheduled backups remain untested.
+
+## Security and operations notes
+
+- Production configuration fails closed for default signing keys, insecure cookies, missing Redis,
+  fail-open rate limiting, non-HTTPS public URLs/CORS, wildcard trusted hosts, and local production
+  storage.
+- Security middleware supplies CSP, clickjacking protection, MIME sniffing protection, referrer and
+  permissions policies, and production/staging HSTS.
+- Repository scans found no private keys or AWS access-key patterns. Provider secrets remain
+  encrypted/write-only and were not printed.
+- The final backend suite emitted 45 non-failing warnings from the existing structlog
+  `format_exc_info` configuration. CI's supported Python 3.13 remains the release authority;
+  the warning should be removed in a later logging-maintenance change.
+- Low host disk capacity must be remediated before container builds, extended load tests, or local
+  backup retention. Do not delete user data merely to improve the score.
+
+## Operational documentation
+
+- [GCP deployment guide](deployment/gcp.md)
+- [Environment configuration](environment.md)
+- [Migration and operator runbook](meetinghq-runbook.md)
+- [Backup, restore, and rollback](disaster-recovery.md)
+- [Incident response](incident-response.md)
+- [Known SMTP/PostgreSQL operational history](smtp-postgresql-readiness.md)
+
+## Gates required before promotion
+
+1. Add and pass the full role-separated Voucher browser lifecycle in the current suite.
+2. Run CI with Python 3.13 and Node 22 on the final commit.
+3. Execute Docker image/Compose validation on a Docker-capable host.
+4. Deploy to an authorized GCP staging environment and verify managed PostgreSQL, Redis, storage,
+   worker, scheduler, HTTPS, domain, certificates, logs, metrics, alerts, and secret rotation.
+5. Run a production-like multi-user mixed read/write load test and longer WebSocket/token-expiry soak.
+6. Complete independent security/tenant-isolation acceptance and penetration testing.
+7. Configure automated staging backups and prove database plus object-storage recovery and rollback.
+8. Resolve host storage pressure and investigate the four queued delivery failures.
+9. Configure VAPID and prove real-device browser push over HTTPS.
+10. Remediate email deliverability (SPF/DKIM/DMARC/reputation as applicable) and reconfirm Inbox placement.
+
+OfficeFlow is **not ready to merge into `MHQ`** until the product owner accepts the documented
+external gates and the Voucher browser gap is closed.
