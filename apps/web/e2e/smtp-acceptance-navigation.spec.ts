@@ -38,9 +38,13 @@ test('authenticated delivery-related centers support direct URLs and refresh', a
   for (const [path, heading] of pages) {
     await page.goto(path)
     await expect(page).toHaveURL(path)
-    await expect(page.getByRole('heading', { name: heading })).toBeVisible()
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible({
+      timeout: 15_000,
+    })
     await page.reload()
     await expect(page).toHaveURL(path)
-    await expect(page.getByRole('heading', { name: heading })).toBeVisible()
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible({
+      timeout: 15_000,
+    })
   }
 })

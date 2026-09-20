@@ -20,16 +20,39 @@ test('chat connects its WebSocket to the configured MeetingHQ API', async ({
   })
   expect(login.ok()).toBeTruthy()
   const session = (await login.json()) as {
-    data: { access_token: string }
+    data: { access_token: string; csrf_token: string }
+  }
+  const headers = {
+    Authorization: `Bearer ${session.data.access_token}`,
+    'X-CSRF-Token': session.data.csrf_token,
   }
   const conversations = await request.get(`${apiBase}/conversations`, {
-    headers: { Authorization: `Bearer ${session.data.access_token}` },
+    headers,
   })
   expect(conversations.ok()).toBeTruthy()
   const conversationData = (await conversations.json()) as {
     data: Array<{ id: string }>
   }
-  expect(conversationData.data.length).toBeGreaterThan(0)
+  if (conversationData.data.length === 0) {
+    const workspaces = await request.get(`${apiBase}/workspaces`, { headers })
+    expect(workspaces.ok(), await workspaces.text()).toBeTruthy()
+    const workspaceId = (
+      (await workspaces.json()) as { data: Array<{ id: string }> }
+    ).data[0]?.id
+    expect(workspaceId).toBeTruthy()
+    const created = await request.post(`${apiBase}/conversations`, {
+      headers,
+      data: {
+        workspace_id: workspaceId,
+        type: 'workspace',
+        name: `Realtime acceptance ${Date.now()}`,
+      },
+    })
+    expect(created.ok(), await created.text()).toBeTruthy()
+    conversationData.data.push(
+      ((await created.json()) as { data: { id: string } }).data,
+    )
+  }
 
   await page.goto('/')
   const socketBase = apiBase.replace(/^http/, 'ws')

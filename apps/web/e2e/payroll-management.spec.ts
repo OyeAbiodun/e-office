@@ -380,9 +380,7 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
 
   const officerBrowser = await rolePage(browser, officer.email, finalPassword)
   await officerBrowser.page.goto('/payroll')
-  await officerBrowser.page
-    .getByRole('button', { name: 'Payroll runs' })
-    .click()
+  await officerBrowser.page.getByRole('tab', { name: 'Payroll runs' }).click()
   const periodRow = officerBrowser.page
     .getByRole('row')
     .filter({ hasText: `September ${suffix}` })
@@ -446,9 +444,7 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
 
   const reviewerBrowser = await rolePage(browser, reviewer.email, finalPassword)
   await reviewerBrowser.page.goto('/payroll')
-  await reviewerBrowser.page
-    .getByRole('button', { name: 'Payroll runs' })
-    .click()
+  await reviewerBrowser.page.getByRole('tab', { name: 'Payroll runs' }).click()
   await reviewerBrowser.page
     .getByRole('row')
     .filter({ hasText: `September ${suffix}` })
@@ -473,9 +469,7 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
   console.info('payroll-acceptance: reviewer returned')
 
   await officerBrowser.page.reload()
-  await officerBrowser.page
-    .getByRole('button', { name: 'Payroll runs' })
-    .click()
+  await officerBrowser.page.getByRole('tab', { name: 'Payroll runs' }).click()
   const returnedRow = officerBrowser.page
     .getByRole('row')
     .filter({ hasText: `September ${suffix}` })
@@ -497,9 +491,7 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
 
   const approverBrowser = await rolePage(browser, approver.email, finalPassword)
   await approverBrowser.page.goto('/payroll')
-  await approverBrowser.page
-    .getByRole('button', { name: 'Payroll runs' })
-    .click()
+  await approverBrowser.page.getByRole('tab', { name: 'Payroll runs' }).click()
   await approverBrowser.page
     .getByRole('row')
     .filter({ hasText: `September ${suffix}` })
@@ -553,7 +545,7 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
   )
   await accountantBrowser.page.goto('/payroll')
   await accountantBrowser.page
-    .getByRole('button', { name: 'Payroll runs' })
+    .getByRole('tab', { name: 'Payroll runs' })
     .click()
   await accountantBrowser.page
     .getByRole('row')
@@ -627,14 +619,12 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
   const employeeBrowser = await rolePage(browser, employee.email, finalPassword)
   await employeeBrowser.page.goto('/payroll')
   await expect(
-    employeeBrowser.page.getByRole('button', { name: 'Payroll runs' }),
+    employeeBrowser.page.getByRole('tab', { name: 'Payroll runs' }),
   ).toHaveCount(0)
   await expect(
-    employeeBrowser.page.getByRole('button', { name: 'Salary structures' }),
+    employeeBrowser.page.getByRole('tab', { name: 'Salary structures' }),
   ).toHaveCount(0)
-  await employeeBrowser.page
-    .getByRole('button', { name: 'My payslips' })
-    .click()
+  await employeeBrowser.page.getByRole('tab', { name: 'My payslips' }).click()
   await expect(
     employeeBrowser.page.getByText(`September ${suffix}`),
   ).toBeVisible()
@@ -757,7 +747,7 @@ test('role-separated payroll lifecycle, posting, payslip security, and mobile ac
   await expect(
     mobile.page.getByRole('heading', { name: 'Payroll', exact: true }),
   ).toBeVisible()
-  await mobile.page.getByRole('button', { name: 'My payslips' }).click()
+  await mobile.page.getByRole('tab', { name: 'My payslips' }).click()
   await expect(mobile.page.getByText(`September ${suffix}`)).toBeVisible()
   await expect(
     mobile.page.getByRole('button', { name: 'Download' }),

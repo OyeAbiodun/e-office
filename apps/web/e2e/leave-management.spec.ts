@@ -494,7 +494,8 @@ test('employee request, manager approval, calendar, balance adjustment, and mobi
       .getByLabel('Leave balances')
       .locator('article')
       .filter({ hasText: leaveType.data.name })
-    await expect(balanceCard.getByText('6', { exact: true })).toBeVisible()
+    // 8 days entitlement - 2 approved days + 1 manual adjustment.
+    await expect(balanceCard.getByText('7', { exact: true })).toBeVisible()
 
     const mobileContext = await browser.newContext({
       baseURL: process.env.PLAYWRIGHT_BASE_URL,

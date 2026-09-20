@@ -82,7 +82,9 @@ test('a user can create, complete, and log activity against a task', async ({
   const title = `Task acceptance ${Date.now()}`
 
   await page.goto('/tasks')
-  await expect(page.getByRole('heading', { name: 'My Work' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Tasks & Activities' }),
+  ).toBeVisible()
   const activityLabel = page.getByText('Activities', { exact: true })
   const activityCount = Number(
     await activityLabel.locator('xpath=preceding-sibling::p[1]').innerText(),
@@ -123,7 +125,7 @@ test('a user can create, complete, and log activity against a task', async ({
   )
   await taskDialog.getByRole('button').first().click()
 
-  await page.getByRole('button', { name: 'Log today' }).click()
+  await page.getByRole('button', { name: 'Log activity' }).click()
   const activityDialog = page.getByRole('dialog')
   await activityDialog
     .getByLabel('Summary')

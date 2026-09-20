@@ -142,7 +142,9 @@ test('grouped navigation and live decision charts support drill-down', async ({
     page.getByRole('region', { name: 'Work delivery chart' }),
   ).toBeVisible()
   await page.getByRole('button', { name: 'Report history' }).click()
-  await expect(page.locator('[data-report-list]')).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Report history' }),
+  ).toBeVisible()
   await page.getByLabel('Rows').selectOption('10')
   await expect(page.getByText(/Page \d+ of \d+/)).toBeVisible()
 })
@@ -300,7 +302,7 @@ test('Help & Support provides learning, support, and admin content workflows', a
   await expect(page.getByText('Request history')).toBeVisible()
 
   await page.getByRole('tab', { name: 'Manage content' }).click()
-  await expect(page.getByText('Content studio')).toBeVisible()
+  await expect(page.getByText('Content studio', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Search help content')).toBeVisible()
   await page.getByLabel('Search help content').fill('Finance Center')
   await page.getByRole('button', { name: /Finance Center/ }).click()

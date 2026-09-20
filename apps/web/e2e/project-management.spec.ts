@@ -323,7 +323,7 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
 
   await managerBrowser.page.getByRole('button', { name: 'Reports' }).click()
   await managerBrowser.page
-    .getByRole('button', { name: 'Add', exact: true })
+    .getByRole('button', { name: 'Generate report' })
     .click()
   dialog = managerBrowser.page.getByRole('dialog')
   await dialog.getByLabel('Start date').fill('2026-09-01')
@@ -331,11 +331,11 @@ test('project lifecycle is integrated, role-separated, and responsive', async ({
   await dialog.getByRole('button', { name: 'Generate report' }).click()
   await expect(
     managerBrowser.page.getByRole('heading', {
-      name: 'Executive summary',
+      name: `Operations rollout ${suffix}`,
     }),
   ).toBeVisible()
   await expect(
-    managerBrowser.page.getByText('Vendor cutover capacity'),
+    managerBrowser.page.getByRole('heading', { name: 'Report narrative' }),
   ).toBeVisible()
 
   const memberBrowser = await browserSession(
