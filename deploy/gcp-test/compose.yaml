@@ -1,0 +1,203 @@
+name: officeflow-test
+
+x-app-environment: &app-environment
+  MEETINGHQ_ENVIRONMENT: test
+  MEETINGHQ_LOG_LEVEL: INFO
+  MEETINGHQ_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  MEETINGHQ_DATABASE_POOL_SIZE: 3
+  MEETINGHQ_DATABASE_MAX_OVERFLOW: 2
+  MEETINGHQ_DATABASE_POOL_TIMEOUT_SECONDS: 20
+  MEETINGHQ_REDIS_URL: redis://redis:6379/0
+  MEETINGHQ_JWT_SECRET: ${MEETINGHQ_JWT_SECRET}
+  MEETINGHQ_API_CORS_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080"]'
+  MEETINGHQ_TRUSTED_HOSTS: '["localhost","127.0.0.1"]'
+  MEETINGHQ_WEB_APP_URL: http://localhost:8080
+  MEETINGHQ_SECURE_COOKIES: "false"
+  MEETINGHQ_AUTH_RATE_LIMIT_FAIL_CLOSED: "true"
+  MEETINGHQ_STORAGE_PROVIDER: local
+  MEETINGHQ_LOCAL_STORAGE_PATH: /var/lib/officeflow/storage
+  MEETINGHQ_PUBLIC_STORAGE_URL: /api/v1/storage
+  MEETINGHQ_EMAIL_OUTBOX_PATH: /var/lib/officeflow/storage/outbox
+  MEETINGHQ_EMBEDDED_REMINDER_WORKER: "false"
+  MEETINGHQ_RUN_MIGRATIONS: "false"
+  INITIAL_SUPER_ADMIN_EMAIL: ${INITIAL_SUPER_ADMIN_EMAIL}
+  INITIAL_SUPER_ADMIN_PASSWORD: ${INITIAL_SUPER_ADMIN_PASSWORD}
+  INITIAL_SUPER_ADMIN_FIRST_NAME: ${INITIAL_SUPER_ADMIN_FIRST_NAME}
+  INITIAL_SUPER_ADMIN_LAST_NAME: ${INITIAL_SUPER_ADMIN_LAST_NAME:-}
+  INITIAL_ORGANIZATION_NAME: ${INITIAL_ORGANIZATION_NAME:-OfficeFlow Test}
+  INITIAL_WORKSPACE_NAME: ${INITIAL_WORKSPACE_NAME:-Test Workspace}
+
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: UTC
+      PGTZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - work_mem=1MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - max_connections=20
+      - -c
+      - wal_compression=on
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 180m
+    cpus: 0.50
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [internal]
+
+  redis:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 48mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    mem_limit: 64m
+    cpus: 0.25
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [internal]
+
+  migrate:
+    image: ${OFFICEFLOW_API_IMAGE:?Set OFFICEFLOW_API_IMAGE to an immutable commit tag}
+    environment: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    volumes:
+      - app_storage:/var/lib/officeflow/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: 0.75
+    logging: *default-logging
+    restart: "no"
+    networks: [internal]
+    profiles: [tools]
+
+  api:
+    image: ${OFFICEFLOW_API_IMAGE:?Set OFFICEFLOW_API_IMAGE to an immutable commit tag}
+    environment: *app-environment
+    command:
+      - uvicorn
+      - meetinghq_api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "1"
+      - --proxy-headers
+      - --forwarded-allow-ips=172.16.0.0/12
+    volumes:
+      - app_storage:/var/lib/officeflow/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    mem_limit: 320m
+    cpus: 0.75
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [internal]
+
+  worker:
+    image: ${OFFICEFLOW_API_IMAGE:?Set OFFICEFLOW_API_IMAGE to an immutable commit tag}
+    environment: *app-environment
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - while true; do python -m meetinghq_api.worker; sleep "$${MEETINGHQ_REMINDER_POLL_SECONDS:-30}"; done
+    volumes:
+      - app_storage:/var/lib/officeflow/storage
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 220m
+    cpus: 0.50
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [internal]
+
+  web:
+    image: ${OFFICEFLOW_WEB_IMAGE:?Set OFFICEFLOW_WEB_IMAGE to an immutable commit tag}
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 32m
+    cpus: 0.25
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [internal]
+
+  gateway:
+    image: nginx:1.29-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${OFFICEFLOW_TUNNEL_PORT:-8080}:80"
+    mem_limit: 32m
+    cpus: 0.25
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [internal]
+
+networks:
+  internal:
+    name: officeflow_test_internal
+
+volumes:
+  postgres_data:
+    name: officeflow_test_postgres_data
+  redis_data:
+    name: officeflow_test_redis_data
+  app_storage:
+    name: officeflow_test_app_storage
