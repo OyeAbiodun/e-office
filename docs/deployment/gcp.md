@@ -4,6 +4,33 @@ This guide describes the supported path from local development to staging and pr
 It intentionally uses infrastructure compatible with MeetingHQ's current shared-filesystem
 storage adapter and separates migrations, HTTP serving, and scheduled reminder delivery.
 
+## Staging authorization and input checklist
+
+No deployment or purchase may begin until an authorized owner supplies and approves every
+applicable item below. Record resource identifiers and secret references, never secret values, in
+the change record.
+
+| Decision or resource | Required user input or approval |
+| --- | --- |
+| GCP project and billing | Project ID, billing account, organization/folder, region, budget and authorization for chargeable resources |
+| IAM and deployment | Deployer identity, approver, Workload Identity policy, least-privilege service accounts and deployment window |
+| Staging domain and DNS | Owned hostname, DNS-zone authority and approval for required record changes |
+| TLS | Google-managed certificate strategy, hostname ownership and expiry-alert recipients |
+| Application secrets | Secret Manager entries for database, JWT, bootstrap and providers; rotation owner and schedule |
+| PostgreSQL | Cloud SQL tier/region/HA/private network, database/users, PITR/retention and restore approver |
+| Redis | Memorystore tier/region/network, security policy and failure-mode owner |
+| Persistent files | Staging Filestore capacity/backup policy; production requires an approved private object-storage adapter |
+| Email | Provider/account, verified domain, sender addresses, SPF/DKIM/DMARC ownership and permission for test mail |
+| Browser push | VAPID keys in Secret Manager, public-key configuration, HTTPS hostname and authorized device testers |
+| Monitoring and alerts | Log retention, uptime/SLO targets, notification channels, on-call owners and thresholds |
+| Backups | Cloud SQL PITR, export destination, file snapshots, RPO/RTO, restore window and operation approver |
+| Release artifact | Final commit, immutable image digests, scans, migration revision and rollback image |
+| Acceptance | Staging owner, approved test data, security reviewer, go/no-go authority and deployment authorization |
+
+Until these inputs exist, GCP staging, TLS/domain monitoring, production secrets, email
+deliverability, real-device push, automated staging recovery and staging acceptance remain
+**BLOCKED** rather than failed.
+
 ## Production architecture
 
 ```text

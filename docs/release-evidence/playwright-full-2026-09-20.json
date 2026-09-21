@@ -1,0 +1,2349 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--reporter=list,json"
+    ],
+    "configFile": "C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web\\playwright.config.ts",
+    "rootDir": "C:/Users/jango/Documents/MeetingHQ/meetinghq/apps/web/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/jango/Documents/MeetingHQ/meetinghq/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/jango/Documents/MeetingHQ/meetinghq/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "C:/Users/jango/Documents/MeetingHQ/meetinghq/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "C:/Users/jango/Documents/MeetingHQ/meetinghq/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --host 127.0.0.1 --port 5174 --strictPort",
+      "url": "http://127.0.0.1:5174",
+      "reuseExistingServer": true,
+      "env": {
+        "ALLUSERSPROFILE": "C:\\ProgramData",
+        "APPCODE_VM_OPTIONS": "C:\\jetbra\\vmoptions\\appcode.vmoptions",
+        "APPDATA": "C:\\Users\\jango\\AppData\\Roaming",
+        "ChocolateyInstall": "C:\\ProgramData\\chocolatey",
+        "ChocolateyLastPathUpdate": "133929146539073920",
+        "CLION_VM_OPTIONS": "C:\\jetbra\\vmoptions\\clion.vmoptions",
+        "CODEX_APP_TOOLS_PIPE_PATH": "\\\\.\\pipe\\codex-browser-use-18387e37-032d-46ed-83f0-b92821acf2e2",
+        "CODEX_CI": "1",
+        "CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "Codex Desktop",
+        "CODEX_MCP_NODE_PATH": "C:\\Users\\jango\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\df473e5367fa2b42\\bin\\node.exe",
+        "CODEX_PERMISSION_PROFILE": ":workspace",
+        "CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE": "1",
+        "CODEX_SANDBOX_NETWORK_DISABLED": "1",
+        "CODEX_SESSION_ID": "01a0c0e8-03d2-7a32-b82b-a2d1d59b40b9",
+        "CODEX_THREAD_ID": "01a0c0e8-03d2-7a32-b82b-a2d1d59b40b9",
+        "CODEX_VERSION": "0.155.0-alpha.9.2",
+        "CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY": "OpenAI.Codex_2p2nqsd0c76g0",
+        "COLOR": "0",
+        "COLORTERM": "",
+        "CommonProgramFiles": "C:\\Program Files\\Common Files",
+        "CommonProgramFiles(x86)": "C:\\Program Files (x86)\\Common Files",
+        "CommonProgramW6432": "C:\\Program Files\\Common Files",
+        "COMPUTERNAME": "ABIODUN",
+        "ComSpec": "C:\\WINDOWS\\system32\\cmd.exe",
+        "DATAGRIP_VM_OPTIONS": "C:\\jetbra\\vmoptions\\datagrip.vmoptions",
+        "DATASPELL_VM_OPTIONS": "C:\\jetbra\\vmoptions\\dataspell.vmoptions",
+        "DEVECOSTUDIO_VM_OPTIONS": "C:\\jetbra\\vmoptions\\devecostudio.vmoptions",
+        "DriverData": "C:\\Windows\\System32\\Drivers\\DriverData",
+        "EDITOR": "C:\\WINDOWS\\notepad.exe",
+        "GATEWAY_VM_OPTIONS": "C:\\jetbra\\vmoptions\\gateway.vmoptions",
+        "GH_PAGER": "cat",
+        "GIT_PAGER": "cat",
+        "GOLAND_VM_OPTIONS": "C:\\jetbra\\vmoptions\\goland.vmoptions",
+        "HOME": "C:\\Users\\jango",
+        "HOMEDRIVE": "C:",
+        "HOMEPATH": "\\Users\\jango",
+        "IDEA_VM_OPTIONS": "C:\\jetbra\\vmoptions\\idea.vmoptions",
+        "IGCCSVC_DB": "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAn/HAEOMynk+MijpJFXeqNQQAAAACAAAAAAAQZgAAAAEAACAAAABer1BvmxybySZGJJYxaU+tKBpXsyGxc5L/1q8f9QaFuQAAAAAOgAAAAAIAACAAAAChQ3L4Tf6fZys1zzT0khwLDkYs25DiXWYND5x5s8LEUWAAAAD7l5ZCd3wEH0LRkR8qbzSOT0ldtWsH5w//ritvBL8esYbz8gTBsC1GcIqY4uiVPYSzbtKQmeGErQnaXdIrjdSkhhYIFWoBYddVFS3WLR5yK2YVlCYkwWnJUODqfaUrIGtAAAAACCtb89jE0nZVQFXWqexfVsogTLumUOQUjAa+1YfbXFOEXGKBtEc2NESbINYyWRE0zmX5bEefPUilAlE1y0Jung==",
+        "INITIAL_ORGANIZATION_NAME": "MeetingHQ",
+        "INITIAL_SUPER_ADMIN_EMAIL": "textabi12@gmail.com",
+        "INITIAL_SUPER_ADMIN_FIRST_NAME": "Abiodun",
+        "INITIAL_SUPER_ADMIN_LAST_NAME": "",
+        "INITIAL_SUPER_ADMIN_PASSWORD": "ChangeMe123!",
+        "INITIAL_WORKSPACE_NAME": "Main Workspace",
+        "INIT_CWD": "C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web",
+        "IntelliJ IDEA": "C:\\Program Files\\JetBrains\\IntelliJ IDEA 2024.3.5\\bin;",
+        "JAVA_HOME": "C:\\Program Files\\Java\\jdk-11",
+        "JETBRAINSCLIENT_VM_OPTIONS": "C:\\jetbra\\vmoptions\\jetbrainsclient.vmoptions",
+        "JETBRAINS_CLIENT_VM_OPTIONS": "C:\\jetbra\\vmoptions\\jetbrains_client.vmoptions",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "LC_CTYPE": "C.UTF-8",
+        "LOCALAPPDATA": "C:\\Users\\jango\\AppData\\Local",
+        "LOGONSERVER": "\\\\ABIODUN",
+        "LOG_FORMAT": "json",
+        "MEETINGHQ_API_CORS_ORIGINS": "[\"http://localhost:5173\",\"http://127.0.0.1:5173\",\"http://localhost:5174\",\"http://127.0.0.1:5174\",\"http://localhost:8080\"]",
+        "MEETINGHQ_API_HOST": "127.0.0.1",
+        "MEETINGHQ_API_PORT": "8001",
+        "MEETINGHQ_AUTH_RATE_LIMIT_REQUESTS": "10",
+        "MEETINGHQ_AUTH_RATE_LIMIT_WINDOW_SECONDS": "60",
+        "MEETINGHQ_CSRF_COOKIE_NAME": "meetinghq_csrf",
+        "MEETINGHQ_DATABASE_URL": "postgresql+asyncpg://meetinghq:meetinghq_dev_only@127.0.0.1:5433/meetinghq",
+        "MEETINGHQ_EMAIL_OUTBOX_PATH": "./storage/outbox",
+        "MEETINGHQ_EMAIL_VERIFICATION_TTL_HOURS": "24",
+        "MEETINGHQ_EMBEDDED_REMINDER_WORKER": "true",
+        "MEETINGHQ_ENVIRONMENT": "local",
+        "MEETINGHQ_INVITATION_TTL_DAYS": "7",
+        "MEETINGHQ_JWT_ACCESS_TOKEN_TTL_MINUTES": "15",
+        "MEETINGHQ_JWT_ALGORITHM": "HS256",
+        "MEETINGHQ_JWT_AUDIENCE": "meetinghq-api",
+        "MEETINGHQ_JWT_ISSUER": "meetinghq",
+        "MEETINGHQ_JWT_SECRET": "replace-with-at-least-32-random-characters",
+        "MEETINGHQ_LOCAL_STORAGE_PATH": "./storage",
+        "MEETINGHQ_LOGIN_LOCK_MINUTES": "15",
+        "MEETINGHQ_LOGIN_MAX_FAILURES": "5",
+        "MEETINGHQ_LOG_LEVEL": "INFO",
+        "MEETINGHQ_PASSWORD_RESET_TTL_MINUTES": "20",
+        "MEETINGHQ_PUBLIC_STORAGE_URL": "/api/v1/storage",
+        "MEETINGHQ_REDIS_URL": "redis://127.0.0.1:6380/0",
+        "MEETINGHQ_REFRESH_COOKIE_NAME": "meetinghq_refresh",
+        "MEETINGHQ_REFRESH_TOKEN_TTL_DAYS": "30",
+        "MEETINGHQ_REMINDER_POLL_SECONDS": "30",
+        "MEETINGHQ_SECURE_COOKIES": "false",
+        "MEETINGHQ_SMTP_FROM_EMAIL": "meetings@meetinghq.local",
+        "MEETINGHQ_SMTP_HOST": "",
+        "MEETINGHQ_SMTP_PASSWORD": "",
+        "MEETINGHQ_SMTP_PORT": "587",
+        "MEETINGHQ_SMTP_STARTTLS": "true",
+        "MEETINGHQ_SMTP_USERNAME": "",
+        "MEETINGHQ_STORAGE_PROVIDER": "local",
+        "MEETINGHQ_WEB_APP_URL": "http://127.0.0.1:5174",
+        "NODE": "C:\\Program Files\\nodejs\\node.exe",
+        "NODE_EXE": "C:\\Program Files\\nodejs\\\\node.exe",
+        "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S": "8e172ec9f458f2e636fc69a1b8c68c217f6bb8d10c41f70a05a0878b73863701",
+        "NO_COLOR": "1",
+        "npm_command": "exec",
+        "npm_config_cache": "C:\\Users\\jango\\AppData\\Local\\npm-cache",
+        "npm_config_globalconfig": "C:\\Users\\jango\\AppData\\Roaming\\npm\\etc\\npmrc",
+        "npm_config_global_prefix": "C:\\Users\\jango\\AppData\\Roaming\\npm",
+        "npm_config_init_module": "C:\\Users\\jango\\.npm-init.js",
+        "npm_config_local_prefix": "C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web",
+        "npm_config_node_gyp": "C:\\Program Files\\nodejs\\node_modules\\npm\\node_modules\\node-gyp\\bin\\node-gyp.js",
+        "npm_config_noproxy": "",
+        "npm_config_npm_version": "10.8.2",
+        "npm_config_prefix": "C:\\Users\\jango\\AppData\\Roaming\\npm",
+        "npm_config_userconfig": "C:\\Users\\jango\\.npmrc",
+        "npm_config_user_agent": "npm/10.8.2 node/v20.19.2 win32 x64 workspaces/false",
+        "npm_execpath": "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "npm_lifecycle_event": "npx",
+        "npm_lifecycle_script": "playwright",
+        "npm_node_execpath": "C:\\Program Files\\nodejs\\node.exe",
+        "npm_package_engines_node": ">=22.0.0",
+        "npm_package_json": "C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web\\package.json",
+        "npm_package_name": "@meetinghq/web",
+        "npm_package_version": "0.1.0",
+        "NPM_PREFIX_JS": "C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npm-prefix.js",
+        "NPM_PREFIX_NPX_CLI_JS": "C:\\Users\\jango\\AppData\\Roaming\\npm\\node_modules\\npm\\bin\\npx-cli.js",
+        "NPX_CLI_JS": "C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npx-cli.js",
+        "NUMBER_OF_PROCESSORS": "16",
+        "OneDrive": "C:\\Users\\jango\\OneDrive",
+        "OS": "Windows_NT",
+        "PAGER": "cat",
+        "Path": "C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web\\node_modules\\.bin;C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\web\\node_modules\\.bin;C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\apps\\node_modules\\.bin;C:\\Users\\jango\\Documents\\MeetingHQ\\meetinghq\\node_modules\\.bin;C:\\Users\\jango\\Documents\\MeetingHQ\\node_modules\\.bin;C:\\Users\\jango\\Documents\\node_modules\\.bin;C:\\Users\\jango\\node_modules\\.bin;C:\\Users\\node_modules\\.bin;C:\\node_modules\\.bin;C:\\Program Files\\nodejs\\node_modules\\npm\\node_modules\\@npmcli\\run-script\\lib\\node-gyp-bin;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell;C:\\Users\\jango\\.codex\\tmp\\arg0\\codex-arg0bGlakm;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\libheif\\libheif\\bin;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\jxrlib\\jxrlib\\bin;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\poppler\\Library\\bin;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\override;c:\\Users\\jango\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;C:\\Program Files\\Common Files\\Oracle\\Java\\javapath;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\dotnet\\;C:\\Program Files (x86)\\Microsoft SQL Server\\160\\DTS\\Binn\\;C:\\Program Files (x86)\\Microsoft SQL Server\\160\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\160\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\Client SDK\\ODBC\\170\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\160\\DTS\\Binn\\;C:\\Program Files\\Oracle\\VirtualBox\\VBoxManage.exe;C:\\ngrok;C:\\Users\\jango\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell;C:\\Users\\jango\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Program Files\\JetBrains\\PyCharm Community Edition 2024.3.5\\bin;c:\\Users\\jango\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;c:\\Users\\jango\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;C:\\Program Files\\PuTTY\\;C:\\Users\\jango\\AppData\\Local\\Programs\\Python\\Python313\\Scripts\\;C:\\ProgramData\\chocolatey\\bin;C:\\Program Files\\nodejs\\;C:\\Users\\jango\\AppData\\Roaming\\npm;C:\\Program Files\\GTK3-Runtime Win64\\bin;C:\\Program Files\\Microsoft SQL Server\\150\\Tools\\Binn\\;C:\\Program Files\\PostgreSQL\\17\\bin;C:\\Program Files\\PostgreSQL\\18\\bin;C:\\Program Files\\Microsoft SQL Server\\170\\Tools\\Binn\\;C:\\Users\\jango\\AppData\\Local\\Programs\\Python\\Python313\\;C:\\Program Files (x86)\\Google\\Cloud SDK\\google-cloud-sdk\\bin;C:\\Program Files\\Redis\\;C:\\Program Files\\GitHub CLI\\;C:\\Program Files\\Git\\cmd;C:\\Program Files (x86)\\Microsoft\\Edge\\Application;C:\\Program Files\\Tailscale\\;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\Python\\Python313\\python.exe;C:\\Program Files\\Tailscale\\;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\Python\\Python313\\python.exe;C:\\Program Files\\Java\\jdk-11\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Program Files\\Java\\jdk-11\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Users\\jango\\AppData\\Local\\JetBrains\\Toolbox\\scripts;C:\\Users\\jango\\AppData\\Local\\Programs\\Qoder IDE\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jango\\.dotnet\\tools;C:\\Users\\jango\\AppData\\Local\\Python\\bin;C:\\Users\\jango\\AppData\\Local\\Programs\\Ollama;C:\\Users\\jango\\AppData\\Local\\Programs\\Antigravity IDE\\bin;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\fallback;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;C:\\Users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\git\\cmd;C:\\Users\\jango\\AppData\\Local\\OpenAI\\Codex\\bin\\73fd6465d9c76545;C:\\Users\\jango\\AppData\\Local\\OpenAI\\Codex\\bin\\247581e40ee272fb",
+        "PATHEXT": ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL",
+        "PHPSTORM_VM_OPTIONS": "C:\\jetbra\\vmoptions\\phpstorm.vmoptions",
+        "PLAYWRIGHT_API_URL": "http://127.0.0.1:8001/api/v1",
+        "PLAYWRIGHT_BASE_URL": "http://127.0.0.1:5174",
+        "PLAYWRIGHT_JSON_OUTPUT_FILE": "..\\..\\docs\\release-evidence\\playwright-full-2026-09-20.json",
+        "PLAYWRIGHT_ORGANIZER_EMAIL": "textabi12@gmail.com",
+        "PLAYWRIGHT_ORGANIZER_PASSWORD": "ChangeMe123!",
+        "POSTGRES_DB": "meetinghq",
+        "POSTGRES_PASSWORD": "meetinghq_dev_only",
+        "POSTGRES_USER": "meetinghq",
+        "PROCESSOR_ARCHITECTURE": "AMD64",
+        "PROCESSOR_IDENTIFIER": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+        "PROCESSOR_LEVEL": "6",
+        "PROCESSOR_REVISION": "ba02",
+        "ProgramData": "C:\\ProgramData",
+        "ProgramFiles": "C:\\Program Files",
+        "ProgramFiles(x86)": "C:\\Program Files (x86)",
+        "ProgramW6432": "C:\\Program Files",
+        "PROMPT": "$P$G",
+        "PSModulePath": "C:\\Users\\jango\\OneDrive\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\Modules;c:\\users\\jango\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\Modules;C:\\Program Files (x86)\\Microsoft SQL Server\\160\\Tools\\PowerShell\\Modules\\",
+        "PUBLIC": "C:\\Users\\Public",
+        "PyCharm": "C:\\Program Files\\JetBrains\\PyCharm 2024.3.5\\bin;",
+        "PyCharm Community Edition": "C:\\Program Files\\JetBrains\\PyCharm Community Edition 2024.3.5\\bin;",
+        "PYCHARM_VM_OPTIONS": "C:\\jetbra\\vmoptions\\pycharm.vmoptions",
+        "RIDER_VM_OPTIONS": "C:\\jetbra\\vmoptions\\rider.vmoptions",
+        "RUBYMINE_VM_OPTIONS": "C:\\jetbra\\vmoptions\\rubymine.vmoptions",
+        "RUST_LOG": "warn",
+        "STUDIO_VM_OPTIONS": "C:\\jetbra\\vmoptions\\studio.vmoptions",
+        "SystemDrive": "C:",
+        "SystemRoot": "C:\\WINDOWS",
+        "TEMP": "C:\\Users\\jango\\AppData\\Local\\Temp",
+        "TERM": "dumb",
+        "TMP": "C:\\Users\\jango\\AppData\\Local\\Temp",
+        "USERDOMAIN": "ABIODUN",
+        "USERDOMAIN_ROAMINGPROFILE": "ABIODUN",
+        "USERNAME": "Abiodun",
+        "USERPROFILE": "C:\\Users\\jango",
+        "Vbox Manage": "\"C:\\Program Files\\Oracle\\VirtualBox\\VBoxManage.exe\"",
+        "VBOX_MSI_INSTALL_PATH": "C:\\Program Files\\Oracle\\VirtualBox\\",
+        "VITE_API_URL": "http://127.0.0.1:8001/api/v1",
+        "WEBIDE_VM_OPTIONS": "C:\\jetbra\\vmoptions\\webide.vmoptions",
+        "WEBSTORM_VM_OPTIONS": "C:\\jetbra\\vmoptions\\webstorm.vmoptions",
+        "windir": "C:\\WINDOWS",
+        "ZES_ENABLE_SYSMAN": "1",
+        "__COMPAT_LAYER": "DetectorsAppHealth",
+        "__PSLockDownPolicy": "0"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "chat-websocket.spec.ts",
+      "file": "chat-websocket.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "chat connects its WebSocket to the configured MeetingHQ API",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 667,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:00:40.582Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "f58892a6336779e83ab6-f5a96588fa0fb4f686cd",
+          "file": "chat-websocket.spec.ts",
+          "line": 14,
+          "column": 1
+        },
+        {
+          "title": "chat connects its WebSocket to the configured MeetingHQ API",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1599,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:09:37.915Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "f58892a6336779e83ab6-cdb262849f09e735dbcc",
+          "file": "chat-websocket.spec.ts",
+          "line": 14,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "finance-authenticated-navigation.spec.ts",
+      "file": "finance-authenticated-navigation.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "an authenticated finance user can revisit voucher and finance pages",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5151,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:00:41.589Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1007afdf36c13ccb488a-29f5dd9a85905232313d",
+          "file": "finance-authenticated-navigation.spec.ts",
+          "line": 13,
+          "column": 1
+        },
+        {
+          "title": "an authenticated finance user can revisit voucher and finance pages",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6844,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:09:40.118Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1007afdf36c13ccb488a-3ee0a6c6888bda78e754",
+          "file": "finance-authenticated-navigation.spec.ts",
+          "line": 13,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "leave-management.spec.ts",
+      "file": "leave-management.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "employee request, manager approval, calendar, balance adjustment, and mobile flow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 21528,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:00:46.810Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8d742f0113daa689489c-0773775cf61bb425a0b9",
+          "file": "leave-management.spec.ts",
+          "line": 115,
+          "column": 1
+        },
+        {
+          "title": "employee request, manager approval, calendar, balance adjustment, and mobile flow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 39417,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:09:47.086Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8d742f0113daa689489c-1b1362481ba9316ce32a",
+          "file": "leave-management.spec.ts",
+          "line": 115,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "meeting-lifecycle.spec.ts",
+      "file": "meeting-lifecycle.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "organizer and participant complete the meeting lifecycle",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 83386,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:01:08.411Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "34766c12bc24b6aff9b6-91d30f0fc0746d0304f4",
+          "file": "meeting-lifecycle.spec.ts",
+          "line": 122,
+          "column": 1
+        },
+        {
+          "title": "organizer and participant complete the meeting lifecycle",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 68403,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:10:26.610Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "34766c12bc24b6aff9b6-844dab005e282d08a519",
+          "file": "meeting-lifecycle.spec.ts",
+          "line": 122,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "payroll-management.spec.ts",
+      "file": "payroll-management.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "role-separated payroll lifecycle, posting, payslip security, and mobile access",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 360000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 44449,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "payroll-acceptance: identities ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: payroll foundation ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: preparer submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: reviewer returned\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: preparer resubmitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: approver approved\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: accountant paid\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: employee payslip verified\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: role denials verified\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: mobile and tenant isolation verified\n"
+                    }
+                  ],
+                  "stderr": [
+                    {
+                      "text": "(node:39360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+                    }
+                  ],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:02:31.962Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "016c4bd074768661982d-398626ec760720233933",
+          "file": "payroll-management.spec.ts",
+          "line": 120,
+          "column": 1
+        },
+        {
+          "title": "role-separated payroll lifecycle, posting, payslip security, and mobile access",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 360000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 42801,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "payroll-acceptance: identities ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: payroll foundation ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: preparer submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: reviewer returned\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: preparer resubmitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: approver approved\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: accountant paid\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: employee payslip verified\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: role denials verified\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening role context\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: opening login\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: login page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: sign-in submitted\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: authenticated page ready\n"
+                    },
+                    {
+                      "text": "payroll-acceptance: mobile and tenant isolation verified\n"
+                    }
+                  ],
+                  "stderr": [
+                    {
+                      "text": "(node:33456) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+                    }
+                  ],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:11:35.132Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "016c4bd074768661982d-f18f525383278005cb2c",
+          "file": "payroll-management.spec.ts",
+          "line": 120,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "product-polish.spec.ts",
+      "file": "product-polish.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "authenticated shell, command center, and navigation work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8899,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:03:17.081Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-08226009bbccedbea57a",
+          "file": "product-polish.spec.ts",
+          "line": 54,
+          "column": 1
+        },
+        {
+          "title": "grouped navigation and live decision charts support drill-down",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 10688,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:03:26.029Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-f5e908be5e7f13c34d2b",
+          "file": "product-polish.spec.ts",
+          "line": 88,
+          "column": 1
+        },
+        {
+          "title": "sidebar groups remain switchable after child navigation and deep links",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9395,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:03:36.771Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-62c499c539d22392fb85",
+          "file": "product-polish.spec.ts",
+          "line": 152,
+          "column": 1
+        },
+        {
+          "title": "finance sections are distinct while vouchers and payroll remain available",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5961,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:03:46.222Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-40bcf00d535fa803cd8f",
+          "file": "product-polish.spec.ts",
+          "line": 209,
+          "column": 1
+        },
+        {
+          "title": "Help & Support provides learning, support, and admin content workflows",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 18116,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:03:52.241Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-b5b16d70fc442609a662",
+          "file": "product-polish.spec.ts",
+          "line": 258,
+          "column": 1
+        },
+        {
+          "title": "compact Administration and Help empty states remain usable",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5550,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:04:10.424Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-b46fc3455dc1be3a542b",
+          "file": "product-polish.spec.ts",
+          "line": 364,
+          "column": 1
+        },
+        {
+          "title": "themes and tablet layout remain readable without horizontal overflow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5427,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:04:16.037Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-57f03fcea277d4a341fc",
+          "file": "product-polish.spec.ts",
+          "line": 394,
+          "column": 1
+        },
+        {
+          "title": "calendar can create, edit, and delete a real event",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9645,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:04:21.524Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-87ee2479597c1d4d47c5",
+          "file": "product-polish.spec.ts",
+          "line": 415,
+          "column": 1
+        },
+        {
+          "title": "internal mail persists a sent rich-text message",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7179,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:04:31.226Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-9b6aec70b21fb572a524",
+          "file": "product-polish.spec.ts",
+          "line": 464,
+          "column": 1
+        },
+        {
+          "title": "dashboard and chat have no serious automated accessibility violations",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7555,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:04:38.464Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-93ca298b6c573e29a72e",
+          "file": "product-polish.spec.ts",
+          "line": 487,
+          "column": 1
+        },
+        {
+          "title": "authenticated shell, command center, and navigation work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8083,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:12:18.569Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-8d77a6f9f92a09eced4b",
+          "file": "product-polish.spec.ts",
+          "line": 54,
+          "column": 1
+        },
+        {
+          "title": "grouped navigation and live decision charts support drill-down",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9494,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:12:26.700Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-48dd15e3444e9503e64e",
+          "file": "product-polish.spec.ts",
+          "line": 88,
+          "column": 1
+        },
+        {
+          "title": "sidebar groups remain switchable after child navigation and deep links",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 11339,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:12:36.250Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-6401d2a4e3a0f0b3ed6a",
+          "file": "product-polish.spec.ts",
+          "line": 152,
+          "column": 1
+        },
+        {
+          "title": "finance sections are distinct while vouchers and payroll remain available",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6728,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:12:47.643Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-301d32ea3847bf4ee82e",
+          "file": "product-polish.spec.ts",
+          "line": 209,
+          "column": 1
+        },
+        {
+          "title": "Help & Support provides learning, support, and admin content workflows",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 18501,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:12:54.430Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-4abdd6ab3cf3b5940ea3",
+          "file": "product-polish.spec.ts",
+          "line": 258,
+          "column": 1
+        },
+        {
+          "title": "compact Administration and Help empty states remain usable",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5894,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:13:12.981Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-fc3dea3bf85082ac4559",
+          "file": "product-polish.spec.ts",
+          "line": 364,
+          "column": 1
+        },
+        {
+          "title": "themes and tablet layout remain readable without horizontal overflow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4659,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:13:18.920Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-b7832f93e4e2e17ace6e",
+          "file": "product-polish.spec.ts",
+          "line": 394,
+          "column": 1
+        },
+        {
+          "title": "calendar can create, edit, and delete a real event",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9367,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:13:23.627Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-a8366764ed0784f80276",
+          "file": "product-polish.spec.ts",
+          "line": 415,
+          "column": 1
+        },
+        {
+          "title": "internal mail persists a sent rich-text message",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6178,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:13:33.038Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-9f417305c9cb7d2ebafb",
+          "file": "product-polish.spec.ts",
+          "line": 464,
+          "column": 1
+        },
+        {
+          "title": "dashboard and chat have no serious automated accessibility violations",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8189,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:13:39.261Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "aa6e70818123e54fce92-7677f2ae9366714040d9",
+          "file": "product-polish.spec.ts",
+          "line": 487,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "project-management.spec.ts",
+      "file": "project-management.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "project lifecycle is integrated, role-separated, and responsive",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 39719,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:04:46.137Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "22bb1a499245b9530740-e3fbe50a124bfa946dd2",
+          "file": "project-management.spec.ts",
+          "line": 59,
+          "column": 1
+        },
+        {
+          "title": "project lifecycle is integrated, role-separated, and responsive",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 30912,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:13:47.564Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "22bb1a499245b9530740-97de59ea87301f238297",
+          "file": "project-management.spec.ts",
+          "line": 59,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "realtime-soak.spec.ts",
+      "file": "realtime-soak.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "ten authenticated chat sockets remain connected for a bounded soak and reconnect",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 61512,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:05:25.937Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "99d5b25e6b231d62e4ac-78ff71a7ff648e2c91f9",
+          "file": "realtime-soak.spec.ts",
+          "line": 14,
+          "column": 1
+        },
+        {
+          "title": "ten authenticated chat sockets remain connected for a bounded soak and reconnect",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 62181,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:14:18.578Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "99d5b25e6b231d62e4ac-7e3ebee759d0fe4e3a0d",
+          "file": "realtime-soak.spec.ts",
+          "line": 14,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "reporting-intelligence.spec.ts",
+      "file": "reporting-intelligence.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "reporting workflow is reviewable, permission-scoped, automated, and responsive",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 86318,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:06:27.537Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ae98857650dd2998b76f-fee9c5dad0995c45e449",
+          "file": "reporting-intelligence.spec.ts",
+          "line": 59,
+          "column": 1
+        },
+        {
+          "title": "reporting workflow is reviewable, permission-scoped, automated, and responsive",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 78179,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:15:20.891Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ae98857650dd2998b76f-f30e2c9aac1ad6482262",
+          "file": "reporting-intelligence.spec.ts",
+          "line": 59,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "smoke.spec.ts",
+      "file": "smoke.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "loads the OfficeFlow authentication shell",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1342,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:07:53.953Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4219922fea2e2bd3c691-42b2d16f9328907e9c19",
+          "file": "smoke.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "loads the OfficeFlow authentication shell",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1421,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:16:39.162Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4219922fea2e2bd3c691-934e680a59fb9804a027",
+          "file": "smoke.spec.ts",
+          "line": 3,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "smtp-acceptance-navigation.spec.ts",
+      "file": "smtp-acceptance-navigation.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "authenticated delivery-related centers support direct URLs and refresh",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 23312,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:07:55.408Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5b3083a30f7b8b18e6a3-f33371173852e3c3f265",
+          "file": "smtp-acceptance-navigation.spec.ts",
+          "line": 22,
+          "column": 1
+        },
+        {
+          "title": "authenticated delivery-related centers support direct URLs and refresh",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 22717,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:16:40.682Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5b3083a30f7b8b18e6a3-363f6f42ab8837b33f0a",
+          "file": "smtp-acceptance-navigation.spec.ts",
+          "line": 22,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "tasks-daily-activities.spec.ts",
+      "file": "tasks-daily-activities.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "a user can create, complete, and log activity against a task",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 19089,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:08:18.857Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-749f81a5da02d2e09215",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 78,
+          "column": 1
+        },
+        {
+          "title": "a manager can assign only an active direct report",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 13583,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:08:38.000Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-017cd566dfd94e0b1afc",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 158,
+          "column": 1
+        },
+        {
+          "title": "task attachments use the authenticated route and deny an unrelated user",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 10574,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:08:51.628Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-cdbcb738ad4c811b6f68",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 349,
+          "column": 1
+        },
+        {
+          "title": "a meeting action item is converted once and stays linked in both directions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6860,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:09:02.243Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-5e7f9fe870a0df154a27",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 492,
+          "column": 1
+        },
+        {
+          "title": "a user can create, complete, and log activity against a task",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 16964,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:17:03.529Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-dd1ca787c0cb7ed7ac3c",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 78,
+          "column": 1
+        },
+        {
+          "title": "a manager can assign only an active direct report",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 14321,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:17:20.535Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-ee1443c13e1a925a7c3a",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 158,
+          "column": 1
+        },
+        {
+          "title": "task attachments use the authenticated route and deny an unrelated user",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9488,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:17:34.908Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-ea5a448439f8f7767ae8",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 349,
+          "column": 1
+        },
+        {
+          "title": "a meeting action item is converted once and stays linked in both directions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7038,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:17:44.445Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "66ebac13e9d0b2ea46aa-591ceae72c4438aa51ba",
+          "file": "tasks-daily-activities.spec.ts",
+          "line": 492,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "voucher-lifecycle.spec.ts",
+      "file": "voucher-lifecycle.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "role-separated voucher lifecycle enforces finance, audit, attachment, and tenant controls",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 420000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 25906,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:09:09.217Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a2e824b6e001343514bd-cbbc79f1938e3e15d7ba",
+          "file": "voucher-lifecycle.spec.ts",
+          "line": 73,
+          "column": 1
+        },
+        {
+          "title": "role-separated voucher lifecycle enforces finance, audit, attachment, and tenant controls",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 420000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 26709,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-21T03:17:51.615Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a2e824b6e001343514bd-e424b0d451247b61655e",
+          "file": "voucher-lifecycle.spec.ts",
+          "line": 73,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-21T03:00:37.013Z",
+    "duration": 1062638.371,
+    "expected": 50,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

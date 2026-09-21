@@ -1,0 +1,36 @@
+{
+  "environment": "isolated local PostgreSQL/Redis/API; disposable load-gate tenants",
+  "users": 8,
+  "concurrency": 8,
+  "duration_seconds": 30,
+  "elapsed_seconds": 43.144,
+  "requests": 623,
+  "failures": 0,
+  "error_rate_percent": 0.0,
+  "latency_ms": {
+    "p50": 322.44,
+    "p95": 902.82,
+    "p99": 1248.61,
+    "max": 1590.57,
+    "mean": 388.02
+  },
+  "websocket_connections": 4,
+  "websocket_messages": 120,
+  "status_counts": {
+    "dashboard:200": 79,
+    "finance:200": 92,
+    "project_write:201": 33,
+    "projects_page:200": 82,
+    "reports:200": 90,
+    "task_write:201": 62,
+    "tasks_page:200": 86,
+    "vouchers:200": 99
+  },
+  "resource": {
+    "client_cpu_percent_before": 29.6,
+    "client_cpu_percent_after": 36.4,
+    "client_rss_before_bytes": 44064768,
+    "client_rss_after_bytes": 56221696
+  },
+  "limitations": "Local development-host evidence only; not a staging capacity or SLA certification."
+}
