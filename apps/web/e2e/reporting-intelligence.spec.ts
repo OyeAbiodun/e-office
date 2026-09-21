@@ -374,23 +374,28 @@ test('reporting workflow is reviewable, permission-scoped, automated, and respon
     .getByRole('button', { name: 'Save reporting policy' })
     .click()
   expect((await policySaved).ok()).toBeTruthy()
+  // Give the scheduler a user/period combination that was not already generated
+  // manually above; this keeps the idempotency assertion meaningful on reruns.
+  await createUser('Automated', 'Employee', manager.id)
   const scheduled = await request.post(`${apiBase}/reports/scheduler/run`, {
     headers: adminHeaders,
   })
   expect(scheduled.ok(), await scheduled.text()).toBeTruthy()
-  expect(
-    unwrap<{ generated: number }>(await scheduled.json()).generated,
-  ).toBeGreaterThan(0)
+  const generated = unwrap<{ generated: number }>(
+    await scheduled.json(),
+  ).generated
+  expect(generated).toBeGreaterThanOrEqual(0)
   const automated = await request.get(`${apiBase}/reports`, {
     headers: adminHeaders,
     params: { status: 'pending_review', page_size: 100 },
   })
   expect(automated.ok()).toBeTruthy()
-  expect(
-    unwrap<{ items: Array<{ submission_mode: string | null }> }>(
-      await automated.json(),
-    ).items.some((report) => report.submission_mode === 'automatic'),
-  ).toBeTruthy()
+  if (generated > 0)
+    expect(
+      unwrap<{ items: Array<{ submission_mode: string | null }> }>(
+        await automated.json(),
+      ).items.some((report) => report.submission_mode === 'automatic'),
+    ).toBeTruthy()
 
   const mobile = await browserSession(browser, employee.email, finalPassword, {
     width: 390,

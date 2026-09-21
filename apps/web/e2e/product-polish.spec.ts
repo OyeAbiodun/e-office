@@ -419,20 +419,39 @@ test('calendar can create, edit, and delete a real event', async ({ page }) => {
   await page.getByRole('button', { name: 'New event' }).click()
   const title = `Polish verification ${Date.now()}`
   await page.getByLabel('Title').fill(title)
-  const uniqueMinute = Date.now() % 1000
-  const start = new Date(Date.UTC(2035, 0, 1, 0, uniqueMinute))
+  // Spread repeated acceptance runs across a very large future range. The old
+  // 1,000-minute window eventually collided in the long-lived acceptance DB.
+  const uniqueMinute = Date.now() % 20_000_000
+  const start = new Date(Date.UTC(2090, 0, 1, 0, uniqueMinute))
   const end = new Date(start.getTime() + 60 * 60 * 1000)
   await page.getByLabel('Starts').fill(start.toISOString().slice(0, 16))
   await page
     .getByRole('textbox', { name: 'Ends', exact: true })
     .fill(end.toISOString().slice(0, 16))
+  const eventCreated = page.waitForResponse(
+    (response) =>
+      response.url().includes('/calendars/') &&
+      response.url().endsWith('/events') &&
+      response.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: 'Create event', exact: true }).click()
+  const createdResponse = await eventCreated
+  expect(createdResponse.ok(), await createdResponse.text()).toBeTruthy()
   await page.getByRole('link', { name: 'Agenda', exact: true }).click()
   await expect(page.getByText(title)).toBeVisible()
   await page.getByText(title).click()
   await page.getByLabel('Title').fill(`${title} updated`)
+  const eventUpdated = page.waitForResponse(
+    (response) =>
+      response.url().includes('/events/') &&
+      response.request().method() === 'PATCH',
+  )
   await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText(`${title} updated`)).toBeVisible()
+  expect((await eventUpdated).ok()).toBeTruthy()
+  await page.reload()
+  await expect(page.getByText(`${title} updated`)).toBeVisible({
+    timeout: 15_000,
+  })
   await page.getByText(`${title} updated`).click()
   await page.getByRole('button', { name: 'Delete' }).click()
   await expect(

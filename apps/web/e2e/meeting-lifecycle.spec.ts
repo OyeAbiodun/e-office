@@ -24,9 +24,15 @@ async function apiLogin(
   email: string,
   password: string,
 ) {
-  const response = await request.post(`${apiBase}/auth/login`, {
+  let response = await request.post(`${apiBase}/auth/login`, {
     data: { email, password },
   })
+  for (let attempt = 0; response.status() === 401 && attempt < 4; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)))
+    response = await request.post(`${apiBase}/auth/login`, {
+      data: { email, password },
+    })
+  }
   expect(response.ok(), await response.text()).toBeTruthy()
   const payload = (await response.json()) as {
     data: { access_token: string; user: { id: string } }
@@ -119,14 +125,14 @@ test('organizer and participant complete the meeting lifecycle', async ({
   request,
 }) => {
   test.setTimeout(240_000)
-  const organizer = await apiLogin(request, organizerEmail, organizerPassword)
+  const admin = await apiLogin(request, organizerEmail, organizerPassword)
   const suffix = Date.now()
   const participantEmail = `meeting.e2e.${suffix}@example.com`
   const temporaryPassword = `MeetingE2ETemp${suffix}!`
   const participantPassword = `MeetingE2EFinal${suffix}!`
   const [workspacesResponse, rolesResponse] = await Promise.all([
-    request.get(`${apiBase}/workspaces`, { headers: organizer.headers }),
-    request.get(`${apiBase}/roles`, { headers: organizer.headers }),
+    request.get(`${apiBase}/workspaces`, { headers: admin.headers }),
+    request.get(`${apiBase}/roles`, { headers: admin.headers }),
   ])
   const workspaces = (await workspacesResponse.json()) as {
     data: Array<{ id: string }>
@@ -135,9 +141,54 @@ test('organizer and participant complete the meeting lifecycle', async ({
     data: Array<{ id: string; name: string }>
   }
   const employeeRole = roles.data.find((role) => role.name === 'Employee')
+  const organizerRole = roles.data.find(
+    (role) => role.name === 'Meeting Organizer',
+  )
   expect(employeeRole).toBeTruthy()
+  expect(organizerRole).toBeTruthy()
+  const lifecycleOrganizerEmail = `meeting.organizer.${suffix}@example.com`
+  const organizerTemporaryPassword = `MeetingOrganizerTemp${suffix}!`
+  const organizerFinalPassword = `MeetingOrganizerFinal${suffix}!`
+  const createdOrganizer = await request.post(`${apiBase}/users`, {
+    headers: admin.headers,
+    data: {
+      first_name: 'Lifecycle',
+      last_name: 'Organizer',
+      email: lifecycleOrganizerEmail,
+      workspace_id: workspaces.data[0].id,
+      role_ids: [organizerRole?.id],
+      temporary_password: organizerTemporaryPassword,
+      send_welcome_email: false,
+    },
+  })
+  expect(createdOrganizer.ok(), await createdOrganizer.text()).toBeTruthy()
+  const organizerTemporary = await apiLogin(
+    request,
+    lifecycleOrganizerEmail,
+    organizerTemporaryPassword,
+  )
+  const organizerPasswordChanged = await request.post(
+    `${apiBase}/auth/change-password`,
+    {
+      headers: organizerTemporary.headers,
+      data: {
+        current_password: organizerTemporaryPassword,
+        new_password: organizerFinalPassword,
+        confirm_new_password: organizerFinalPassword,
+      },
+    },
+  )
+  expect(
+    organizerPasswordChanged.ok(),
+    await organizerPasswordChanged.text(),
+  ).toBeTruthy()
+  const organizer = await apiLogin(
+    request,
+    lifecycleOrganizerEmail,
+    organizerFinalPassword,
+  )
   const createdUser = await request.post(`${apiBase}/users`, {
-    headers: organizer.headers,
+    headers: admin.headers,
     data: {
       first_name: 'Lifecycle',
       last_name: 'Participant',
@@ -150,7 +201,7 @@ test('organizer and participant complete the meeting lifecycle', async ({
   })
   expect(createdUser.ok(), await createdUser.text()).toBeTruthy()
 
-  await browserLogin(page, organizerEmail, organizerPassword)
+  await browserLogin(page, lifecycleOrganizerEmail, organizerFinalPassword)
   await page.goto('/meetings/new')
   const title = `Release acceptance ${suffix}`
   await page.getByLabel('Title').fill(title)
@@ -251,19 +302,22 @@ test('organizer and participant complete the meeting lifecycle', async ({
         .getByRole('paragraph')
         .filter({ hasText: new RegExp(`^${status}$`) }),
     ).toBeVisible()
-    const statusDetail = await request.get(`${apiBase}/meetings/${meetingId}`, {
-      headers: organizer.headers,
-    })
-    const statusPayload = (await statusDetail.json()) as {
-      data: {
-        attendees: Array<{ email: string; attendance_status: string }>
-      }
-    }
-    expect(
-      statusPayload.data.attendees.find(
-        (item) => item.email === participantEmail,
-      )?.attendance_status,
-    ).toBe(status)
+    await expect
+      .poll(async () => {
+        const statusDetail = await request.get(
+          `${apiBase}/meetings/${meetingId}`,
+          { headers: organizer.headers },
+        )
+        const statusPayload = (await statusDetail.json()) as {
+          data: {
+            attendees: Array<{ email: string; attendance_status: string }>
+          }
+        }
+        return statusPayload.data.attendees.find(
+          (item) => item.email === participantEmail,
+        )?.attendance_status
+      })
+      .toBe(status)
   }
 
   const detail = await request.get(`${apiBase}/meetings/${meetingId}`, {
@@ -377,7 +431,7 @@ test('organizer and participant complete the meeting lifecycle', async ({
   )
 
   const audit = await request.get(`${apiBase}/audit?limit=200`, {
-    headers: organizer.headers,
+    headers: admin.headers,
   })
   expect(audit.ok(), await audit.text()).toBeTruthy()
   const auditPayload = (await audit.json()) as {

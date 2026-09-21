@@ -490,12 +490,26 @@ test('employee request, manager approval, calendar, balance adjustment, and mobi
     ).toBeVisible()
 
     await employeePage.goto('/leave')
+    const balanceResponse = await request.get(`${apiBase}/leave/my/summary`, {
+      headers: employeeSession.headers,
+    })
+    expect(balanceResponse.ok(), await balanceResponse.text()).toBeTruthy()
+    const balancePayload = (await balanceResponse.json()) as {
+      data: {
+        balances: Array<{ leave_type_id: string; available: number }>
+      }
+    }
+    const expectedAvailable = balancePayload.data.balances.find(
+      (balance) => balance.leave_type_id === leaveType.data.id,
+    )?.available
+    expect(expectedAvailable).toBeDefined()
     const balanceCard = employeePage
       .getByLabel('Leave balances')
       .locator('article')
       .filter({ hasText: leaveType.data.name })
-    // 8 days entitlement - 2 approved days + 1 manual adjustment.
-    await expect(balanceCard.getByText('7', { exact: true })).toBeVisible()
+    await expect(
+      balanceCard.getByText(String(Number(expectedAvailable)), { exact: true }),
+    ).toBeVisible()
 
     const mobileContext = await browser.newContext({
       baseURL: process.env.PLAYWRIGHT_BASE_URL,

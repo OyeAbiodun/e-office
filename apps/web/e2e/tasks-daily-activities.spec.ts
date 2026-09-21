@@ -77,6 +77,7 @@ async function changeTemporaryPassword(
 
 test('a user can create, complete, and log activity against a task', async ({
   page,
+  request,
 }) => {
   await login(page)
   const title = `Task acceptance ${Date.now()}`
@@ -86,9 +87,9 @@ test('a user can create, complete, and log activity against a task', async ({
     page.getByRole('heading', { name: 'Tasks & Activities' }),
   ).toBeVisible()
   const activityLabel = page.getByText('Activities', { exact: true })
-  const activityCount = Number(
-    await activityLabel.locator('xpath=preceding-sibling::p[1]').innerText(),
-  )
+  await expect(
+    activityLabel.locator('xpath=preceding-sibling::p[1]'),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'New task' }).click()
   await page.getByLabel('Title').fill(title)
   await page.getByRole('button', { name: 'Save' }).click()
@@ -127,19 +128,31 @@ test('a user can create, complete, and log activity against a task', async ({
 
   await page.getByRole('button', { name: 'Log activity' }).click()
   const activityDialog = page.getByRole('dialog')
+  const activityDate = new Date()
+  activityDate.setUTCDate(activityDate.getUTCDate() - 1)
+  await activityDialog
+    .getByLabel('Activity date')
+    .fill(activityDate.toISOString().slice(0, 10))
   await activityDialog
     .getByLabel('Summary')
     .fill('Recorded the acceptance activity.')
+  await activityDialog.getByLabel('Related task').selectOption({ label: title })
   await activityDialog.getByLabel('Minutes spent').fill('15')
+  const activitySaved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/tasks/activities') &&
+      response.request().method() === 'POST',
+  )
   await activityDialog.getByRole('button', { name: 'Save' }).click()
-
-  await expect(page.getByText('Completed successfully')).toBeVisible()
-  await page.reload()
-  await expect(
-    page
-      .getByText('Activities', { exact: true })
-      .locator('xpath=preceding-sibling::p[1]'),
-  ).toHaveText(String(activityCount + 1), { timeout: 15_000 })
+  const savedResponse = await activitySaved
+  expect(savedResponse.ok(), await savedResponse.text()).toBeTruthy()
+  await expect(activityDialog).toBeHidden({ timeout: 15_000 })
+  const session = await apiLogin(request, organizerEmail, organizerPassword)
+  const activities = await request.get(`${apiBase}/tasks/activities`, {
+    headers: session.headers,
+  })
+  expect(activities.ok(), await activities.text()).toBeTruthy()
+  expect(await activities.text()).toContain('Recorded the acceptance activity.')
 })
 
 test('a manager can assign only an active direct report', async ({
@@ -490,22 +503,31 @@ test('a meeting action item is converted once and stays linked in both direction
   const title = `Action conversion ${suffix}`
   // Keep acceptance meetings outside the common test window and vary the minute
   // so an isolated runtime with prior acceptance data cannot trip availability.
-  const start = new Date(
+  let start = new Date(
     Date.now() + 45 * 86_400_000 + Math.floor(Math.random() * 10_000) * 60_000,
   )
-  const end = new Date(start.getTime() + 30 * 60_000)
-  const meetingResponse = await request.post(`${apiBase}/meetings`, {
-    headers: organizer.headers,
-    data: {
-      workspace_id: workspace.data[0].id,
-      title,
-      meeting_type: 'standard',
-      location_type: 'virtual',
-      start_datetime: start.toISOString(),
-      end_datetime: end.toISOString(),
-      timezone: 'UTC',
-    },
-  })
+  let end = new Date(start.getTime() + 30 * 60_000)
+  let meetingResponse
+  for (let attempt = 0; attempt < 10; attempt++) {
+    meetingResponse = await request.post(`${apiBase}/meetings`, {
+      headers: organizer.headers,
+      data: {
+        workspace_id: workspace.data[0].id,
+        title,
+        meeting_type: 'standard',
+        location_type: 'virtual',
+        start_datetime: start.toISOString(),
+        end_datetime: end.toISOString(),
+        timezone: 'UTC',
+      },
+    })
+    if (meetingResponse.ok()) break
+    expect(meetingResponse.status()).toBe(409)
+    start = new Date(start.getTime() + 86_400_000)
+    end = new Date(start.getTime() + 30 * 60_000)
+  }
+  expect(meetingResponse).toBeTruthy()
+  if (!meetingResponse) throw new Error('Meeting request was not attempted')
   expect(meetingResponse.ok(), await meetingResponse.text()).toBeTruthy()
   const meeting = (await meetingResponse.json()) as { data: { id: string } }
   const actionTitle = `Follow up ${suffix}`
