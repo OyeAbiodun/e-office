@@ -6,6 +6,8 @@ import react from '@vitejs/plugin-react'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { resolveApiProxyOrigin } from './src/config/api-url'
+
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = path.resolve(currentDirectory, '../..')
 
@@ -14,7 +16,7 @@ export default defineConfig(({ mode }) => {
   // started from apps/web and silently misses the root VITE_API_URL setting.
   const env = loadEnv(mode, repositoryRoot, '')
   const configuredApiUrl = env.VITE_API_URL?.trim()
-  const apiOrigin = configuredApiUrl ? new URL(configuredApiUrl).origin : null
+  const apiOrigin = resolveApiProxyOrigin(configuredApiUrl)
 
   return {
     envDir: repositoryRoot,
