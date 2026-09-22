@@ -171,6 +171,21 @@ export interface AdjustmentResult {
   resulting_balance: LeaveBalance
 }
 
+export interface EntitlementAllocationResult {
+  created: number
+  skipped_duplicates: number
+  ineligible: Array<{ employee_id: string; reason: string }>
+  entitlement_ids: string[]
+}
+
+export interface LeaveEligibility {
+  eligible: boolean
+  code: string | null
+  message: string
+  available_days: number | null
+  requested_days: number | null
+}
+
 export interface LeaveReportRow {
   key: string
   label: string
@@ -248,6 +263,18 @@ export const leaveApi = {
       true,
     ),
   mySummary: () => apiRequest<LeaveSummary>('/leave/my/summary', {}, true),
+  eligibility: (leaveTypeId: string, startDate: string, endDate: string) =>
+    apiRequest<LeaveEligibility>(
+      `/leave/my/eligibility${query({ leave_type_id: leaveTypeId, start_date: startDate, end_date: endDate })}`,
+      {},
+      true,
+    ),
+  allocateEntitlements: (body: Record<string, unknown>) =>
+    apiRequest<EntitlementAllocationResult>(
+      '/leave/entitlements/allocate',
+      { method: 'POST', body: JSON.stringify(body) },
+      true,
+    ),
   requests: (filters: Record<string, QueryValue>) =>
     apiRequest<LeavePage<LeaveRequest>>(
       `/leave/requests${query(filters)}`,

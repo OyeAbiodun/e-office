@@ -424,6 +424,13 @@ function RequestLeaveDialog({
       }),
     enabled: Boolean(startDate && endDate && endDate >= startDate),
   })
+  const eligibility = useQuery({
+    queryKey: ['leave', 'eligibility', leaveTypeId, startDate, endDate],
+    queryFn: () => leaveApi.eligibility(leaveTypeId, startDate, endDate),
+    enabled: Boolean(
+      leaveTypeId && startDate && endDate && endDate >= startDate,
+    ),
+  })
   const exceeds = Boolean(
     preview.data &&
     balance &&
@@ -464,7 +471,9 @@ function RequestLeaveDialog({
     !endDate ||
     endDate < startDate ||
     exceeds ||
-    preview.isFetching
+    preview.isFetching ||
+    eligibility.isFetching ||
+    eligibility.data?.eligible === false
   const invalidSubmit =
     invalidBase || Boolean(selectedType?.attachment_required && !file)
   const submit = (event: FormEvent) => {
@@ -587,6 +596,14 @@ function RequestLeaveDialog({
               ? formatDays(Number(preview.data.chargeable_days))
               : 'more'}
             .
+          </p>
+        )}
+        {eligibility.data && !eligibility.data.eligible && (
+          <p
+            className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+            role="alert"
+          >
+            {eligibility.data.message}
           </p>
         )}
         <label className="block text-sm font-medium">

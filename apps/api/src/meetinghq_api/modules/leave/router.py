@@ -23,10 +23,13 @@ from meetinghq_api.modules.leave.schemas import (
     BalancePage,
     BalanceResponse,
     ControlledAdjustmentInput,
+    EntitlementAllocationInput,
+    EntitlementAllocationResult,
     EntitlementInput,
     EntitlementResponse,
     LeaveAttachmentResponse,
     LeaveAvailabilityItem,
+    LeaveEligibilityResponse,
     LeavePeriodInput,
     LeavePeriodResponse,
     LeaveReportRow,
@@ -191,6 +194,19 @@ async def create_entitlement(
     return EntitlementResponse.model_validate(await LeaveService(session).entitlement(user, body))
 
 
+@router.post(
+    "/entitlements/allocate",
+    response_model=EntitlementAllocationResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def allocate_entitlements(
+    body: EntitlementAllocationInput,
+    session: Session,
+    user: Annotated[User, require_permission("leave.balances.adjust")],
+) -> EntitlementAllocationResult:
+    return await LeaveService(session).allocate_entitlements(user, body)
+
+
 @router.get("/balances/{entitlement_id}", response_model=BalanceResponse)
 async def get_balance(
     entitlement_id: uuid.UUID,
@@ -206,6 +222,17 @@ async def my_balances(
     user: Annotated[User, require_permission("leave.view_own")],
 ) -> list[BalanceResponse]:
     return await LeaveService(session).my_balances(user)
+
+
+@router.get("/my/eligibility", response_model=LeaveEligibilityResponse)
+async def my_leave_eligibility(
+    leave_type_id: uuid.UUID,
+    start_date: date,
+    end_date: date,
+    session: Session,
+    user: Annotated[User, require_permission("leave.request")],
+) -> LeaveEligibilityResponse:
+    return await LeaveService(session).eligibility(user, leave_type_id, start_date, end_date)
 
 
 @router.get("/balances", response_model=BalancePage)

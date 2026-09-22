@@ -70,6 +70,29 @@ class EntitlementInput(InputModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
+class EntitlementAllocationInput(InputModel):
+    employee_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    leave_type_id: uuid.UUID
+    leave_period_id: uuid.UUID
+    allocated_days: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class EntitlementAllocationResult(BaseModel):
+    created: int
+    skipped_duplicates: int
+    ineligible: list[dict[str, str]]
+    entitlement_ids: list[uuid.UUID]
+
+
+class LeaveEligibilityResponse(BaseModel):
+    eligible: bool
+    code: str | None = None
+    message: str
+    available_days: Decimal | None = None
+    requested_days: Decimal | None = None
+
+
 class AdjustmentInput(InputModel):
     operation: Literal["add", "deduct", "correction"] = "correction"
     amount: Decimal = Field(max_digits=18, decimal_places=2)

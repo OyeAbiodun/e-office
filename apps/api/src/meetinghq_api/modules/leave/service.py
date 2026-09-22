@@ -37,9 +37,12 @@ from meetinghq_api.modules.leave.schemas import (
     BalancePage,
     BalanceResponse,
     ControlledAdjustmentInput,
+    EntitlementAllocationInput,
+    EntitlementAllocationResult,
     EntitlementInput,
     LeaveAttachmentResponse,
     LeaveAvailabilityItem,
+    LeaveEligibilityResponse,
     LeaveHistoryResponse,
     LeavePeriodInput,
     LeaveReportRow,
@@ -359,6 +362,78 @@ class LeaveService:
             )
         self._audit(user, "leave.entitlement.created", item.id)
         return item
+
+    async def allocate_entitlements(
+        self, user: User, body: EntitlementAllocationInput
+    ) -> EntitlementAllocationResult:
+        kind = await self._type(user, body.leave_type_id, True)
+        period = await self._period(user, period_id=body.leave_period_id)
+        if period.status != "open":
+            raise ValidationError("Entitlements can only be allocated in an open leave period")
+        allocated_days = (
+            body.allocated_days if body.allocated_days is not None else kind.default_entitlement
+        )
+        existing = set(
+            (
+                await self.session.scalars(
+                    select(LeaveEntitlement.employee_id).where(
+                        LeaveEntitlement.organization_id == user.organization_id,
+                        LeaveEntitlement.employee_id.in_(body.employee_ids),
+                        LeaveEntitlement.leave_type_id == kind.id,
+                        LeaveEntitlement.leave_period_id == period.id,
+                    )
+                )
+            ).all()
+        )
+        created: list[uuid.UUID] = []
+        ineligible: list[dict[str, str]] = []
+        for employee_id in dict.fromkeys(body.employee_ids):
+            if employee_id in existing:
+                continue
+            employee = await self._employee(user, employee_id)
+            reason: str | None = None
+            if employee.status != UserStatus.ACTIVE or employee.employment_status in {
+                "terminated",
+                "inactive",
+            }:
+                reason = "Employee is not active"
+            elif (
+                kind.eligible_employment_types
+                and employee.employment_type not in kind.eligible_employment_types.split(",")
+            ):
+                reason = "Employment type is not eligible"
+            elif employee.employment_status == "probation" and not kind.probation_eligible:
+                reason = "Employee is ineligible during probation"
+            if reason:
+                ineligible.append({"employee_id": str(employee.id), "reason": reason})
+                continue
+            entitlement = LeaveEntitlement(
+                organization_id=user.organization_id,
+                employee_id=employee.id,
+                leave_type_id=kind.id,
+                leave_period_id=period.id,
+                allocated_days=allocated_days,
+            )
+            self.session.add(entitlement)
+            await self.session.flush()
+            if allocated_days:
+                await self._ledger(
+                    user,
+                    entitlement,
+                    "allocation",
+                    allocated_days,
+                    date.today(),
+                    body.reason or "Guided entitlement allocation",
+                    idempotency_key=(f"allocation:{employee.id}:{kind.id}:{period.id}"),
+                )
+            self._audit(user, "leave.entitlement.created", entitlement.id)
+            created.append(entitlement.id)
+        return EntitlementAllocationResult(
+            created=len(created),
+            skipped_duplicates=len(existing),
+            ineligible=ineligible,
+            entitlement_ids=created,
+        )
 
     async def _ledger(
         self,
@@ -1762,6 +1837,99 @@ class LeaveService:
         await self._history(user, item, "draft_created")
         self._audit(user, "leave.request.drafted", item.id)
         return item
+
+    async def eligibility(
+        self,
+        user: User,
+        leave_type_id: uuid.UUID,
+        start_date: date,
+        end_date: date,
+    ) -> LeaveEligibilityResponse:
+        employee = await self._employee(user, user.id)
+        if employee.status != UserStatus.ACTIVE or employee.employment_status in {
+            "terminated",
+            "inactive",
+        }:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="employee_ineligible",
+                message="Your employee record is not eligible to request leave.",
+            )
+        kind = await self._type(user, leave_type_id, True)
+        period = await self.session.scalar(
+            select(LeavePeriod).where(
+                LeavePeriod.organization_id == user.organization_id,
+                LeavePeriod.status == "open",
+                LeavePeriod.start_date <= start_date,
+                LeavePeriod.end_date >= end_date,
+            )
+        )
+        if period is None:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="no_applicable_period",
+                message="No open leave period covers the selected dates.",
+            )
+        if (
+            kind.eligible_employment_types
+            and employee.employment_type not in kind.eligible_employment_types.split(",")
+        ):
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="employment_type_mismatch",
+                message="This leave type is not available for your employment type.",
+            )
+        if employee.employment_status == "probation" and not kind.probation_eligible:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="probation_restriction",
+                message="This leave type is not available during probation.",
+            )
+        overlap = await self.session.scalar(
+            select(LeaveRequest.id).where(
+                LeaveRequest.organization_id == user.organization_id,
+                LeaveRequest.employee_id == user.id,
+                LeaveRequest.status.in_(("draft", "submitted", "approved")),
+                LeaveRequest.start_date <= end_date,
+                LeaveRequest.end_date >= start_date,
+            )
+        )
+        if overlap:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="conflicting_request",
+                message="A pending or existing leave request conflicts with these dates.",
+            )
+        entitlement = await self.session.scalar(
+            select(LeaveEntitlement).where(
+                LeaveEntitlement.organization_id == user.organization_id,
+                LeaveEntitlement.employee_id == user.id,
+                LeaveEntitlement.leave_type_id == kind.id,
+                LeaveEntitlement.leave_period_id == period.id,
+            )
+        )
+        if entitlement is None:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="no_entitlement",
+                message="No entitlement has been allocated for this leave type and period.",
+            )
+        requested = (await self.working_days(user, start_date, end_date, False)).chargeable_days
+        balance = await self.balance(user, entitlement.id)
+        if balance.available_after_pending < requested:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="insufficient_balance",
+                message="Your available leave balance is insufficient for these dates.",
+                available_days=balance.available_after_pending,
+                requested_days=requested,
+            )
+        return LeaveEligibilityResponse(
+            eligible=True,
+            message="You are eligible to request leave for these dates.",
+            available_days=balance.available_after_pending,
+            requested_days=requested,
+        )
 
     async def submit(self, user: User, request_id: uuid.UUID) -> LeaveRequest:
         item = await self._request(user, request_id, True)

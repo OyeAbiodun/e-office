@@ -681,6 +681,7 @@ function BalanceManagementPanel() {
   const [page, setPage] = useState(1)
   const [adjusting, setAdjusting] = useState<LeaveBalanceRow | null>(null)
   const [history, setHistory] = useState<LeaveBalanceRow | null>(null)
+  const [allocating, setAllocating] = useState(false)
   const types = useQuery({
     queryKey: ['leave', 'types', 'balance'],
     queryFn: () => leaveApi.types(),
@@ -740,13 +741,22 @@ function BalanceManagementPanel() {
             ledger.
           </p>
         </div>
-        <button
-          className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold"
-          onClick={() => void leaveApi.exportBalances(filters)}
-          type="button"
-        >
-          <Download className="size-4" /> Export CSV
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            onClick={() => setAllocating(true)}
+            type="button"
+          >
+            <Plus className="size-4" /> Allocate entitlement
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold"
+            onClick={() => void leaveApi.exportBalances(filters)}
+            type="button"
+          >
+            <Download className="size-4" /> Export CSV
+          </button>
+        </div>
       </header>
       <div className="grid gap-3 border-b p-4 md:grid-cols-2 xl:grid-cols-6">
         <label className="relative xl:col-span-2">
@@ -962,7 +972,160 @@ function BalanceManagementPanel() {
           row={history}
         />
       )}
+      {allocating && (
+        <EntitlementAllocationDialog
+          employees={employees.data?.items ?? []}
+          onClose={() => setAllocating(false)}
+          periods={(periods.data ?? []).filter(
+            (item) => item.status === 'open',
+          )}
+          types={(types.data ?? []).filter((item) => item.is_active)}
+        />
+      )}
     </section>
+  )
+}
+
+function EntitlementAllocationDialog({
+  employees,
+  periods,
+  types,
+  onClose,
+}: {
+  employees: Array<{ id: string; display_name: string }>
+  periods: LeavePeriod[]
+  types: LeaveType[]
+  onClose: () => void
+}) {
+  const client = useQueryClient()
+  const [bulk, setBulk] = useState(false)
+  const [employeeId, setEmployeeId] = useState('')
+  const [leaveTypeId, setLeaveTypeId] = useState(types[0]?.id ?? '')
+  const [periodId, setPeriodId] = useState(periods[0]?.id ?? '')
+  const selectedType = types.find((item) => item.id === leaveTypeId)
+  const [days, setDays] = useState('')
+  const allocation = useMutation({
+    mutationFn: () =>
+      leaveApi.allocateEntitlements({
+        employee_ids: bulk ? employees.map((item) => item.id) : [employeeId],
+        leave_type_id: leaveTypeId,
+        leave_period_id: periodId,
+        allocated_days:
+          days === '' ? selectedType?.default_entitlement : Number(days),
+        reason: 'Guided administrator allocation',
+      }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['leave', 'balances'] })
+    },
+  })
+  return (
+    <Modal
+      description="Create auditable employee entitlements for one open leave period. Existing allocations are preserved and skipped."
+      onClose={onClose}
+      title="Allocate leave entitlement"
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          allocation.mutate()
+        }}
+      >
+        <label className="flex items-center gap-3 rounded-xl border p-3 text-sm font-medium">
+          <input
+            checked={bulk}
+            onChange={(event) => setBulk(event.target.checked)}
+            type="checkbox"
+          />
+          Allocate to all {employees.length} loaded active employees
+        </label>
+        {!bulk && (
+          <FilterSelect
+            label="Employee"
+            onChange={setEmployeeId}
+            value={employeeId}
+          >
+            <option value="">Choose an employee</option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.display_name}
+              </option>
+            ))}
+          </FilterSelect>
+        )}
+        <FilterSelect
+          label="Leave type"
+          onChange={setLeaveTypeId}
+          value={leaveTypeId}
+        >
+          {types.map((type) => (
+            <option key={type.id} value={type.id}>
+              {type.name} · default {Number(type.default_entitlement)} days
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          label="Open period"
+          onChange={setPeriodId}
+          value={periodId}
+        >
+          {periods.map((period) => (
+            <option key={period.id} value={period.id}>
+              {period.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <label className="grid gap-2 text-sm font-medium">
+          Days allocated
+          <input
+            className="rounded-xl border bg-background px-3 py-2"
+            min="0"
+            onChange={(event) => setDays(event.target.value)}
+            placeholder={String(selectedType?.default_entitlement ?? 0)}
+            step="0.5"
+            type="number"
+            value={days}
+          />
+        </label>
+        {allocation.data && (
+          <p className="rounded-xl bg-muted p-3 text-sm" role="status">
+            Created {allocation.data.created}; skipped{' '}
+            {allocation.data.skipped_duplicates} existing;{' '}
+            {allocation.data.ineligible.length} ineligible.
+          </p>
+        )}
+        {allocation.error && (
+          <p
+            className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            {allocation.error.message}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            className="rounded-xl border px-4 py-2"
+            onClick={onClose}
+            type="button"
+          >
+            Close
+          </button>
+          <button
+            className="rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-50"
+            disabled={
+              allocation.isPending ||
+              (!bulk && !employeeId) ||
+              !leaveTypeId ||
+              !periodId ||
+              (bulk && employees.length === 0)
+            }
+            type="submit"
+          >
+            {allocation.isPending ? 'Allocating…' : 'Allocate entitlement'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
