@@ -1,31 +1,72 @@
-"""Process-local health signals exposed to the administration health service."""
+"""Shared runtime health signals for separately deployed workers."""
 
-from dataclasses import dataclass, field
+import json
+import os
+import socket
 from datetime import UTC, datetime
+from typing import Any, cast
+
+from redis.asyncio import Redis
 
 
-@dataclass(slots=True)
-class RuntimeHealth:
-    """Small process registry for worker and scheduler liveness."""
+class SharedRuntimeHealth:
+    """Publish sanitized worker and scheduler state through Redis."""
 
-    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    reminder_worker_started_at: datetime | None = None
-    reminder_worker_heartbeat_at: datetime | None = None
-    reminder_worker_last_error: str | None = None
+    KEY = "officeflow:runtime-health"
 
-    def worker_started(self) -> None:
-        now = datetime.now(UTC)
-        self.reminder_worker_started_at = now
-        self.reminder_worker_heartbeat_at = now
-        self.reminder_worker_last_error = None
+    def __init__(self, client: Redis) -> None:
+        self.client = client
+        self.started_at = datetime.now(UTC)
 
-    def worker_heartbeat(self) -> None:
-        self.reminder_worker_heartbeat_at = datetime.now(UTC)
-        self.reminder_worker_last_error = None
+    @staticmethod
+    def worker_identity() -> str:
+        return f"{socket.gethostname()}:{os.getpid()}"
 
-    def worker_failed(self, error: Exception) -> None:
-        self.reminder_worker_heartbeat_at = datetime.now(UTC)
-        self.reminder_worker_last_error = type(error).__name__
+    async def started(self) -> None:
+        now = datetime.now(UTC).isoformat()
+        await cast(Any, self.client.hset)(
+            self.KEY,
+            mapping={
+                "worker_identity": self.worker_identity(),
+                "worker_started_at": now,
+                "worker_heartbeat_at": now,
+                "worker_last_error": "",
+            },
+        )
 
+    async def heartbeat(self) -> None:
+        await cast(Any, self.client.hset)(
+            self.KEY,
+            mapping={"worker_heartbeat_at": datetime.now(UTC).isoformat()},
+        )
 
-runtime_health = RuntimeHealth()
+    async def succeeded(self, counts: dict[str, int]) -> None:
+        now = datetime.now(UTC).isoformat()
+        await cast(Any, self.client.hset)(
+            self.KEY,
+            mapping={
+                "worker_heartbeat_at": now,
+                "worker_last_success_at": now,
+                "worker_last_error": "",
+                "worker_counts": json.dumps(counts, separators=(",", ":")),
+                "scheduler_heartbeat_at": now,
+                "scheduler_last_success_at": now,
+                "scheduler_last_error": "",
+            },
+        )
+
+    async def failed(self, error: Exception) -> None:
+        now = datetime.now(UTC).isoformat()
+        safe_error = type(error).__name__
+        await cast(Any, self.client.hset)(
+            self.KEY,
+            mapping={
+                "worker_heartbeat_at": now,
+                "worker_last_error": safe_error,
+                "scheduler_heartbeat_at": now,
+                "scheduler_last_error": safe_error,
+            },
+        )
+
+    async def read(self) -> dict[str, Any]:
+        return dict(await cast(Any, self.client.hgetall)(self.KEY))

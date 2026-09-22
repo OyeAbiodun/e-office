@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings
 from meetinghq_api.infrastructure.redis import redis_client
-from meetinghq_api.infrastructure.runtime_health import runtime_health
+from meetinghq_api.infrastructure.runtime_health import SharedRuntimeHealth
 from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.configuration.models import ConfigurationEntry
 from meetinghq_api.modules.notifications.models import (
@@ -52,8 +52,8 @@ class SystemHealthService:
             ),
             await self._database(),
             await self._redis(),
-            self._worker(now),
-            self._scheduler(now),
+            await self._worker(now),
+            await self._scheduler(now),
             await self._smtp(organization_id),
             self._storage(),
             *self._host_resources(),
@@ -140,7 +140,7 @@ class SystemHealthService:
             last_updated=now,
             version="0.1.0",
             environment=self.settings.environment,
-            uptime_seconds=max(0, int((now - runtime_health.started_at).total_seconds())),
+            uptime_seconds=0,
             components=components,
             queue=queue,
             warnings=warnings,
@@ -249,40 +249,87 @@ class SystemHealthService:
                 details={"error": type(error).__name__},
             )
 
-    def _worker(self, now: datetime) -> ComponentHealth:
-        heartbeat = runtime_health.reminder_worker_heartbeat_at
+    async def _runtime_state(self) -> tuple[dict[str, object], str | None]:
+        if not self.settings.redis_url:
+            return {}, "RedisNotConfigured"
+        try:
+            return await SharedRuntimeHealth(redis_client).read(), None
+        except Exception as error:
+            return {}, type(error).__name__
+
+    @staticmethod
+    def _timestamp(value: object) -> datetime | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    async def _worker(self, now: datetime) -> ComponentHealth:
+        state, read_error = await self._runtime_state()
+        heartbeat = self._timestamp(state.get("worker_heartbeat_at"))
         stale_after = self.settings.reminder_poll_seconds * 3
         age = int((now - heartbeat).total_seconds()) if heartbeat else None
-        healthy = heartbeat is not None and age is not None and age <= stale_after
+        last_error = state.get("worker_last_error") or None
+        healthy = (
+            read_error is None
+            and heartbeat is not None
+            and age is not None
+            and age <= stale_after
+            and not last_error
+        )
         return ComponentHealth(
             key="workers",
             name="Background workers",
             category="backend",
             status="healthy" if healthy else "degraded",
             message=(
-                "Reminder worker heartbeat is current."
+                "Background worker heartbeat is current."
                 if healthy
-                else "Reminder worker heartbeat is missing or stale."
+                else "Background worker heartbeat is missing, stale, failed, or unreadable."
             ),
             details={
+                "worker_identity": state.get("worker_identity"),
                 "heartbeat_at": heartbeat.isoformat() if heartbeat else None,
-                "last_error": runtime_health.reminder_worker_last_error,
+                "last_success_at": state.get("worker_last_success_at"),
+                "last_error": last_error,
+                "queue_processing_counts": state.get("worker_counts"),
+                "stale_after_seconds": stale_after,
+                "state_read_error": read_error,
             },
         )
 
-    def _scheduler(self, now: datetime) -> ComponentHealth:
-        worker = self._worker(now)
+    async def _scheduler(self, now: datetime) -> ComponentHealth:
+        state, read_error = await self._runtime_state()
+        heartbeat = self._timestamp(state.get("scheduler_heartbeat_at"))
+        stale_after = self.settings.reminder_poll_seconds * 3
+        age = int((now - heartbeat).total_seconds()) if heartbeat else None
+        last_error = state.get("scheduler_last_error") or None
+        healthy = (
+            read_error is None
+            and heartbeat is not None
+            and age is not None
+            and age <= stale_after
+            and not last_error
+        )
         return ComponentHealth(
             key="scheduler",
             name="Reminder scheduler",
             category="backend",
-            status=worker.status,
+            status="healthy" if healthy else "degraded",
             message=(
                 "Reminder scheduling loop is active."
-                if worker.status == "healthy"
-                else worker.message
+                if healthy
+                else "Reminder scheduler heartbeat is missing, stale, failed, or unreadable."
             ),
-            details={"poll_seconds": self.settings.reminder_poll_seconds},
+            details={
+                "heartbeat_at": heartbeat.isoformat() if heartbeat else None,
+                "last_success_at": state.get("scheduler_last_success_at"),
+                "last_error": last_error,
+                "poll_seconds": self.settings.reminder_poll_seconds,
+                "state_read_error": read_error,
+            },
         )
 
     async def _smtp(self, organization_id: uuid.UUID) -> ComponentHealth:

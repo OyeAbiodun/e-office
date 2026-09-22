@@ -19,12 +19,13 @@ from meetinghq_api.core.logging import configure_logging
 from meetinghq_api.core.middleware import (
     ApiEnvelopeMiddleware,
     MutationAuditMiddleware,
+    RequestTimingMiddleware,
     SecurityHeadersMiddleware,
     install_error_handlers,
 )
 from meetinghq_api.infrastructure.database import engine, session_factory
 from meetinghq_api.infrastructure.redis import redis_client
-from meetinghq_api.infrastructure.runtime_health import runtime_health
+from meetinghq_api.infrastructure.runtime_health import SharedRuntimeHealth
 from meetinghq_api.modules.integrations.service import IntegrationService
 from meetinghq_api.modules.leave.service import LeaveService
 from meetinghq_api.modules.mail.service import MailService
@@ -38,24 +39,35 @@ logger = structlog.get_logger(__name__)
 async def reminder_worker(stop: asyncio.Event) -> None:
     """Deliver due reminders until application shutdown."""
     settings = get_settings()
-    runtime_health.worker_started()
+    runtime_health = SharedRuntimeHealth(redis_client)
+    await runtime_health.started()
     while not stop.is_set():
         try:
             async with session_factory() as session:
                 service = NotificationService(session, settings)
-                delivered = await service.process_due_invitations()
-                delivered += await service.process_due_reminders()
-                delivered += await service.process_due_browser_pushes()
-                delivered += await TaskService(session, service).process_due_reminders()
-                delivered += await MailService(session, settings).process_due_deliveries()
-                delivered += await LeaveService(session).process_scheduled_policies()
-                delivered += await ReportingService(session, service).process_scheduled_reports()
+                counts = {
+                    "meeting_invitations": await service.process_due_invitations(),
+                    "meeting_reminders": await service.process_due_reminders(),
+                    "browser_pushes": await service.process_due_browser_pushes(),
+                    "task_reminders": await TaskService(session, service).process_due_reminders(),
+                    "mail_deliveries": await MailService(
+                        session, settings
+                    ).process_due_deliveries(),
+                    "leave_policies": await LeaveService(session).process_scheduled_policies(),
+                    "scheduled_reports": await ReportingService(
+                        session, service
+                    ).process_scheduled_reports(),
+                }
                 await session.commit()
+            delivered = sum(counts.values())
             if delivered:
                 await logger.ainfo("meeting_reminders_delivered", count=delivered)
-            runtime_health.worker_heartbeat()
+            await runtime_health.succeeded(counts)
         except Exception as error:
-            runtime_health.worker_failed(error)
+            try:
+                await runtime_health.failed(error)
+            except Exception:
+                await logger.aexception("embedded_worker_health_publish_failed")
             await logger.aexception("meeting_reminder_worker_failed")
         try:
             await asyncio.wait_for(stop.wait(), timeout=settings.reminder_poll_seconds)
@@ -123,6 +135,7 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(ApiEnvelopeMiddleware)
     application.add_middleware(MutationAuditMiddleware)
+    application.add_middleware(RequestTimingMiddleware)
     install_error_handlers(application)
     application.include_router(v1_router, prefix="/api/v1")
     return application

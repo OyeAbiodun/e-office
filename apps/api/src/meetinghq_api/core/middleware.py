@@ -1,6 +1,7 @@
 """HTTP exception translation and security middleware."""
 
 import json
+import time
 import uuid
 from typing import Any, cast
 
@@ -12,6 +13,26 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from meetinghq_api.core.errors import ApplicationError
 
 logger = structlog.get_logger(__name__)
+
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """Emit bounded request latency diagnostics without logging payloads."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        started = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        response.headers["Server-Timing"] = f"app;dur={duration_ms}"
+        if request.url.path.startswith("/api/"):
+            await logger.ainfo(
+                "http_request_completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+                request_id=request.headers.get("x-request-id"),
+            )
+        return response
 
 
 class MutationAuditMiddleware(BaseHTTPMiddleware):
