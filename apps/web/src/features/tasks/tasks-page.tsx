@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 
@@ -1277,6 +1278,26 @@ function TaskDetail({
   return (
     <Dialog title={`Task #${task.sequence}`} onClose={onClose}>
       <div className="space-y-5">
+        {detail.isLoading && (
+          <p className="rounded-xl bg-muted p-4 text-sm text-muted-foreground">
+            Loading task details…
+          </p>
+        )}
+        {detail.isError && (
+          <div
+            className="rounded-xl border border-destructive/30 p-4 text-sm"
+            role="alert"
+          >
+            <p className="font-semibold">Task details could not be loaded.</p>
+            <button
+              className="mt-2 font-semibold text-primary"
+              onClick={() => void detail.refetch()}
+              type="button"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <div>
           <h2 className="text-xl font-semibold">{task.title}</h2>
           <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
@@ -1470,6 +1491,15 @@ function TaskDetail({
             </button>
           </form>
         </section>
+        <div className="flex justify-end border-t pt-4">
+          <button
+            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </Dialog>
   )
@@ -1483,14 +1513,62 @@ function Dialog({
   children: ReactNode
   onClose: () => void
 }) {
+  const dialog = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const container = dialog.current
+    container?.focus()
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab' || !container) return
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hasAttribute('disabled'))
+      if (!focusable.length) return
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', keydown)
+    return () => {
+      document.removeEventListener('keydown', keydown)
+      previous?.focus()
+    }
+  }, [])
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-5"
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
     >
-      <div className="max-h-[92vh] w-full max-w-xl overflow-auto rounded-t-2xl bg-card p-5 shadow-2xl sm:rounded-2xl">
+      <div
+        className="max-h-[92vh] w-full max-w-xl overflow-auto rounded-t-2xl bg-card p-5 shadow-2xl outline-none sm:rounded-2xl"
+        ref={dialog}
+        tabIndex={-1}
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button

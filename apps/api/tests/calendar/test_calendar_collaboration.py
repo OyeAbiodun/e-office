@@ -113,3 +113,86 @@ async def test_ics_export_and_import_round_trip(
     )
     assert imported.status_code == 200
     assert imported.json()["data"][0]["title"] == "Architecture review"
+
+
+async def test_personal_calendar_is_private_until_explicitly_shared(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    workspaces = await organization_client.get("/api/v1/workspaces", headers=admin_headers)
+    roles = await organization_client.get("/api/v1/roles", headers=admin_headers)
+    employee_role = next(row for row in roles.json()["data"] if row["name"] == "Employee")
+    created_user = await organization_client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "first_name": "Calendar",
+            "last_name": "Participant",
+            "email": "calendar.participant@northstar.example",
+            "workspace_id": workspaces.json()["data"][0]["id"],
+            "role_ids": [employee_role["id"]],
+            "temporary_password": "CalendarAcceptance!123",
+            "send_welcome_email": False,
+        },
+    )
+    assert created_user.status_code == 201, created_user.text
+    participant_id = created_user.json()["data"]["id"]
+    login = await organization_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "calendar.participant@northstar.example",
+            "password": "CalendarAcceptance!123",
+        },
+    )
+    assert login.status_code == 200, login.text
+    participant_headers = {"Authorization": f"Bearer {login.json()['data']['access_token']}"}
+
+    personal = await organization_client.post(
+        "/api/v1/calendars",
+        headers=admin_headers,
+        json={
+            "name": "Admin private calendar",
+            "type": "personal",
+            "timezone": "America/Chicago",
+            "visibility": "private",
+        },
+    )
+    assert personal.status_code == 201, personal.text
+    calendar_id = personal.json()["data"]["id"]
+    event = await organization_client.post(
+        f"/api/v1/calendars/{calendar_id}/events",
+        headers=admin_headers,
+        json={
+            "title": "Private planning event",
+            "start_datetime": "2026-10-08T09:00:00Z",
+            "end_datetime": "2026-10-08T10:00:00Z",
+            "timezone": "UTC",
+        },
+    )
+    assert event.status_code == 201, event.text
+
+    before_share = await organization_client.get("/api/v1/calendars", headers=participant_headers)
+    assert calendar_id not in {row["id"] for row in before_share.json()["data"]}
+    guessed = await organization_client.get(
+        f"/api/v1/calendars/{calendar_id}/events", headers=participant_headers
+    )
+    assert guessed.status_code == 404
+
+    shared = await organization_client.post(
+        f"/api/v1/calendars/{calendar_id}/shares",
+        headers=admin_headers,
+        json={"user_id": participant_id, "permission": "read"},
+    )
+    assert shared.status_code == 201, shared.text
+    after_share = await organization_client.get("/api/v1/calendars", headers=participant_headers)
+    assert calendar_id in {row["id"] for row in after_share.json()["data"]}
+    visible_events = await organization_client.get(
+        f"/api/v1/calendars/{calendar_id}/events", headers=participant_headers
+    )
+    assert visible_events.status_code == 200, visible_events.text
+    assert [row["title"] for row in visible_events.json()["data"]] == ["Private planning event"]
+    read_only_update = await organization_client.patch(
+        f"/api/v1/events/{event.json()['data']['id']}",
+        headers=participant_headers,
+        json={"title": "Unauthorized edit"},
+    )
+    assert read_only_update.status_code == 404

@@ -736,13 +736,15 @@ function Overview({
             .filter((task) => task.is_overdue || task.status === 'blocked')
             .slice(0, 5)
             .map((task) => (
-              <div
+              <Link
                 key={task.id}
                 className="flex justify-between rounded-xl bg-muted/50 p-3"
+                search={{ task: task.id } as never}
+                to="/tasks"
               >
                 <span>{task.title}</span>
                 <Badge value={task.is_overdue ? 'overdue' : task.status} />
-              </div>
+              </Link>
             ))}
           {!tasks.some(
             (task) => task.is_overdue || task.status === 'blocked',
@@ -807,7 +809,13 @@ function TaskSection({
             className="grid gap-2 rounded-xl border p-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"
           >
             <div>
-              <strong>{task.title}</strong>
+              <Link
+                className="font-semibold text-primary hover:underline"
+                search={{ task: task.id } as never}
+                to="/tasks"
+              >
+                {task.title}
+              </Link>
               <p className="text-sm text-muted-foreground">
                 {task.assignee_name ?? 'Unassigned'} · Due{' '}
                 {task.due_date ?? 'not set'}

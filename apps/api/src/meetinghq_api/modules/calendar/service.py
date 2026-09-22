@@ -93,6 +93,33 @@ class CalendarService:
             raise NotFoundError("Calendar not found")
         return calendar
 
+    async def accessible(
+        self,
+        organization_id: uuid.UUID,
+        calendar_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        write: bool = False,
+    ) -> Calendar:
+        calendar = await self.repository.accessible(
+            organization_id, calendar_id, user_id, write=write
+        )
+        if calendar is None:
+            raise NotFoundError("Calendar not found")
+        return calendar
+
+    async def accessible_event(
+        self,
+        organization_id: uuid.UUID,
+        event_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        write: bool = False,
+    ) -> tuple[Calendar, CalendarEvent]:
+        calendar, event = await self.get_event(organization_id, event_id)
+        await self.accessible(organization_id, calendar.id, user_id, write=write)
+        return calendar, event
+
     async def create(
         self, organization_id: uuid.UUID, body: CalendarCreate, actor_id: uuid.UUID
     ) -> Calendar:

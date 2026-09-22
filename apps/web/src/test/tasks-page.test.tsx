@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { TasksPage } from '@/features/tasks/tasks-page'
 
@@ -292,4 +292,26 @@ test('keeps tabs in URL state and opens a deep-linked task outside the current l
     'aria-selected',
     'true',
   )
+})
+
+test('opens a listed task with focus management and an explicit cancel path', async () => {
+  renderPage()
+  await screen.findByText('Prepare the customer review')
+  fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
+  const taskButton = await screen.findByRole('button', {
+    name: /Prepare the customer review/,
+  })
+  taskButton.focus()
+  fireEvent.click(taskButton)
+
+  const dialog = await screen.findByRole('dialog', { name: 'Task #12' })
+  expect(dialog).toContainElement(document.activeElement as HTMLElement)
+  expect(window.location.search).toContain('task=task-1')
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  expect(
+    screen.queryByRole('dialog', { name: 'Task #12' }),
+  ).not.toBeInTheDocument()
+  expect(window.location.search).not.toContain('task=')
+  expect(taskButton).toHaveFocus()
 })

@@ -13,6 +13,7 @@ from meetinghq_api.modules.calendar.models import (
     BusyBlock,
     Calendar,
     CalendarEvent,
+    CalendarShare,
     EventStatus,
     Resource,
     ResourceReservation,
@@ -46,10 +47,45 @@ class CalendarRepository(SqlAlchemyRepository[Calendar]):
                     or_(
                         Calendar.owner_id == user_id,
                         Calendar.type != "personal",
+                        Calendar.id.in_(
+                            select(CalendarShare.calendar_id).where(
+                                CalendarShare.user_id == user_id
+                            )
+                        ),
                     ),
                 )
                 .order_by(Calendar.is_default.desc(), Calendar.name)
             )
+        )
+
+    async def accessible(
+        self,
+        organization_id: uuid.UUID,
+        calendar_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        write: bool = False,
+    ) -> Calendar | None:
+        share = select(CalendarShare.calendar_id).where(
+            CalendarShare.calendar_id == calendar_id,
+            CalendarShare.user_id == user_id,
+        )
+        if write:
+            share = share.where(CalendarShare.permission.in_(("write", "manage")))
+        return cast(
+            Calendar | None,
+            await self.scalar(
+                select(Calendar).where(
+                    Calendar.id == calendar_id,
+                    Calendar.organization_id == organization_id,
+                    Calendar.deleted_at.is_(None),
+                    or_(
+                        Calendar.owner_id == user_id,
+                        Calendar.type != "personal",
+                        Calendar.id.in_(share),
+                    ),
+                )
+            ),
         )
 
 

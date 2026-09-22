@@ -85,7 +85,7 @@ async def get_calendar(
     user: Annotated[User, require_permission(Permissions.CALENDAR_READ)],
 ) -> CalendarResponse:
     return CalendarResponse.model_validate(
-        await CalendarService(session).get(user.organization_id, calendar_id)
+        await CalendarService(session).accessible(user.organization_id, calendar_id, user.id)
     )
 
 
@@ -96,8 +96,10 @@ async def update_calendar(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_WRITE)],
 ) -> CalendarResponse:
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
     return CalendarResponse.model_validate(
-        await CalendarService(session).update(user.organization_id, calendar_id, body, user.id)
+        await service.update(user.organization_id, calendar_id, body, user.id)
     )
 
 
@@ -107,7 +109,9 @@ async def delete_calendar(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_MANAGE)],
 ) -> OperationResponse:
-    await CalendarService(session).delete(user.organization_id, calendar_id, user.id)
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
+    await service.delete(user.organization_id, calendar_id, user.id)
     return OperationResponse(message="Calendar deleted")
 
 
@@ -119,9 +123,9 @@ async def list_events(
     start: DateQuery = None,
     end: DateQuery = None,
 ) -> list[EventResponse]:
-    events = await CalendarService(session).list_events(
-        user.organization_id, calendar_id, start, end
-    )
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id)
+    events = await service.list_events(user.organization_id, calendar_id, start, end)
     return [EventResponse.model_validate(item) for item in events]
 
 
@@ -132,10 +136,10 @@ async def create_event(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_WRITE)],
 ) -> EventResponse:
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
     return EventResponse.model_validate(
-        await CalendarService(session).create_event(
-            user.organization_id, calendar_id, body, user.id
-        )
+        await service.create_event(user.organization_id, calendar_id, body, user.id)
     )
 
 
@@ -146,8 +150,10 @@ async def update_event(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_WRITE)],
 ) -> EventResponse:
+    service = CalendarService(session)
+    await service.accessible_event(user.organization_id, event_id, user.id, write=True)
     return EventResponse.model_validate(
-        await CalendarService(session).update_event(user.organization_id, event_id, body, user.id)
+        await service.update_event(user.organization_id, event_id, body, user.id)
     )
 
 
@@ -157,7 +163,9 @@ async def delete_event(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_WRITE)],
 ) -> OperationResponse:
-    await CalendarService(session).delete_event(user.organization_id, event_id, user.id)
+    service = CalendarService(session)
+    await service.accessible_event(user.organization_id, event_id, user.id, write=True)
+    await service.delete_event(user.organization_id, event_id, user.id)
     return OperationResponse(message="Event deleted")
 
 
@@ -167,7 +175,9 @@ async def get_recurrence(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_READ)],
 ) -> RecurrenceRuleResponse | None:
-    rule = await CalendarService(session).recurrence(user.organization_id, event_id)
+    service = CalendarService(session)
+    await service.accessible_event(user.organization_id, event_id, user.id)
+    rule = await service.recurrence(user.organization_id, event_id)
     return RecurrenceRuleResponse.model_validate(rule) if rule else None
 
 
@@ -178,8 +188,10 @@ async def set_recurrence(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_WRITE)],
 ) -> RecurrenceRuleResponse:
+    service = CalendarService(session)
+    await service.accessible_event(user.organization_id, event_id, user.id, write=True)
     return RecurrenceRuleResponse.model_validate(
-        await CalendarService(session).set_recurrence(user.organization_id, event_id, body, user.id)
+        await service.set_recurrence(user.organization_id, event_id, body, user.id)
     )
 
 
@@ -194,10 +206,10 @@ async def create_recurrence_exception(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_WRITE)],
 ) -> EventResponse:
+    service = CalendarService(session)
+    await service.accessible_event(user.organization_id, event_id, user.id, write=True)
     return EventResponse.model_validate(
-        await CalendarService(session).create_exception(
-            user.organization_id, event_id, body, user.id
-        )
+        await service.create_exception(user.organization_id, event_id, body, user.id)
     )
 
 
@@ -207,9 +219,11 @@ async def list_calendar_shares(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_READ)],
 ) -> list[CalendarShareResponse]:
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id)
     return [
         CalendarShareResponse.model_validate(item)
-        for item in await CalendarService(session).list_shares(user.organization_id, calendar_id)
+        for item in await service.list_shares(user.organization_id, calendar_id)
     ]
 
 
@@ -224,8 +238,10 @@ async def share_calendar(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_MANAGE)],
 ) -> CalendarShareResponse:
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
     return CalendarShareResponse.model_validate(
-        await CalendarService(session).share(
+        await service.share(
             user.organization_id,
             calendar_id,
             body.user_id,
@@ -242,9 +258,9 @@ async def revoke_calendar_share(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_MANAGE)],
 ) -> OperationResponse:
-    await CalendarService(session).revoke_share(
-        user.organization_id, calendar_id, share_id, user.id
-    )
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
+    await service.revoke_share(user.organization_id, calendar_id, share_id, user.id)
     return OperationResponse(message="Calendar access revoked")
 
 
@@ -280,7 +296,9 @@ async def export_calendar(
     session: Session,
     user: Annotated[User, require_permission(Permissions.CALENDAR_READ)],
 ) -> Response:
-    payload = await CalendarService(session).export_ics(user.organization_id, calendar_id)
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id)
+    payload = await service.export_ics(user.organization_id, calendar_id)
     return Response(
         payload,
         media_type="text/calendar",
@@ -299,11 +317,11 @@ async def import_calendar(
     file: IcsUpload,
 ) -> list[EventResponse]:
     payload = (await file.read()).decode("utf-8-sig")
+    service = CalendarService(session)
+    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
     return [
         EventResponse.model_validate(item)
-        for item in await CalendarService(session).import_ics(
-            user.organization_id, calendar_id, payload, user.id
-        )
+        for item in await service.import_ics(user.organization_id, calendar_id, payload, user.id)
     ]
 
 

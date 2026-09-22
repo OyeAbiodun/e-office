@@ -57,7 +57,7 @@ async def _admin_id(client: AsyncClient) -> str:
 
 
 async def _foundation(
-    client: AsyncClient, headers: dict[str, str]
+    client: AsyncClient, headers: dict[str, str], *, allocated_days: str = "20"
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     current_year = date.today().year
     leave_type = (
@@ -92,12 +92,40 @@ async def _foundation(
             "employee_id": employee_id,
             "leave_type_id": leave_type["id"],
             "leave_period_id": period["id"],
-            "allocated_days": "20",
+            "allocated_days": allocated_days,
             "reason": "Annual allocation",
         },
     )
     assert entitlement_response.status_code == 201, entitlement_response.text
     return leave_type, period, entitlement_response.json()["data"]
+
+
+async def test_fifteen_day_entitlement_accepts_three_working_day_request(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    leave_type, _, _ = await _foundation(organization_client, admin_headers, allocated_days="15")
+    start = date.today() + timedelta(days=14)
+    while start.weekday() != 0:
+        start += timedelta(days=1)
+    end = start + timedelta(days=2)
+
+    response = await organization_client.get(
+        "/api/v1/leave/my/eligibility",
+        headers=admin_headers,
+        params={
+            "leave_type_id": leave_type["id"],
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {
+        "eligible": True,
+        "code": None,
+        "message": "You are eligible to request leave for these dates.",
+        "available_days": "15.00",
+        "requested_days": "3",
+    }
 
 
 async def _employee_identity(
@@ -431,16 +459,21 @@ async def test_employee_manager_lifecycle_calendar_notifications_and_summaries(
     )
     assert entitlement.status_code == 201
     factory = organization_client._meetinghq_session_factory  # type: ignore[attr-defined]
+    request_start = date.today() + timedelta(days=14)
+    while request_start.weekday() != 0:
+        request_start += timedelta(days=1)
+    request_end = request_start + timedelta(days=1)
     draft = await organization_client.post(
         "/api/v1/leave/requests",
         headers=employee_headers,
         json={
             "leave_type_id": leave_type["id"],
-            "start_date": "2026-09-21",
-            "end_date": "2026-09-22",
+            "start_date": request_start.isoformat(),
+            "end_date": request_end.isoformat(),
             "reason": "Private family matter",
         },
     )
+    assert draft.status_code == 201, draft.text
     request_id = draft.json()["data"]["id"]
     assert (
         await organization_client.post(

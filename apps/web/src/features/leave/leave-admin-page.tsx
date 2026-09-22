@@ -107,6 +107,46 @@ export function LeaveAdminPage() {
         eyebrow="People administration"
         title="Leave Administration"
       />
+      {(permissions.has('leave.types.manage') ||
+        permissions.has('leave.balances.adjust')) && (
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <h2 className="font-semibold">Leave setup sequence</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Complete these separate configuration steps before employees submit
+            requests.
+          </p>
+          <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              ['types', '1', 'Define leave types', 'Policy and eligibility'],
+              [
+                'periods',
+                '2',
+                'Create and open a period',
+                'Request date window',
+              ],
+              ['balances', '3', 'Allocate entitlements', 'Employee balance'],
+            ].map(([target, step, title, detail]) => (
+              <li key={target}>
+                <button
+                  className="flex w-full items-start gap-3 rounded-xl bg-muted/45 p-3 text-left hover:bg-muted"
+                  onClick={() => setSection(target as AdminSection)}
+                  type="button"
+                >
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                    {step}
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold">{title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {detail}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       <nav
         aria-label="Leave administration"
         className="flex gap-1 overflow-x-auto rounded-2xl border bg-card p-2 shadow-sm"

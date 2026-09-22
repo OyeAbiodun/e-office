@@ -1865,10 +1865,55 @@ class LeaveService:
             )
         )
         if period is None:
+            periods = list(
+                (
+                    await self.session.scalars(
+                        select(LeavePeriod)
+                        .where(LeavePeriod.organization_id == user.organization_id)
+                        .order_by(LeavePeriod.start_date)
+                    )
+                ).all()
+            )
+            if not periods:
+                guidance = (
+                    "No leave period has been configured. An authorized leave "
+                    "administrator must create and open a period before requests can be made."
+                )
+            else:
+                covering = next(
+                    (
+                        item
+                        for item in periods
+                        if item.start_date <= start_date and item.end_date >= end_date
+                    ),
+                    None,
+                )
+                if covering is not None:
+                    guidance = (
+                        f"{covering.name} covers {covering.start_date.isoformat()} to "
+                        f"{covering.end_date.isoformat()} but its status is "
+                        f"{covering.status}. An authorized leave administrator must open "
+                        "the period before requests can be made."
+                    )
+                else:
+                    nearest = min(
+                        periods,
+                        key=lambda item: min(
+                            abs((start_date - item.end_date).days),
+                            abs((item.start_date - end_date).days),
+                        ),
+                    )
+                    guidance = (
+                        "The selected dates are outside an available leave period. "
+                        f"The nearest configured period is {nearest.name}, from "
+                        f"{nearest.start_date.isoformat()} to {nearest.end_date.isoformat()} "
+                        f"(status: {nearest.status}). Choose dates within an open period "
+                        "or contact a leave administrator."
+                    )
             return LeaveEligibilityResponse(
                 eligible=False,
                 code="no_applicable_period",
-                message="No open leave period covers the selected dates.",
+                message=guidance,
             )
         if (
             kind.eligible_employment_types
@@ -1912,7 +1957,12 @@ class LeaveService:
             return LeaveEligibilityResponse(
                 eligible=False,
                 code="no_entitlement",
-                message="No entitlement has been allocated for this leave type and period.",
+                message=(
+                    f"No entitlement has been allocated for {kind.name} in {period.name} "
+                    f"({period.start_date.isoformat()} to {period.end_date.isoformat()}). "
+                    "An authorized leave administrator must allocate entitlement before "
+                    "you can submit this request."
+                ),
             )
         requested = (await self.working_days(user, start_date, end_date, False)).chargeable_days
         balance = await self.balance(user, entitlement.id)
@@ -1920,7 +1970,11 @@ class LeaveService:
             return LeaveEligibilityResponse(
                 eligible=False,
                 code="insufficient_balance",
-                message="Your available leave balance is insufficient for these dates.",
+                message=(
+                    f"This request needs {requested} day(s), but only "
+                    f"{balance.available_after_pending} day(s) are available. "
+                    "Choose fewer dates or contact a leave administrator."
+                ),
                 available_days=balance.available_after_pending,
                 requested_days=requested,
             )

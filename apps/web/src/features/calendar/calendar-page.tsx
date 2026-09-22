@@ -101,7 +101,12 @@ function EventDialog({
   event,
   onClose,
 }: {
-  calendars: Array<{ id: string; name: string; timezone: string }>
+  calendars: Array<{
+    id: string
+    name: string
+    timezone: string
+    type: string
+  }>
   categories: EventCategory[]
   resources: Resource[]
   initialDate: Date
@@ -131,6 +136,7 @@ function EventDialog({
     event?.recurrence_rule_id ? 'weekly' : 'none',
   )
   const [recurrenceEnd, setRecurrenceEnd] = useState('')
+  const selectedCalendar = calendars.find((item) => item.id === calendarId)
   const create = useMutation({
     mutationFn: () =>
       event
@@ -225,8 +231,10 @@ function EventDialog({
             </h2>
             <p className="text-xs text-muted-foreground">
               {event
-                ? 'Update this shared calendar event.'
-                : 'Add it to a shared calendar.'}
+                ? 'Update this calendar event for everyone who can access its calendar.'
+                : selectedCalendar?.type === 'personal'
+                  ? 'Personal events remain private unless you explicitly share the calendar.'
+                  : 'Shared-calendar members will see this event. Use Meetings when participants need invitations.'}
             </p>
           </div>
           <button
@@ -358,6 +366,14 @@ function EventDialog({
           )}
         </div>
         <footer className="flex justify-end gap-2 border-t p-4">
+          {!event && (
+            <Link
+              className="mr-auto rounded-xl border px-4 py-2 text-sm font-semibold"
+              to="/meetings/new"
+            >
+              Create meeting with participants
+            </Link>
+          )}
           {event && (
             <button
               className="mr-auto rounded-xl px-4 py-2 text-sm text-red-500 hover:bg-red-500/10"

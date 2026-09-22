@@ -496,9 +496,24 @@ async def test_manager_assignment_is_limited_to_active_direct_reports(
     assert unrelated_attachment.status_code == 404
     notifications = await organization_client.get("/api/v1/notifications", headers=employee_headers)
     assert notifications.status_code == 200, notifications.text
-    assert any(
+    notification_data = notifications.json()["data"]
+    assignment = next(
+        item
+        for item in notification_data["notifications"]
+        if item["notification_type"] == "task.assigned"
+    )
+    assert notification_data["unread"] >= 1
+    assert assignment["action_url"] == f"/tasks?task={assigned.json()['data']['id']}"
+    assert assignment["notification_metadata"]["task_id"] == assigned.json()["data"]["id"]
+
+    manager_notifications = await organization_client.get(
+        "/api/v1/notifications", headers=manager_headers
+    )
+    assert manager_notifications.status_code == 200, manager_notifications.text
+    assert not any(
         item["notification_type"] == "task.assigned"
-        for item in notifications.json()["data"]["notifications"]
+        and item["notification_metadata"].get("task_id") == assigned.json()["data"]["id"]
+        for item in manager_notifications.json()["data"]["notifications"]
     )
 
 
