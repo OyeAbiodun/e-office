@@ -30,6 +30,7 @@ class HelpArticle(Base):
     title: Mapped[str] = mapped_column(String(240), index=True)
     summary: Mapped[str] = mapped_column(String(500))
     category: Mapped[str] = mapped_column(String(120), index=True)
+    required_permission: Mapped[str | None] = mapped_column(String(120), index=True)
     content: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, default=1)
     position: Mapped[int] = mapped_column(Integer, default=0)

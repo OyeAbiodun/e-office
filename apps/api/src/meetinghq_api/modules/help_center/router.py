@@ -35,6 +35,10 @@ AppSettings = Annotated[Settings, Depends(get_settings)]
 AdminUser = Annotated[User, require_permission(Permissions.ADMIN_MANAGE)]
 
 
+def user_permissions(user: User) -> set[str]:
+    return {permission.name for role in user.roles for permission in role.permissions}
+
+
 @router.get("/articles", response_model=list[HelpArticleResponse])
 async def articles(
     session: Session,
@@ -48,7 +52,11 @@ async def articles(
     return [
         HelpArticleResponse.model_validate(row)
         for row in await HelpCenterService(session).list(
-            user.organization_id, search, category, include_unpublished
+            user.organization_id,
+            search,
+            category,
+            include_unpublished,
+            user_permissions(user),
         )
     ]
 
@@ -56,7 +64,7 @@ async def articles(
 @router.get("/context/{context_id}", response_model=HelpContextResponse)
 async def context_help(context_id: str, session: Session, user: CurrentUser) -> HelpContextResponse:
     article, tour = await HelpCenterService(session).resolve_context(
-        user.organization_id, context_id, user.id
+        user.organization_id, context_id, user.id, user_permissions(user)
     )
     return HelpContextResponse(
         context_id=context_id,
@@ -69,7 +77,9 @@ async def context_help(context_id: str, session: Session, user: CurrentUser) -> 
 async def favorites(session: Session, user: CurrentUser) -> list[HelpArticleResponse]:
     return [
         HelpArticleResponse.model_validate(row)
-        for row in await HelpCenterService(session).favorites(user.organization_id, user.id)
+        for row in await HelpCenterService(session).favorites(
+            user.organization_id, user.id, user_permissions(user)
+        )
     ]
 
 
@@ -77,7 +87,9 @@ async def favorites(session: Session, user: CurrentUser) -> list[HelpArticleResp
 async def recent(session: Session, user: CurrentUser) -> list[HelpArticleResponse]:
     return [
         HelpArticleResponse.model_validate(row)
-        for row in await HelpCenterService(session).recent(user.organization_id, user.id)
+        for row in await HelpCenterService(session).recent(
+            user.organization_id, user.id, user_permissions(user)
+        )
     ]
 
 
@@ -89,7 +101,12 @@ async def analytics(session: Session, user: AdminUser) -> HelpAnalyticsResponse:
 @router.get("/articles/{slug}", response_model=HelpArticleResponse)
 async def article(slug: str, session: Session, user: CurrentUser) -> HelpArticleResponse:
     return HelpArticleResponse.model_validate(
-        await HelpCenterService(session).get(user.organization_id, slug, user.id)
+        await HelpCenterService(session).get(
+            user.organization_id,
+            slug,
+            user.id,
+            permissions=user_permissions(user),
+        )
     )
 
 
@@ -122,7 +139,7 @@ async def revise_article(
 @router.post("/articles/{article_id}/favorite")
 async def favorite(article_id: uuid.UUID, session: Session, user: CurrentUser) -> dict[str, bool]:
     value = await HelpCenterService(session).toggle_favorite(
-        user.organization_id, article_id, user.id
+        user.organization_id, article_id, user.id, user_permissions(user)
     )
     return {"favorite": value}
 
@@ -131,6 +148,9 @@ async def favorite(article_id: uuid.UUID, session: Session, user: CurrentUser) -
 async def attachments(
     article_id: uuid.UUID, session: Session, user: CurrentUser
 ) -> list[HelpAttachmentResponse]:
+    await HelpCenterService(session)._tenant_article(
+        user.organization_id, article_id, user_permissions(user)
+    )
     rows = (
         await session.scalars(
             select(HelpAttachment).where(

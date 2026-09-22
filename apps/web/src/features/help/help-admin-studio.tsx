@@ -14,6 +14,7 @@ const emptyDraft: HelpArticleDraft = {
   title: '',
   summary: '',
   category: 'User Handbook',
+  required_permission: null,
   content:
     '# New guide\n\n## What this feature does\n\nDescribe the outcome.\n\n## How to use it\n\n1. Add the first step.',
   workflow_status: 'draft',
@@ -65,6 +66,7 @@ export function HelpAdminStudio() {
       title: selected.title,
       summary: selected.summary,
       category: selected.category,
+      required_permission: selected.required_permission,
       content: selected.content,
       workflow_status: selected.workflow_status,
       search_weight: selected.search_weight,
@@ -257,6 +259,22 @@ export function HelpAdminStudio() {
                   setDraft((current) => ({ ...current, category: value }))
                 }
               />
+              <label className="grid gap-2 text-sm font-medium">
+                Audience
+                <select
+                  className="h-11 rounded-xl border bg-background px-3"
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      required_permission: event.target.value || null,
+                    }))
+                  }
+                  value={draft.required_permission ?? ''}
+                >
+                  <option value="">All signed-in users</option>
+                  <option value="admin.manage">Administrators</option>
+                </select>
+              </label>
               <label className="grid gap-2 text-sm font-medium">
                 Workflow
                 <select

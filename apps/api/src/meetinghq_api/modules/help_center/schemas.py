@@ -14,6 +14,7 @@ class HelpArticleResponse(BaseModel):
     title: str
     summary: str
     category: str
+    required_permission: str | None
     content: str
     version: int
     position: int
@@ -32,6 +33,7 @@ class HelpArticleInput(BaseModel):
     title: str = Field(min_length=2, max_length=240)
     summary: str = Field(min_length=2, max_length=500)
     category: str = Field(min_length=2, max_length=120)
+    required_permission: str | None = Field(default=None, max_length=120)
     content: str = Field(min_length=2)
     version: int = Field(default=1, ge=1)
     position: int = Field(default=0, ge=0)
@@ -48,6 +50,7 @@ class HelpArticleUpdate(BaseModel):
     title: str = Field(min_length=2, max_length=240)
     summary: str = Field(min_length=2, max_length=500)
     category: str = Field(min_length=2, max_length=120)
+    required_permission: str | None = Field(default=None, max_length=120)
     content: str = Field(min_length=2)
     workflow_status: Literal["draft", "review", "published", "archived"] = "draft"
     search_weight: int = Field(default=100, ge=0, le=1000)

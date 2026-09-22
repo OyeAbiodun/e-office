@@ -6,6 +6,7 @@ export interface HelpArticle {
   title: string
   summary: string
   category: string
+  required_permission: string | null
   content: string
   version: number
   position: number
@@ -57,6 +58,7 @@ export interface HelpArticleDraft {
   title: string
   summary: string
   category: string
+  required_permission: string | null
   content: string
   workflow_status: HelpArticle['workflow_status']
   search_weight: number

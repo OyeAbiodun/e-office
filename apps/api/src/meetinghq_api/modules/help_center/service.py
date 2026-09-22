@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Integer, String, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.help_center.baseline_content import baseline_content
@@ -104,6 +105,14 @@ BASELINE_KEYWORDS: dict[str, list[str]] = {
     "troubleshooting": ["cannot log in", "missing menu", "email not received"],
 }
 
+ADMIN_HELP_CATEGORIES = {"Administrator Handbook", "Deployment Guides", "API Guides"}
+
+
+def baseline_permission(slug: str, category: str) -> str | None:
+    if category in ADMIN_HELP_CATEGORIES or slug == "system-admin-learning-path":
+        return "admin.manage"
+    return None
+
 
 class HelpCenterService:
     def __init__(self, session: AsyncSession) -> None:
@@ -123,6 +132,7 @@ class HelpCenterService:
             if slug in existing:
                 article = existing[slug]
                 if article.updated_by is None:
+                    article.required_permission = baseline_permission(slug, category)
                     article.context_ids = context_ids
                     article.keywords = BASELINE_KEYWORDS.get(slug, [])
                     if not article.related_slugs:
@@ -140,6 +150,7 @@ class HelpCenterService:
                     title=title,
                     summary=summary,
                     category=category,
+                    required_permission=baseline_permission(slug, category),
                     position=position,
                     content=content,
                     published=True,
@@ -158,11 +169,13 @@ class HelpCenterService:
         search: str | None = None,
         category: str | None = None,
         include_unpublished: bool = False,
+        permissions: set[str] | None = None,
     ) -> list[HelpArticle]:
         await self.ensure_defaults(organization_id)
         query = select(HelpArticle).where(HelpArticle.organization_id == organization_id)
         if not include_unpublished:
             query = query.where(HelpArticle.workflow_status == "published")
+            query = query.where(self._visibility(permissions or set()))
         if search:
             term = f"%{search.strip()}%"
             query = query.where(
@@ -198,6 +211,7 @@ class HelpCenterService:
         slug: str,
         user_id: uuid.UUID | None = None,
         include_unpublished: bool = False,
+        permissions: set[str] | None = None,
     ) -> HelpArticle:
         await self.ensure_defaults(organization_id)
         query = (
@@ -210,11 +224,12 @@ class HelpCenterService:
         )
         if not include_unpublished:
             query = query.where(HelpArticle.workflow_status == "published")
+            query = query.where(self._visibility(permissions or set()))
         article = await self.session.scalar(query)
         if article is None:
             raise NotFoundError("Help article not found")
         if user_id:
-            await self.record_view(organization_id, article.id, user_id)
+            await self.record_view(organization_id, article.id, user_id, permissions or set())
         return article
 
     async def versions(self, organization_id: uuid.UUID, slug: str) -> builtins.list[HelpArticle]:
@@ -282,9 +297,13 @@ class HelpCenterService:
         return article
 
     async def resolve_context(
-        self, organization_id: uuid.UUID, context_id: str, user_id: uuid.UUID
+        self,
+        organization_id: uuid.UUID,
+        context_id: str,
+        user_id: uuid.UUID,
+        permissions: set[str],
     ) -> tuple[HelpArticle | None, ProductTour | None]:
-        articles = await self.list(organization_id)
+        articles = await self.list(organization_id, permissions=permissions)
         candidates = [
             article
             for article in articles
@@ -296,7 +315,7 @@ class HelpCenterService:
         )
         article = candidates[0] if candidates else None
         if article:
-            await self.record_view(organization_id, article.id, user_id)
+            await self.record_view(organization_id, article.id, user_id, permissions)
         tour = await self.session.scalar(
             select(ProductTour)
             .where(
@@ -309,16 +328,20 @@ class HelpCenterService:
         return article, tour
 
     async def toggle_favorite(
-        self, organization_id: uuid.UUID, article_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        organization_id: uuid.UUID,
+        article_id: uuid.UUID,
+        user_id: uuid.UUID,
+        permissions: set[str],
     ) -> bool:
-        article = await self._tenant_article(organization_id, article_id)
+        article = await self._tenant_article(organization_id, article_id, permissions)
         interaction = await self._interaction(article, user_id)
         interaction.favorite = not interaction.favorite
         await self.session.flush()
         return interaction.favorite
 
     async def favorites(
-        self, organization_id: uuid.UUID, user_id: uuid.UUID
+        self, organization_id: uuid.UUID, user_id: uuid.UUID, permissions: set[str]
     ) -> builtins.list[HelpArticle]:
         return list(
             (
@@ -330,6 +353,7 @@ class HelpCenterService:
                         HelpInteraction.user_id == user_id,
                         HelpInteraction.favorite.is_(True),
                         HelpArticle.workflow_status == "published",
+                        self._visibility(permissions),
                     )
                     .order_by(HelpInteraction.last_viewed_at.desc())
                 )
@@ -337,7 +361,7 @@ class HelpCenterService:
         )
 
     async def recent(
-        self, organization_id: uuid.UUID, user_id: uuid.UUID
+        self, organization_id: uuid.UUID, user_id: uuid.UUID, permissions: set[str]
     ) -> builtins.list[HelpArticle]:
         return list(
             (
@@ -348,6 +372,8 @@ class HelpCenterService:
                         HelpArticle.organization_id == organization_id,
                         HelpInteraction.user_id == user_id,
                         HelpInteraction.last_viewed_at.is_not(None),
+                        HelpArticle.workflow_status == "published",
+                        self._visibility(permissions),
                     )
                     .order_by(HelpInteraction.last_viewed_at.desc())
                     .limit(12)
@@ -356,9 +382,13 @@ class HelpCenterService:
         )
 
     async def record_view(
-        self, organization_id: uuid.UUID, article_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        organization_id: uuid.UUID,
+        article_id: uuid.UUID,
+        user_id: uuid.UUID,
+        permissions: set[str] | None = None,
     ) -> None:
-        article = await self._tenant_article(organization_id, article_id)
+        article = await self._tenant_article(organization_id, article_id, permissions)
         interaction = await self._interaction(article, user_id)
         interaction.view_count += 1
         interaction.last_viewed_at = datetime.now(UTC)
@@ -489,17 +519,30 @@ class HelpCenterService:
         )
 
     async def _tenant_article(
-        self, organization_id: uuid.UUID, article_id: uuid.UUID
+        self,
+        organization_id: uuid.UUID,
+        article_id: uuid.UUID,
+        permissions: set[str] | None = None,
     ) -> HelpArticle:
-        article = await self.session.scalar(
-            select(HelpArticle).where(
-                HelpArticle.id == article_id,
-                HelpArticle.organization_id == organization_id,
-            )
+        query = select(HelpArticle).where(
+            HelpArticle.id == article_id,
+            HelpArticle.organization_id == organization_id,
         )
+        if permissions is not None:
+            query = query.where(self._visibility(permissions))
+        article = await self.session.scalar(query)
         if article is None:
             raise NotFoundError("Help article not found")
         return article
+
+    @staticmethod
+    def _visibility(permissions: set[str]) -> ColumnElement[bool]:
+        if not permissions:
+            return HelpArticle.required_permission.is_(None)
+        return or_(
+            HelpArticle.required_permission.is_(None),
+            HelpArticle.required_permission.in_(permissions),
+        )
 
     async def _interaction(self, article: HelpArticle, user_id: uuid.UUID) -> HelpInteraction:
         interaction = await self.session.scalar(
