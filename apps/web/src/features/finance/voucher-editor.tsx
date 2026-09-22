@@ -164,11 +164,18 @@ function VoucherEditor({ detail }: { detail?: VoucherDetail }) {
                 defaultValue={detail?.voucher.expense_category_id ?? ''}
               >
                 <option value="">Uncategorized</option>
-                {categories.data?.map((c) => (
-                  <option value={c.id} key={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {categories.data
+                  ?.filter(
+                    (category) =>
+                      category.is_active ||
+                      category.id === detail?.voucher.expense_category_id,
+                  )
+                  .map((c) => (
+                    <option value={c.id} key={c.id}>
+                      {c.name}
+                      {c.is_active ? '' : ' (inactive)'}
+                    </option>
+                  ))}
               </select>
             </Field>
           </div>

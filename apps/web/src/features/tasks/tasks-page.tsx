@@ -31,12 +31,27 @@ const statuses: Array<[TaskStatus, string]> = [
   ['cancelled', 'Cancelled'],
 ]
 const priorities: TaskPriority[] = ['low', 'normal', 'high', 'urgent']
+type WorkTab = 'overview' | 'tasks' | 'activities'
+
+const workTabs: Array<[WorkTab, string]> = [
+  ['overview', 'Overview'],
+  ['tasks', 'Tasks'],
+  ['activities', 'Activities'],
+]
 
 export function TasksPage() {
   const initial = useMemo(() => new URLSearchParams(window.location.search), [])
   const client = useQueryClient()
   const { user } = useAuth()
   const permissions = new Set(user?.permissions ?? [])
+  const requestedTab = initial.get('tab')
+  const [activeTab, setActiveTab] = useState<WorkTab>(
+    initial.has('task')
+      ? 'tasks'
+      : requestedTab === 'tasks' || requestedTab === 'activities'
+        ? requestedTab
+        : 'overview',
+  )
   const [scope, setScope] = useState(initial.get('scope') ?? 'mine')
   const [due, setDue] = useState<string | undefined>(
     initial.get('due') ?? 'today',
@@ -130,6 +145,8 @@ export function TasksPage() {
 
   useEffect(() => {
     const parameters = new URLSearchParams()
+    if (activeTab !== 'overview') parameters.set('tab', activeTab)
+    if (selected) parameters.set('task', selected.id)
     if (scope !== 'mine') parameters.set('scope', scope)
     if (due) parameters.set('due', due)
     if (status) parameters.set('status', status)
@@ -140,13 +157,50 @@ export function TasksPage() {
       ? `${window.location.pathname}?${parameters}`
       : window.location.pathname
     window.history.replaceState(window.history.state, '', next)
-  }, [due, page, priority, scope, search, status])
+  }, [activeTab, due, page, priority, scope, search, selected, status])
 
   useEffect(() => {
     const taskId = initial.get('task')
-    if (taskId && rows.length && !selected)
-      setSelected(rows.find((task) => task.id === taskId) ?? null)
+    if (!taskId || selected) return
+    const listed = rows.find((task) => task.id === taskId)
+    if (listed) {
+      setSelected(listed)
+      return
+    }
+    void tasksApi
+      .get(taskId)
+      .then((result) => setSelected(result.task))
+      .catch(() => setSelected(null))
   }, [initial, rows, selected])
+
+  useEffect(() => {
+    const restoreFromUrl = () => {
+      const parameters = new URLSearchParams(window.location.search)
+      const tab = parameters.get('tab')
+      setActiveTab(
+        parameters.has('task')
+          ? 'tasks'
+          : tab === 'tasks' || tab === 'activities'
+            ? tab
+            : 'overview',
+      )
+      setScope(parameters.get('scope') ?? 'mine')
+      setDue(parameters.get('due') ?? 'today')
+      setStatus(parameters.get('status') ?? undefined)
+      setPriority(parameters.get('priority') ?? undefined)
+      setSearch(parameters.get('search') ?? '')
+      setPage(Number(parameters.get('page') ?? 1))
+      const taskId = parameters.get('task')
+      if (taskId) {
+        void tasksApi
+          .get(taskId)
+          .then((result) => setSelected(result.task))
+          .catch(() => setSelected(null))
+      } else setSelected(null)
+    }
+    window.addEventListener('popstate', restoreFromUrl)
+    return () => window.removeEventListener('popstate', restoreFromUrl)
+  }, [])
   const overdue = rows.filter((task) => task.is_overdue).length
   const today = rows.filter((task) => task.due_date === todayDate).length
   const scopeTabs: Array<[string, string]> = [
@@ -161,6 +215,19 @@ export function TasksPage() {
       ? ([['department', 'Department work']] as Array<[string, string]>)
       : []),
   ]
+  const selectTab = (tab: WorkTab) => {
+    const parameters = new URLSearchParams(window.location.search)
+    if (tab === 'overview') parameters.delete('tab')
+    else parameters.set('tab', tab)
+    if (tab !== 'tasks') parameters.delete('task')
+    window.history.pushState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${parameters.size ? `?${parameters}` : ''}`,
+    )
+    setActiveTab(tab)
+    if (tab !== 'tasks') setSelected(null)
+  }
 
   return (
     <div className="page-container space-y-6">
@@ -193,137 +260,204 @@ export function TasksPage() {
           </button>
         </div>
       </header>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Clock3} label="Due today" value={today} />
-        <Metric
-          icon={ListChecks}
-          label="Open work"
-          value={
-            rows.filter(
-              (task) => !['completed', 'cancelled'].includes(task.status),
-            ).length
-          }
-        />
-        <Metric
-          icon={Sparkles}
-          label="Overdue"
-          value={overdue}
-          tone={overdue ? 'danger' : undefined}
-        />
-        <Metric
-          icon={CheckCircle2}
-          label="Completed"
-          value={rows.filter((task) => task.status === 'completed').length}
-        />
-      </section>
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold">Today’s summary</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Live work, activity, and meeting signals.
-              </p>
-            </div>
-            <Clock3 className="size-5 text-primary" />
-          </div>
-          {dailySummary.data ? (
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <SummaryStat
-                label="Completed"
-                value={dailySummary.data.completed_tasks}
-              />
-              <SummaryStat
-                label="In progress"
-                value={dailySummary.data.in_progress_tasks}
-              />
-              <SummaryStat
-                label="Activities"
-                value={dailySummary.data.activities.length}
-              />
-              <SummaryStat
-                label="Meetings"
-                value={dailySummary.data.meetings_attended}
-              />
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Summary unavailable.
-            </p>
-          )}
-          {dailySummary.data?.blockers.length ? (
-            <p className="mt-4 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-              {dailySummary.data.blockers.length} blocker
-              {dailySummary.data.blockers.length === 1 ? '' : 's'} recorded
-              today.
-            </p>
-          ) : null}
-        </article>
-        <article className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold">This week</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                A concise view of your workload.
-              </p>
-            </div>
-            <ListChecks className="size-5 text-primary" />
-          </div>
-          {weeklySummary.data ? (
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <SummaryStat
-                label="Done"
-                value={weeklySummary.data.completed_tasks}
-              />
-              <SummaryStat
-                label="Open"
-                value={weeklySummary.data.pending_tasks}
-              />
-              <SummaryStat
-                label="Overdue"
-                value={weeklySummary.data.overdue_tasks}
-              />
-              <SummaryStat
-                label="Logged"
-                value={`${weeklySummary.data.activity_minutes}m`}
-              />
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Weekly summary unavailable.
-            </p>
-          )}
-          {weeklySummary.data?.workload.length ? (
-            <div className="mt-5 border-t pt-4">
+      <nav
+        aria-label="Tasks and activities sections"
+        className="flex gap-1 rounded-2xl border bg-card p-1 shadow-sm"
+        role="tablist"
+      >
+        {workTabs
+          .filter(([key]) => key !== 'activities' || canViewActivity)
+          .map(([key, label]) => (
+            <button
+              aria-selected={activeTab === key}
+              className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${activeTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              key={key}
+              onClick={() => selectTab(key)}
+              role="tab"
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+      </nav>
+      {activeTab === 'overview' && (
+        <>
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric icon={Clock3} label="Due today" value={today} />
+            <Metric
+              icon={ListChecks}
+              label="Open work"
+              value={
+                rows.filter(
+                  (task) => !['completed', 'cancelled'].includes(task.status),
+                ).length
+              }
+            />
+            <Metric
+              icon={Sparkles}
+              label="Overdue"
+              value={overdue}
+              tone={overdue ? 'danger' : undefined}
+            />
+            <Metric
+              icon={CheckCircle2}
+              label="Completed"
+              value={rows.filter((task) => task.status === 'completed').length}
+            />
+          </section>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <article className="rounded-2xl border bg-card p-5 shadow-sm">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Team workload</h3>
-                <span className="text-xs text-muted-foreground">
-                  Authorized view
-                </span>
+                <div>
+                  <h2 className="font-semibold">Today’s summary</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Live work, activity, and meeting signals.
+                  </p>
+                </div>
+                <Clock3 className="size-5 text-primary" />
               </div>
-              <div className="mt-3 space-y-2">
-                {weeklySummary.data.workload.map((person) => (
-                  <div
-                    className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-sm"
-                    key={person.user_id}
-                  >
-                    <span className="min-w-0 truncate font-medium">
-                      {person.display_name}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {person.open_tasks} open · {person.overdue_tasks} overdue
-                      {person.blocked_tasks
-                        ? ` · ${person.blocked_tasks} blocked`
-                        : ''}
+              {dailySummary.data ? (
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  <SummaryStat
+                    label="Completed"
+                    value={dailySummary.data.completed_tasks}
+                  />
+                  <SummaryStat
+                    label="In progress"
+                    value={dailySummary.data.in_progress_tasks}
+                  />
+                  <SummaryStat
+                    label="Activities"
+                    value={dailySummary.data.activities.length}
+                  />
+                  <SummaryStat
+                    label="Meetings"
+                    value={dailySummary.data.meetings_attended}
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Summary unavailable.
+                </p>
+              )}
+              {dailySummary.data?.blockers.length ? (
+                <p className="mt-4 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                  {dailySummary.data.blockers.length} blocker
+                  {dailySummary.data.blockers.length === 1 ? '' : 's'} recorded
+                  today.
+                </p>
+              ) : null}
+            </article>
+            <article className="rounded-2xl border bg-card p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold">This week</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    A concise view of your workload.
+                  </p>
+                </div>
+                <ListChecks className="size-5 text-primary" />
+              </div>
+              {weeklySummary.data ? (
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  <SummaryStat
+                    label="Done"
+                    value={weeklySummary.data.completed_tasks}
+                  />
+                  <SummaryStat
+                    label="Open"
+                    value={weeklySummary.data.pending_tasks}
+                  />
+                  <SummaryStat
+                    label="Overdue"
+                    value={weeklySummary.data.overdue_tasks}
+                  />
+                  <SummaryStat
+                    label="Logged"
+                    value={`${weeklySummary.data.activity_minutes}m`}
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Weekly summary unavailable.
+                </p>
+              )}
+              {weeklySummary.data?.workload.length ? (
+                <div className="mt-5 border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Team workload</h3>
+                    <span className="text-xs text-muted-foreground">
+                      Authorized view
                     </span>
                   </div>
-                ))}
+                  <div className="mt-3 space-y-2">
+                    {weeklySummary.data.workload.map((person) => (
+                      <div
+                        className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-sm"
+                        key={person.user_id}
+                      >
+                        <span className="min-w-0 truncate font-medium">
+                          {person.display_name}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {person.open_tasks} open · {person.overdue_tasks}{' '}
+                          overdue
+                          {person.blocked_tasks
+                            ? ` · ${person.blocked_tasks} blocked`
+                            : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </article>
+          </section>
+          <section className="rounded-2xl border bg-card p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="font-semibold">Outstanding work</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open the work that needs your attention.
+                </p>
               </div>
+              <button
+                className="text-sm font-semibold text-primary"
+                onClick={() => selectTab('tasks')}
+                type="button"
+              >
+                View all tasks
+              </button>
             </div>
-          ) : null}
-        </article>
-      </section>
-      {canViewActivity && (
+            <div className="mt-4 divide-y">
+              {rows.slice(0, 3).map((task) => (
+                <button
+                  className="flex w-full items-center justify-between gap-4 py-3 text-left"
+                  key={task.id}
+                  onClick={() => {
+                    selectTab('tasks')
+                    setSelected(task)
+                  }}
+                  type="button"
+                >
+                  <span className="min-w-0 truncate font-medium">
+                    {task.title}
+                  </span>
+                  <span className="shrink-0 text-xs capitalize text-muted-foreground">
+                    {task.status.replaceAll('_', ' ')}
+                  </span>
+                </button>
+              ))}
+              {!tasks.isLoading && rows.length === 0 && (
+                <p className="py-4 text-sm text-muted-foreground">
+                  No outstanding work matches your current scope.
+                </p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {activeTab !== 'tasks' && canViewActivity && (
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -354,7 +488,10 @@ export function TasksPage() {
             </div>
           ) : activities.data?.length ? (
             <div className="mt-4 divide-y">
-              {activities.data.slice(0, 5).map((entry) => (
+              {(activeTab === 'overview'
+                ? activities.data.slice(0, 5)
+                : activities.data
+              ).map((entry) => (
                 <article
                   className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between"
                   key={entry.id}
@@ -409,147 +546,164 @@ export function TasksPage() {
           )}
         </section>
       )}
-      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2" aria-label="Task scope">
-            {scopeTabs.map(([key, label]) => (
-              <button
-                className={`rounded-lg px-3 py-2 text-sm font-medium ${scope === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/70'}`}
-                key={key}
-                onClick={() => {
-                  setScope(key)
-                  setDue(key === 'mine' ? 'today' : undefined)
-                  setPage(1)
-                }}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <input
-              aria-label="Search tasks"
-              className="h-10 rounded-lg border bg-background px-3 text-sm"
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search work"
-              value={search}
-            />
-            <select
-              aria-label="Filter task status"
-              className="h-10 rounded-lg border bg-background px-2 text-sm"
-              onChange={(event) => setStatus(event.target.value || undefined)}
-              value={status ?? ''}
-            >
-              <option value="">All statuses</option>
-              {statuses.map(([value, label]) => (
-                <option key={value} value={value}>
+      {activeTab === 'tasks' && (
+        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+          <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2" aria-label="Task scope">
+              {scopeTabs.map(([key, label]) => (
+                <button
+                  className={`rounded-lg px-3 py-2 text-sm font-medium ${scope === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/70'}`}
+                  key={key}
+                  onClick={() => {
+                    setScope(key)
+                    setDue(key === 'mine' ? 'today' : undefined)
+                    setPage(1)
+                  }}
+                  type="button"
+                >
                   {label}
-                </option>
+                </button>
               ))}
-            </select>
-            <select
-              aria-label="Filter task priority"
-              className="h-10 rounded-lg border bg-background px-2 text-sm"
-              onChange={(event) => setPriority(event.target.value || undefined)}
-              value={priority ?? ''}
-            >
-              <option value="">All priorities</option>
-              {priorities.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter due date"
-              className="h-10 rounded-lg border bg-background px-2 text-sm"
-              onChange={(event) => setDue(event.target.value || undefined)}
-              value={due ?? ''}
-            >
-              <option value="">All dates</option>
-              <option value="today">Today</option>
-              <option value="week">This week</option>
-              <option value="overdue">Overdue</option>
-            </select>
-          </div>
-        </div>
-        {tasks.isLoading ? (
-          <div className="space-y-3 p-5" aria-label="Loading tasks">
-            {[1, 2, 3].map((row) => (
-              <div
-                className="h-16 animate-pulse rounded-xl bg-muted"
-                key={row}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <input
+                aria-label="Search tasks"
+                className="h-10 rounded-lg border bg-background px-3 text-sm"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search work"
+                value={search}
               />
-            ))}
-          </div>
-        ) : tasks.isError ? (
-          <div className="p-10 text-center" role="alert">
-            <p className="font-semibold">Your work could not be loaded.</p>
-            <button
-              className="mt-3 text-sm font-semibold text-primary"
-              onClick={() => void tasks.refetch()}
-              type="button"
-            >
-              Retry
-            </button>
-          </div>
-        ) : rows.length ? (
-          <div className="divide-y">
-            {rows.map((task) => (
-              <TaskRow
-                key={task.id}
-                onOpen={() => setSelected(task)}
-                onStatus={(next) =>
-                  update.mutate({ id: task.id, body: { status: next } })
+              <select
+                aria-label="Filter task status"
+                className="h-10 rounded-lg border bg-background px-2 text-sm"
+                onChange={(event) => setStatus(event.target.value || undefined)}
+                value={status ?? ''}
+              >
+                <option value="">All statuses</option>
+                {statuses.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Filter task priority"
+                className="h-10 rounded-lg border bg-background px-2 text-sm"
+                onChange={(event) =>
+                  setPriority(event.target.value || undefined)
                 }
-                task={task}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="p-12 text-center">
-            <Sparkles className="mx-auto size-8 text-primary" />
-            <h2 className="mt-3 font-semibold">You’re all caught up</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              No work matches these filters.
-            </p>
-            <button
-              className="mt-4 text-sm font-semibold text-primary"
-              onClick={() => setShowCreate(true)}
-              type="button"
-            >
-              Create a task
-            </button>
-          </div>
-        )}
-        {tasks.data && tasks.data.total_pages > 1 && (
-          <div className="flex items-center justify-between border-t p-4 text-sm">
-            <p className="text-muted-foreground">
-              Page {tasks.data.page} of {tasks.data.total_pages} ·{' '}
-              {tasks.data.total} tasks
-            </p>
-            <div className="flex gap-2">
-              <button
-                className="rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-50"
-                disabled={page <= 1}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                type="button"
+                value={priority ?? ''}
               >
-                Previous
-              </button>
-              <button
-                className="rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-50"
-                disabled={page >= tasks.data.total_pages}
-                onClick={() => setPage((current) => current + 1)}
-                type="button"
+                <option value="">All priorities</option>
+                {priorities.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Filter due date"
+                className="h-10 rounded-lg border bg-background px-2 text-sm"
+                onChange={(event) => setDue(event.target.value || undefined)}
+                value={due ?? ''}
               >
-                Next
-              </button>
+                <option value="">All dates</option>
+                <option value="today">Today</option>
+                <option value="week">This week</option>
+                <option value="overdue">Overdue</option>
+              </select>
             </div>
           </div>
-        )}
-      </section>
+          {tasks.isLoading ? (
+            <div className="space-y-3 p-5" aria-label="Loading tasks">
+              {[1, 2, 3].map((row) => (
+                <div
+                  className="h-16 animate-pulse rounded-xl bg-muted"
+                  key={row}
+                />
+              ))}
+            </div>
+          ) : tasks.isError ? (
+            <div className="p-10 text-center" role="alert">
+              <p className="font-semibold">Your work could not be loaded.</p>
+              <button
+                className="mt-3 text-sm font-semibold text-primary"
+                onClick={() => void tasks.refetch()}
+                type="button"
+              >
+                Retry
+              </button>
+            </div>
+          ) : rows.length ? (
+            <div className="divide-y">
+              {rows.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  onOpen={() => {
+                    const parameters = new URLSearchParams(
+                      window.location.search,
+                    )
+                    parameters.set('tab', 'tasks')
+                    parameters.set('task', task.id)
+                    window.history.pushState(
+                      window.history.state,
+                      '',
+                      `${window.location.pathname}?${parameters}`,
+                    )
+                    setActiveTab('tasks')
+                    setSelected(task)
+                  }}
+                  onStatus={(next) =>
+                    update.mutate({ id: task.id, body: { status: next } })
+                  }
+                  task={task}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="p-12 text-center">
+              <Sparkles className="mx-auto size-8 text-primary" />
+              <h2 className="mt-3 font-semibold">You’re all caught up</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                No work matches these filters.
+              </p>
+              <button
+                className="mt-4 text-sm font-semibold text-primary"
+                onClick={() => setShowCreate(true)}
+                type="button"
+              >
+                Create a task
+              </button>
+            </div>
+          )}
+          {tasks.data && tasks.data.total_pages > 1 && (
+            <div className="flex items-center justify-between border-t p-4 text-sm">
+              <p className="text-muted-foreground">
+                Page {tasks.data.page} of {tasks.data.total_pages} ·{' '}
+                {tasks.data.total} tasks
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  type="button"
+                >
+                  Previous
+                </button>
+                <button
+                  className="rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-50"
+                  disabled={page >= tasks.data.total_pages}
+                  onClick={() => setPage((current) => current + 1)}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
       {showCreate && (
         <TaskForm
           people={people.data ?? []}

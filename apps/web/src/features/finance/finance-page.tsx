@@ -35,10 +35,14 @@ export function FinancePage() {
     search.intent === 'statement' ? 'statements' : search.tab
   const section =
     requestedSection &&
-    ['transactions', 'statements'].includes(requestedSection) &&
-    permissions.has('finance.transactions.view')
-      ? requestedSection
-      : 'accounts'
+    requestedSection === 'categories' &&
+    permissions.has('finance.accounts.manage')
+      ? 'categories'
+      : requestedSection &&
+          ['transactions', 'statements'].includes(requestedSection) &&
+          permissions.has('finance.transactions.view')
+        ? requestedSection
+        : 'accounts'
   const [create, setCreate] = useState(false)
   const [transfer, setTransfer] = useState(false)
   if (!permissions.has('finance.accounts.view'))
@@ -111,13 +115,109 @@ export function FinancePage() {
             </Link>
           </>
         )}
+        {permissions.has('finance.accounts.manage') && (
+          <Link
+            aria-selected={section === 'categories'}
+            role="tab"
+            search={{ tab: 'categories' } as never}
+            to="/finance"
+          >
+            Expense categories
+          </Link>
+        )}
       </nav>
       {section === 'accounts' && <Accounts />}
       {section === 'transactions' &&
         permissions.has('finance.transactions.view') && <Transactions />}
       {section === 'statements' &&
         permissions.has('finance.transactions.view') && <Statements />}
+      {section === 'categories' &&
+        permissions.has('finance.accounts.manage') && <ExpenseCategories />}
     </FinanceLayout>
+  )
+}
+
+function ExpenseCategories() {
+  const client = useQueryClient()
+  const categories = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: financeApi.categories,
+  })
+  const create = useMutation({
+    mutationFn: financeApi.createCategory,
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['expense-categories'] })
+    },
+  })
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const values = new FormData(form)
+    create.mutate(
+      {
+        name: String(values.get('name') ?? ''),
+        description: String(values.get('description') ?? '') || null,
+        is_active: true,
+      },
+      { onSuccess: () => form.reset() },
+    )
+  }
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <Section title="Expense categories">
+        {categories.isLoading ? (
+          <Loading />
+        ) : categories.error ? (
+          <ErrorState
+            error={categories.error}
+            retry={() => void categories.refetch()}
+          />
+        ) : categories.data?.length ? (
+          <div className="divide-y">
+            {categories.data.map((category) => (
+              <article
+                className="flex items-start justify-between gap-4 py-4"
+                key={category.id}
+              >
+                <div>
+                  <h3 className="font-semibold">{category.name}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {category.description || 'No description'}
+                  </p>
+                </div>
+                <Status value={category.is_active ? 'active' : 'inactive'} />
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="finance-empty">
+            No expense categories have been configured.
+          </p>
+        )}
+      </Section>
+      <Section title="New category">
+        <form className="grid gap-4" onSubmit={submit}>
+          <Field label="Category name">
+            <input name="name" required maxLength={120} />
+          </Field>
+          <Field label="Description">
+            <textarea name="description" maxLength={1000} />
+          </Field>
+          {create.error && <ErrorState error={create.error} />}
+          <button
+            className="finance-primary"
+            disabled={create.isPending}
+            type="submit"
+          >
+            {create.isPending ? 'Creating…' : 'Create category'}
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Existing categories are read-only because the current API does not
+            support editing or deactivation.
+          </p>
+        </form>
+      </Section>
+    </div>
   )
 }
 

@@ -169,3 +169,49 @@ test('filters the server-paginated department directory', async () => {
     }),
   )
 })
+
+test('opens department details in a focus-managed drawer and restores focus', async () => {
+  organizationApiMock.departments.mockResolvedValue({
+    items: [
+      {
+        id: 'department-1',
+        name: 'Product',
+        code: 'PRD',
+        description: 'Product delivery',
+        unit_type: 'department',
+        manager_id: null,
+        status: 'active',
+      },
+    ],
+    total: 1,
+    page: 1,
+    page_size: 10,
+    total_pages: 1,
+  })
+  organizationApiMock.departmentDetail.mockResolvedValue({
+    id: 'department-1',
+    name: 'Product',
+    description: 'Product delivery',
+    employee_count: 4,
+    team_count: 2,
+    manager_name: 'Taylor Example',
+  })
+  renderPage()
+  await screen.findByRole('heading', { name: 'MeetingHQ' })
+  fireEvent.click(screen.getByRole('button', { name: 'Structure' }))
+  const trigger = await screen.findByRole('button', { name: 'View Product' })
+  trigger.focus()
+  fireEvent.click(trigger)
+
+  const drawer = await screen.findByRole('dialog', {
+    name: 'Department details',
+  })
+  expect(drawer).toHaveFocus()
+  expect(
+    await screen.findByRole('heading', { name: 'Product' }, { timeout: 5000 }),
+  ).toBeVisible()
+
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(trigger).toHaveFocus()
+})

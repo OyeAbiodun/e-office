@@ -18,7 +18,7 @@ import {
   Users,
   Workflow,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   organizationApi,
@@ -287,6 +287,7 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const [saving, setSaving] = useState(false)
+  const closeDepartment = useCallback(() => setSelectedDepartment(null), [])
   const members = useQuery({
     queryKey: ['organization-members'],
     queryFn: organizationApi.members,
@@ -653,7 +654,7 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
         <DepartmentPanel
           detail={detail.data}
           loading={detail.isLoading}
-          onClose={() => setSelectedDepartment(null)}
+          onClose={closeDepartment}
         />
       )}
     </div>
@@ -669,54 +670,98 @@ function DepartmentPanel({
   loading: boolean
   onClose: () => void
 }) {
+  const panel = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const container = panel.current
+    container?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Tab' || !container) return
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hasAttribute('disabled'))
+      if (!focusable.length) return
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previous?.focus()
+    }
+  }, [onClose])
+
   return (
-    <section
-      aria-label="Department details"
-      className="rounded-2xl border bg-card p-5 shadow-sm xl:col-span-2"
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/45"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      role="presentation"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-primary">
-            Department overview
-          </p>
-          <h2 className="mt-1 text-xl font-semibold">
-            {detail?.name ?? 'Loading department…'}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {detail?.description || 'No description has been added.'}
-          </p>
-        </div>
-        <button
-          className="rounded-xl border px-3 py-2 text-sm font-medium"
-          onClick={onClose}
-          type="button"
-        >
-          Close
-        </button>
-      </div>
-      {loading ? (
-        <p className="mt-5 text-sm text-muted-foreground">
-          Loading live metrics…
-        </p>
-      ) : detail ? (
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <StructureMetric label="Employees" value={detail.employee_count} />
-          <StructureMetric label="Teams" value={detail.team_count} />
-          <div className="rounded-xl bg-muted/45 p-4">
-            <p className="text-sm font-semibold">
-              {detail.manager_name ?? 'Unassigned'}
+      <section
+        aria-label="Department details"
+        aria-modal="true"
+        className="h-full w-full max-w-lg overflow-y-auto border-l bg-card p-5 shadow-2xl outline-none sm:p-6"
+        ref={panel}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-primary">
+              Department overview
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Department manager
+            <h2 className="mt-1 text-xl font-semibold">
+              {detail?.name ?? 'Loading department…'}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {detail?.description || 'No description has been added.'}
             </p>
           </div>
+          <button
+            className="rounded-xl border px-3 py-2 text-sm font-medium"
+            onClick={onClose}
+            type="button"
+          >
+            Close
+          </button>
         </div>
-      ) : (
-        <p className="mt-5 text-sm text-destructive">
-          Department details could not be loaded.
-        </p>
-      )}
-    </section>
+        {loading ? (
+          <p className="mt-5 text-sm text-muted-foreground">
+            Loading live metrics…
+          </p>
+        ) : detail ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <StructureMetric label="Employees" value={detail.employee_count} />
+            <StructureMetric label="Teams" value={detail.team_count} />
+            <div className="rounded-xl bg-muted/45 p-4">
+              <p className="text-sm font-semibold">
+                {detail.manager_name ?? 'Unassigned'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Department manager
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-5 text-sm text-destructive">
+            Department details could not be loaded.
+          </p>
+        )}
+      </section>
+    </div>
   )
 }
 

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   activities: vi.fn(),
   recordActivity: vi.fn(),
   updateActivity: vi.fn(),
+  get: vi.fn(),
 }))
 
 vi.mock('@/features/auth/auth-store', () => ({
@@ -42,7 +43,7 @@ vi.mock('@/features/tasks/api', () => ({
     activities: mocks.activities,
     recordActivity: mocks.recordActivity,
     updateActivity: mocks.updateActivity,
-    get: vi.fn(),
+    get: mocks.get,
     comment: vi.fn(),
   },
 }))
@@ -59,6 +60,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/tasks')
   mocks.list.mockResolvedValue({
     items: [
       {
@@ -223,6 +225,7 @@ test('clears the implicit today filter when switching to a broader work scope', 
   renderPage()
 
   await screen.findByText('Prepare the customer review')
+  fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Created by me' }))
   })
@@ -231,5 +234,62 @@ test('clears the implicit today filter when switching to a broader work scope', 
     expect(mocks.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ scope: 'created', due: undefined }),
     ),
+  )
+})
+
+test('keeps tabs in URL state and opens a deep-linked task outside the current list', async () => {
+  window.history.replaceState({}, '', '/tasks?task=task-remote')
+  mocks.get.mockResolvedValue({
+    task: {
+      ...(await mocks.list()).items[0],
+      id: 'task-remote',
+      title: 'Deep-linked task',
+    },
+    comments: [],
+    history: [],
+    attachments: [],
+    checklist: [],
+  })
+
+  renderPage()
+
+  expect(await screen.findByRole('tab', { name: 'Tasks' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  expect(await screen.findByRole('dialog', { name: 'Task #12' })).toBeVisible()
+  expect(
+    screen.getByRole('heading', { name: 'Deep-linked task' }),
+  ).toBeVisible()
+  expect(mocks.get).toHaveBeenCalledWith('task-remote')
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Activities' }))
+  expect(window.location.search).toContain('tab=activities')
+  expect(
+    screen.getByText('Prepared the customer review evidence.'),
+  ).toBeVisible()
+
+  mocks.get.mockResolvedValue({
+    task: {
+      ...(await mocks.list()).items[0],
+      id: 'task-history',
+      title: 'History-restored task',
+    },
+    comments: [],
+    history: [],
+    attachments: [],
+    checklist: [],
+  })
+  await act(async () => {
+    window.history.pushState({}, '', '/tasks?task=task-history')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect(
+    await screen.findByRole('heading', { name: 'History-restored task' }),
+  ).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Tasks' })).toHaveAttribute(
+    'aria-selected',
+    'true',
   )
 })

@@ -137,6 +137,10 @@ export interface Option {
   id: string
   name: string
 }
+export interface ExpenseCategory extends Option {
+  description: string | null
+  is_active: boolean
+}
 const get = <T>(path: string) => apiRequest<T>(path, {}, true)
 const write = <T>(path: string, body: unknown, method = 'POST') =>
   apiRequest<T>(path, { method, body: JSON.stringify(body) }, true)
@@ -148,7 +152,13 @@ export const financeApi = {
     get<{ requesters: Option[]; departments: Option[]; approvers: Option[] }>(
       '/vouchers/options',
     ),
-  categories: () => get<Option[]>('/finance/categories'),
+  categories: () => get<ExpenseCategory[]>('/finance/categories'),
+  createCategory: (body: {
+    name: string
+    description: string | null
+    is_active: boolean
+  }) =>
+    write<Pick<ExpenseCategory, 'id' | 'name'>>('/finance/categories', body),
   create: (body: unknown) => write<Voucher>('/vouchers', body),
   edit: (id: string, body: unknown) =>
     write<Voucher>(`/vouchers/${id}`, body, 'PATCH'),
