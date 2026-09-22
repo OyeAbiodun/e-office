@@ -14,7 +14,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import structlog
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.core.config import Settings
@@ -889,8 +889,6 @@ class NotificationService:
                 )
             ).all()
         )
-        ics = self.ics(meeting, organizer, participants)
-        email = await self._email(meeting.organization_id)
         for participant in participants:
             await self.create_notification(
                 organization_id=meeting.organization_id,
@@ -926,53 +924,6 @@ class NotificationService:
                 recipient=participant.email,
             )
             self.session.add_all([in_app, email_delivery, ics_delivery])
-            await self.session.flush()
-            attempted_at = datetime.now(UTC)
-            try:
-                rendered = self._meeting_email("meeting.invitation", meeting, organizer, email)
-                transport_id = await email.send_rendered(
-                    participant.email,
-                    rendered,
-                    ics=ics,
-                    message_key=f"meeting-{email_delivery.id}",
-                )
-                for delivery in (email_delivery, ics_delivery):
-                    delivery.status = "sent"
-                    delivery.transport_id = transport_id
-                    delivery.sent_at = attempted_at
-                    delivery.attempt_count = 1
-                    delivery.last_attempt_at = attempted_at
-                await self._record_delivery_audit(
-                    meeting,
-                    organizer.id,
-                    "meeting.delivery.accepted",
-                    "meeting_invitation",
-                    ["email", "ics"],
-                    participant.email,
-                    transport_id,
-                    rendered,
-                )
-            except Exception as exc:
-                for delivery in (email_delivery, ics_delivery):
-                    delivery.status = "failed"
-                    delivery.error = self._safe_delivery_error(exc)
-                    delivery.attempt_count = 1
-                    delivery.last_attempt_at = attempted_at
-                    delivery.next_attempt_at = self._next_attempt_at(1, attempted_at)
-                self.session.add(
-                    AuditLog(
-                        organization_id=meeting.organization_id,
-                        user_id=organizer.id,
-                        action="meeting.delivery.failed",
-                        resource="meeting",
-                        resource_id=meeting.id,
-                        audit_metadata={
-                            "notification_type": "meeting_invitation",
-                            "channels": ["email", "ics"],
-                            "error": self._safe_delivery_error(exc),
-                        },
-                    )
-                )
             for offset in self.REMINDER_OFFSETS:
                 scheduled_for = meeting.start_datetime - timedelta(minutes=offset)
                 if scheduled_for > datetime.now(UTC):
@@ -1188,12 +1139,17 @@ class NotificationService:
                     select(MeetingInvitationDelivery)
                     .where(
                         MeetingInvitationDelivery.channel.like("email%"),
-                        MeetingInvitationDelivery.status == "failed",
-                        MeetingInvitationDelivery.next_attempt_at <= now,
+                        or_(
+                            MeetingInvitationDelivery.status == "pending",
+                            and_(
+                                MeetingInvitationDelivery.status == "failed",
+                                MeetingInvitationDelivery.next_attempt_at <= now,
+                            ),
+                        ),
                         MeetingInvitationDelivery.attempt_count
                         < self.settings.delivery_max_attempts,
                     )
-                    .order_by(MeetingInvitationDelivery.next_attempt_at)
+                    .order_by(MeetingInvitationDelivery.created_at)
                     .limit(100)
                     .with_for_update(skip_locked=True)
                 )
@@ -1202,6 +1158,7 @@ class NotificationService:
         delivered = 0
         senders: dict[uuid.UUID, MeetingEmailSender] = {}
         for delivery in deliveries:
+            is_initial_delivery = delivery.status == "pending"
             meeting = await self.session.get(Meeting, delivery.meeting_id)
             user = await self.session.get(User, delivery.user_id)
             organizer = (
@@ -1275,7 +1232,11 @@ class NotificationService:
                 await self._record_delivery_audit(
                     meeting,
                     organizer.id,
-                    "meeting.delivery.retry_accepted",
+                    (
+                        "meeting.delivery.accepted"
+                        if is_initial_delivery
+                        else "meeting.delivery.retry_accepted"
+                    ),
                     self._retry_notification_type(delivery.channel),
                     [item.channel for item in companions],
                     user.email,

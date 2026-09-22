@@ -20,6 +20,7 @@ import {
 } from './api'
 import { authenticatedAsset } from '@/features/auth/api'
 import { useAuth } from '@/features/auth/auth-store'
+import { projectsApi } from '@/features/projects/api'
 
 const statuses: Array<[TaskStatus, string]> = [
   ['not_started', 'Not started'],
@@ -681,6 +682,16 @@ function TaskForm({
 }) {
   const [assigneeId, setAssigneeId] = useState('')
   const [assigneeSearch, setAssigneeSearch] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const projects = useQuery({
+    queryKey: ['projects', 'task-picker'],
+    queryFn: () => projectsApi.list({ page_size: 100 }),
+  })
+  const project = useQuery({
+    queryKey: ['projects', projectId],
+    queryFn: () => projectsApi.get(projectId),
+    enabled: Boolean(projectId),
+  })
   const matchingPeople = people.filter((person) =>
     [person.display_name, person.job_title, person.department_name]
       .filter(Boolean)
@@ -698,6 +709,8 @@ function TaskForm({
       due_date: form.get('due_date') || undefined,
       priority: form.get('priority'),
       assignee_id: assigneeId || undefined,
+      project_id: projectId || undefined,
+      milestone_id: form.get('milestone_id') || undefined,
       reminder_at: form.get('reminder_at')
         ? new Date(String(form.get('reminder_at'))).toISOString()
         : undefined,
@@ -740,6 +753,38 @@ function TaskForm({
             >
               {priorities.map((value) => (
                 <option key={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-medium">
+            Project
+            <select
+              className="mt-1 w-full rounded-lg border bg-background p-2"
+              onChange={(event) => setProjectId(event.target.value)}
+              value={projectId}
+            >
+              <option value="">No project</option>
+              {projects.data?.items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Milestone
+            <select
+              className="mt-1 w-full rounded-lg border bg-background p-2"
+              disabled={!projectId || project.isLoading}
+              name="milestone_id"
+            >
+              <option value="">No milestone</option>
+              {project.data?.milestones.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
               ))}
             </select>
           </label>

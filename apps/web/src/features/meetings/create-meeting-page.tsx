@@ -8,8 +8,9 @@ import {
   Search,
   Users,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
+import { calendarApi } from '@/features/calendar/api'
 import { meetingApi } from '@/features/meetings/api'
 import { organizationApi } from '@/features/organizations/api'
 import { userAdminApi } from '@/features/users/api'
@@ -38,6 +39,10 @@ export function CreateMeetingPage() {
     queryKey: ['meeting-participants'],
     queryFn: () => userAdminApi.list({ status: 'active' }),
   })
+  const calendars = useQuery({
+    queryKey: ['calendars'],
+    queryFn: calendarApi.calendars,
+  })
   const [step, setStep] = useState(0)
   const [error, setError] = useState('')
   const tomorrow = new Date(Date.now() + 86_400_000)
@@ -50,6 +55,7 @@ export function CreateMeetingPage() {
     meeting_url: '',
     location: '',
     workspace_id: '',
+    calendar_id: '',
     start_datetime: toLocalDateTimeInput(tomorrow),
     end_datetime: toLocalDateTimeInput(
       new Date(tomorrow.getTime() + 3_600_000),
@@ -66,6 +72,10 @@ export function CreateMeetingPage() {
   const [departmentFilter, setDepartmentFilter] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [attachments, setAttachments] = useState<File[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const savedMeetingId = useRef<string | null>(null)
+  const completedAgenda = useRef(new Set<number>())
+  const completedAttachments = useRef(new Set<number>())
   const departments = useMemo(
     () => [
       ...new Set(
@@ -92,48 +102,82 @@ export function CreateMeetingPage() {
   const update = (key: string, value: string | string[]) =>
     setForm((current) => ({ ...current, [key]: value }))
   const submit = async () => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
     setError('')
     try {
-      const meeting = await meetingApi.create({
-        ...form,
-        project_id: projectId,
-        agenda: form.agenda.filter(Boolean).join('\n') || null,
-        recurrence:
-          form.recurrence_frequency === 'none'
-            ? null
-            : {
-                frequency: form.recurrence_frequency,
-                interval: Number(form.recurrence_interval),
-                days_of_week: [],
-                end_date: null,
-                occurrence_count: null,
-                skip_holidays: false,
-              },
-        workspace_id: form.workspace_id || workspaces.data?.[0]?.id,
-        start_datetime: form.start_datetime,
-        end_datetime: form.end_datetime,
-      })
+      const meetingId =
+        savedMeetingId.current ??
+        (
+          await meetingApi.create({
+            ...form,
+            calendar_id: form.calendar_id || undefined,
+            project_id: projectId,
+            agenda: form.agenda.filter(Boolean).join('\n') || null,
+            recurrence:
+              form.recurrence_frequency === 'none'
+                ? null
+                : {
+                    frequency: form.recurrence_frequency,
+                    interval: Number(form.recurrence_interval),
+                    days_of_week: [],
+                    end_date: null,
+                    occurrence_count: null,
+                    skip_holidays: false,
+                  },
+            workspace_id: form.workspace_id || workspaces.data?.[0]?.id,
+            start_datetime: form.start_datetime,
+            end_datetime: form.end_datetime,
+          })
+        ).id
+      savedMeetingId.current = meetingId
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['meeting-dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['meetings'] }),
+      ])
+      const failures: string[] = []
       for (const [index, title] of form.agenda.entries()) {
-        if (title.trim())
-          await meetingApi.add(meeting.id, 'agenda', {
+        if (!title.trim() || completedAgenda.current.has(index)) continue
+        try {
+          await meetingApi.add(meetingId, 'agenda', {
             title,
             duration_minutes: 10,
             sort_order: index,
           })
+          completedAgenda.current.add(index)
+        } catch {
+          failures.push(`agenda item ${index + 1}`)
+        }
       }
-      for (const attachment of attachments)
-        await meetingApi.uploadArtifact(meeting.id, attachment)
-      await queryClient.invalidateQueries({ queryKey: ['meeting-dashboard'] })
+      for (const [index, attachment] of attachments.entries()) {
+        if (completedAttachments.current.has(index)) continue
+        try {
+          await meetingApi.uploadArtifact(meetingId, attachment)
+          completedAttachments.current.add(index)
+        } catch {
+          failures.push(`attachment ${attachment.name}`)
+        }
+      }
+      if (failures.length) {
+        setError(
+          `Meeting saved successfully. The following setup could not be completed: ${failures.join(', ')}. Retry to finish without creating another meeting.`,
+        )
+        return
+      }
       await navigate({
         to: '/meetings/$meetingId',
-        params: { meetingId: meeting.id },
+        params: { meetingId },
       })
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : 'Meeting could not be scheduled',
+          : savedMeetingId.current
+            ? `Meeting ${savedMeetingId.current} was saved, but setup could not be completed.`
+            : 'Meeting could not be scheduled',
       )
+    } finally {
+      setIsSubmitting(false)
     }
   }
   const canContinue = step !== 0 || form.title.trim().length > 0
@@ -349,6 +393,19 @@ export function CreateMeetingPage() {
         {step === 3 && (
           <Fields title="Choose where to meet">
             <Select
+              label="Calendar (Gregorian)"
+              value={form.calendar_id}
+              options={['', ...(calendars.data ?? []).map((item) => item.id)]}
+              labels={[
+                'Use my default calendar',
+                ...(calendars.data ?? []).map(
+                  (item) =>
+                    `${item.name}${item.is_default ? ' (default)' : ''}`,
+                ),
+              ]}
+              onChange={(value) => update('calendar_id', value)}
+            />
+            <Select
               label="Location"
               value={form.location_type}
               options={['virtual', 'in-person', 'hybrid']}
@@ -473,10 +530,16 @@ export function CreateMeetingPage() {
           </button>
         ) : (
           <button
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground disabled:opacity-40"
+            disabled={isSubmitting}
             onClick={() => void submit()}
           >
-            <Check className="size-4" /> Schedule meeting
+            <Check className="size-4" />{' '}
+            {isSubmitting
+              ? 'Saving…'
+              : savedMeetingId.current
+                ? 'Retry unfinished setup'
+                : 'Schedule meeting'}
           </button>
         )}
       </div>

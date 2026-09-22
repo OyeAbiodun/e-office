@@ -71,6 +71,7 @@ export const meetingApi = {
         body: JSON.stringify(body),
       },
       true,
+      false,
     ),
   update: (id: string, body: object) =>
     apiRequest<Meeting>(
@@ -118,6 +119,7 @@ export const meetingApi = {
         body: JSON.stringify(body),
       },
       true,
+      false,
     ),
   history: (id: string) =>
     apiRequest<Array<Record<string, unknown>>>(

@@ -8,7 +8,11 @@ from pytest import MonkeyPatch
 from sqlalchemy import select
 
 from meetinghq_api.core.config import get_settings
-from meetinghq_api.modules.notifications.models import MeetingReminder, Notification
+from meetinghq_api.modules.notifications.models import (
+    MeetingInvitationDelivery,
+    MeetingReminder,
+    Notification,
+)
 from meetinghq_api.modules.notifications.service import (
     EmailDeliveryError,
     MeetingEmailSender,
@@ -73,6 +77,18 @@ async def test_meeting_invitation_calendar_notification_and_rsvp(
     )
     assert created.status_code == 201, created.text
     meeting_id = created.json()["data"]["id"]
+    assert sent == []
+    factory = meeting_client._meetinghq_session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        pending = await session.scalar(
+            select(MeetingInvitationDelivery).where(
+                MeetingInvitationDelivery.meeting_id == uuid.UUID(meeting_id),
+                MeetingInvitationDelivery.channel == "email",
+            )
+        )
+        assert pending is not None and pending.status == "pending"
+        assert await NotificationService(session, get_settings()).process_due_invitations() == 1
+        await session.commit()
     assert sent and sent[0][0] == "participant@meeting-mvp.example"
     assert sent[0][2] is not None
     assert "BEGIN:VCALENDAR" in sent[0][2]

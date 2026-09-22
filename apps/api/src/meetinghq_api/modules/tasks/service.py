@@ -546,7 +546,7 @@ class TaskService:
                 priority=task.priority,
                 title="Task completed",
                 body=f"{task.title} was completed.",
-                action_url=f"/tasks/{task.id}",
+                action_url=f"/tasks?task={task.id}",
                 metadata={"task_id": str(task.id)},
             )
         await self.session.flush()
@@ -1290,7 +1290,7 @@ class TaskService:
             priority=task.priority,
             title=f"Task {action}",
             body=f"{actor.display_name} {action} you: {task.title}",
-            action_url=f"/tasks/{task.id}",
+            action_url=f"/tasks?task={task.id}",
             metadata={"task_id": str(task.id), "assigned_by": str(actor.id)},
         )
 
@@ -1303,7 +1303,7 @@ class TaskService:
             priority=task.priority,
             title="Task follow-up due" if kind == "follow_up" else "Task reminder",
             body=f"{task.title} needs your attention.",
-            action_url=f"/tasks/{task.id}",
+            action_url=f"/tasks?task={task.id}",
             metadata={"task_id": str(task.id)},
         )
 
