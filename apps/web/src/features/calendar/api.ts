@@ -7,6 +7,7 @@ export interface Calendar {
   type: 'personal' | 'team' | 'workspace' | 'organization' | 'resource'
   timezone: string
   is_default: boolean
+  owner_id: string | null
 }
 
 export interface CalendarEvent {
@@ -81,6 +82,12 @@ export interface TimeSlot {
 
 export const calendarApi = {
   calendars: () => apiRequest<Calendar[]>('/calendars', {}, true),
+  updateCalendar: (calendarId: string, body: object) =>
+    apiRequest<Calendar>(
+      `/calendars/${calendarId}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+      true,
+    ),
   events: (calendarId: string) =>
     apiRequest<CalendarEvent[]>(`/calendars/${calendarId}/events`, {}, true),
   createEvent: (calendarId: string, body: object) =>

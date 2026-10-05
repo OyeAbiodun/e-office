@@ -444,7 +444,7 @@ _meeting_operator = frozenset(
         Permissions.USERS_READ,
         Permissions.WORKSPACES_READ,
     }
-)
+) | _matrix({"notifications"}, {"view"})
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "Super Admin": frozenset(item.name for item in PERMISSION_CATALOG),
@@ -509,7 +509,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             Permissions.VOUCHERS_SUBMIT,
         }
     )
-    | _matrix({"dashboard", "calendar", "meetings", "chat", "members"}, {"view"})
+    | _matrix(
+        {"dashboard", "calendar", "meetings", "chat", "members", "notifications"},
+        {"view"},
+    )
     | _matrix({"calendar", "meetings", "chat", "mail"}, {"create", "edit"})
     | _matrix({"mail"}, {"view"}),
     "Guest": frozenset(

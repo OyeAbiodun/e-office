@@ -138,6 +138,7 @@ export interface Option {
   name: string
 }
 export interface ExpenseCategory extends Option {
+  code: string | null
   description: string | null
   is_active: boolean
 }
@@ -152,13 +153,18 @@ export const financeApi = {
     get<{ requesters: Option[]; departments: Option[]; approvers: Option[] }>(
       '/vouchers/options',
     ),
-  categories: () => get<ExpenseCategory[]>('/finance/categories'),
+  categories: (activeOnly = false) =>
+    get<ExpenseCategory[]>(
+      `/finance/categories${activeOnly ? '?active_only=true' : ''}`,
+    ),
   createCategory: (body: {
     name: string
+    code: string | null
     description: string | null
     is_active: boolean
-  }) =>
-    write<Pick<ExpenseCategory, 'id' | 'name'>>('/finance/categories', body),
+  }) => write<ExpenseCategory>('/finance/categories', body),
+  updateCategory: (id: string, body: Partial<ExpenseCategory>) =>
+    write<ExpenseCategory>(`/finance/categories/${id}`, body, 'PATCH'),
   create: (body: unknown) => write<Voucher>('/vouchers', body),
   edit: (id: string, body: unknown) =>
     write<Voucher>(`/vouchers/${id}`, body, 'PATCH'),

@@ -46,6 +46,7 @@ const descriptions: Record<string, string> = {
   platform: 'Control capabilities, menus, environments, and releases.',
   'organization-settings':
     'Manage organization identity, defaults, and policy.',
+  departments: 'Manage departments, reporting structure, and operating units.',
   health: 'Review service health, dependencies, and recovery guidance.',
   audit: 'Investigate immutable security and administration history.',
   integrations: 'Configure connected providers and verify their health.',
@@ -55,7 +56,7 @@ const groups = [
   {
     title: 'People & access',
     description: 'Identity, structure, and authorization.',
-    keys: ['users', 'roles', 'organization-settings'],
+    keys: ['users', 'roles', 'departments', 'organization-settings'],
   },
   {
     title: 'Platform & services',

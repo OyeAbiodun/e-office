@@ -27,6 +27,7 @@ from meetinghq_api.modules.finance.schemas import (
     AttachmentResponse,
     DisbursementInput,
     ExpenseCategoryInput,
+    ExpenseCategoryUpdate,
     FinanceAccountInput,
     FinanceAccountResponse,
     FinanceAdjustmentInput,
@@ -50,7 +51,7 @@ from meetinghq_api.modules.finance.service import FinanceService
 from meetinghq_api.modules.notifications.service import NotificationService
 from meetinghq_api.modules.organizations.models import Organization, OrganizationUnit
 from meetinghq_api.modules.users.models import User
-from meetinghq_api.shared.exceptions import NotFoundError, ValidationError
+from meetinghq_api.shared.exceptions import ConflictError, NotFoundError, ValidationError
 from meetinghq_api.shared.responses import OperationResponse
 
 router = APIRouter(tags=["finance"])
@@ -263,16 +264,19 @@ async def reconcile_transaction(
 
 
 @router.get("/finance/categories", response_model=list[dict[str, object]])
-async def categories(session: Session, user: VoucherReader) -> list[dict[str, object]]:
+async def categories(
+    session: Session, user: VoucherReader, active_only: bool = False
+) -> list[dict[str, object]]:
+    filters = [
+        ExpenseCategory.organization_id == user.organization_id,
+        ExpenseCategory.deleted_at.is_(None),
+    ]
+    if active_only:
+        filters.append(ExpenseCategory.is_active.is_(True))
     rows = list(
         (
             await session.scalars(
-                select(ExpenseCategory)
-                .where(
-                    ExpenseCategory.organization_id == user.organization_id,
-                    ExpenseCategory.deleted_at.is_(None),
-                )
-                .order_by(ExpenseCategory.name)
+                select(ExpenseCategory).where(*filters).order_by(ExpenseCategory.name)
             )
         ).all()
     )
@@ -280,6 +284,7 @@ async def categories(session: Session, user: VoucherReader) -> list[dict[str, ob
         {
             "id": str(row.id),
             "name": row.name,
+            "code": row.code,
             "description": row.description,
             "is_active": row.is_active,
         }
@@ -293,9 +298,22 @@ async def create_category(
     session: Session,
     user: Annotated[User, require_permission("finance.accounts.manage")],
 ) -> dict[str, object]:
+    name = body.name.strip()
+    code = body.code.upper() if body.code else None
+    duplicate = await session.scalar(
+        select(ExpenseCategory.id).where(
+            ExpenseCategory.organization_id == user.organization_id,
+            ExpenseCategory.deleted_at.is_(None),
+            (func.lower(ExpenseCategory.name) == name.lower())
+            | ((ExpenseCategory.code == code) if code else False),
+        )
+    )
+    if duplicate:
+        raise ConflictError("An expense category with that name or code already exists")
     item = ExpenseCategory(
         organization_id=user.organization_id,
-        name=body.name.strip(),
+        name=name,
+        code=code,
         description=body.description,
         is_active=body.is_active,
     )
@@ -311,7 +329,64 @@ async def create_category(
             audit_metadata={"name": item.name},
         )
     )
-    return {"id": str(item.id), "name": item.name}
+    return {"id": str(item.id), "name": item.name, "code": item.code}
+
+
+@router.patch("/finance/categories/{category_id}")
+async def update_category(
+    category_id: uuid.UUID,
+    body: ExpenseCategoryUpdate,
+    session: Session,
+    user: Annotated[User, require_permission("finance.accounts.manage")],
+) -> dict[str, object]:
+    item = await session.scalar(
+        select(ExpenseCategory).where(
+            ExpenseCategory.id == category_id,
+            ExpenseCategory.organization_id == user.organization_id,
+            ExpenseCategory.deleted_at.is_(None),
+        )
+    )
+    if not item:
+        raise NotFoundError("Expense category not found")
+    name = body.name.strip() if body.name is not None else item.name
+    code = body.code.upper() if body.code else None
+    if "name" in body.model_fields_set or "code" in body.model_fields_set:
+        duplicate = await session.scalar(
+            select(ExpenseCategory.id).where(
+                ExpenseCategory.organization_id == user.organization_id,
+                ExpenseCategory.deleted_at.is_(None),
+                ExpenseCategory.id != item.id,
+                (func.lower(ExpenseCategory.name) == name.lower())
+                | ((ExpenseCategory.code == code) if code else False),
+            )
+        )
+        if duplicate:
+            raise ConflictError("An expense category with that name or code already exists")
+    item.name = name
+    if "code" in body.model_fields_set:
+        item.code = code
+    if "description" in body.model_fields_set:
+        item.description = body.description
+    if body.is_active is not None:
+        item.is_active = body.is_active
+    session.add(
+        AuditLog(
+            organization_id=user.organization_id,
+            user_id=user.id,
+            action="finance.category_updated",
+            resource="expense_category",
+            resource_id=item.id,
+            audit_metadata={"name": item.name, "is_active": item.is_active},
+        )
+    )
+    await session.flush()
+    return {
+        "id": str(item.id),
+        "name": item.name,
+        "code": item.code,
+        "description": item.description,
+        "is_active": item.is_active,
+    }
 
 
 def download(data: bytes, filename: str, content_type: str) -> Response:

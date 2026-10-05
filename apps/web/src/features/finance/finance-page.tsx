@@ -9,6 +9,7 @@ import {
   money,
   query,
   type Account,
+  type ExpenseCategory,
   type Filters,
   type Transaction,
 } from './api'
@@ -139,13 +140,27 @@ export function FinancePage() {
 
 function ExpenseCategories() {
   const client = useQueryClient()
+  const [editing, setEditing] = useState<ExpenseCategory | null>(null)
   const categories = useQuery({
     queryKey: ['expense-categories'],
-    queryFn: financeApi.categories,
+    queryFn: () => financeApi.categories(),
   })
   const create = useMutation({
     mutationFn: financeApi.createCategory,
     onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['expense-categories'] })
+    },
+  })
+  const update = useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: string
+      body: Partial<ExpenseCategory>
+    }) => financeApi.updateCategory(id, body),
+    onSuccess: async () => {
+      setEditing(null)
       await client.invalidateQueries({ queryKey: ['expense-categories'] })
     },
   })
@@ -156,6 +171,7 @@ function ExpenseCategories() {
     create.mutate(
       {
         name: String(values.get('name') ?? ''),
+        code: String(values.get('code') ?? '') || null,
         description: String(values.get('description') ?? '') || null,
         is_active: true,
       },
@@ -180,12 +196,28 @@ function ExpenseCategories() {
                 key={category.id}
               >
                 <div>
-                  <h3 className="font-semibold">{category.name}</h3>
+                  <h3 className="font-semibold">
+                    {category.name}
+                    {category.code ? (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {category.code}
+                      </span>
+                    ) : null}
+                  </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {category.description || 'No description'}
                   </p>
                 </div>
-                <Status value={category.is_active ? 'active' : 'inactive'} />
+                <div className="flex items-center gap-3">
+                  <Status value={category.is_active ? 'active' : 'inactive'} />
+                  <button
+                    className="text-sm font-semibold text-primary"
+                    onClick={() => setEditing(category)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                </div>
               </article>
             ))}
           </div>
@@ -195,26 +227,83 @@ function ExpenseCategories() {
           </p>
         )}
       </Section>
-      <Section title="New category">
-        <form className="grid gap-4" onSubmit={submit}>
+      <Section title={editing ? 'Edit category' : 'New category'}>
+        <form
+          className="grid gap-4"
+          key={editing?.id ?? 'new'}
+          onSubmit={
+            editing
+              ? (event) => {
+                  event.preventDefault()
+                  const values = new FormData(event.currentTarget)
+                  update.mutate({
+                    id: editing.id,
+                    body: {
+                      name: String(values.get('name') ?? ''),
+                      code: String(values.get('code') ?? '') || null,
+                      description:
+                        String(values.get('description') ?? '') || null,
+                    },
+                  })
+                }
+              : submit
+          }
+        >
           <Field label="Category name">
-            <input name="name" required maxLength={120} />
+            <input
+              defaultValue={editing?.name}
+              name="name"
+              required
+              maxLength={120}
+            />
+          </Field>
+          <Field label="Code (optional)">
+            <input
+              defaultValue={editing?.code ?? ''}
+              name="code"
+              maxLength={64}
+              pattern="[A-Za-z0-9_.-]+"
+            />
           </Field>
           <Field label="Description">
-            <textarea name="description" maxLength={1000} />
+            <textarea
+              defaultValue={editing?.description ?? ''}
+              name="description"
+              maxLength={1000}
+            />
           </Field>
-          {create.error && <ErrorState error={create.error} />}
+          {(create.error || update.error) && (
+            <ErrorState error={create.error ?? update.error} />
+          )}
           <button
             className="finance-primary"
-            disabled={create.isPending}
+            disabled={create.isPending || update.isPending}
             type="submit"
           >
-            {create.isPending ? 'Creating…' : 'Create category'}
+            {editing ? 'Save changes' : 'Create category'}
           </button>
-          <p className="text-xs text-muted-foreground">
-            Existing categories are read-only because the current API does not
-            support editing or deactivation.
-          </p>
+          {editing ? (
+            <>
+              <button
+                className="finance-secondary"
+                disabled={update.isPending}
+                onClick={() =>
+                  update.mutate({
+                    id: editing.id,
+                    body: { is_active: !editing.is_active },
+                  })
+                }
+                type="button"
+              >
+                {editing.is_active
+                  ? 'Deactivate category'
+                  : 'Activate category'}
+              </button>
+              <button onClick={() => setEditing(null)} type="button">
+                Cancel editing
+              </button>
+            </>
+          ) : null}
         </form>
       </Section>
     </div>

@@ -53,7 +53,7 @@ function VoucherEditor({ detail }: { detail?: VoucherDetail }) {
   )
   const categories = useQuery({
     queryKey: ['expense-categories'],
-    queryFn: financeApi.categories,
+    queryFn: () => financeApi.categories(),
   })
   const options = useQuery({
     queryKey: ['voucher-options'],

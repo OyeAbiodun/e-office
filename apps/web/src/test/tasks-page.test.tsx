@@ -142,6 +142,7 @@ beforeEach(() => {
 test('records a prior-day activity and edits it from the same work history', async () => {
   renderPage()
 
+  fireEvent.click(await screen.findByRole('tab', { name: 'Activity history' }))
   expect(
     await screen.findByText('Prepared the customer review evidence.'),
   ).toBeVisible()
@@ -191,12 +192,12 @@ test('records a prior-day activity and edits it from the same work history', asy
   )
 }, 15_000)
 
-test('shows live work summaries and supports lightweight task creation', async () => {
+test('keeps tasks primary with compact metrics and supports lightweight creation', async () => {
   renderPage()
 
   expect(await screen.findByText('Prepare the customer review')).toBeVisible()
-  expect(screen.getByText('Today’s summary')).toBeVisible()
-  expect(screen.getByRole('heading', { name: 'This week' })).toBeVisible()
+  expect(screen.queryByText('Today’s summary')).not.toBeInTheDocument()
+  expect(screen.getByText('Due today')).toBeVisible()
   expect(
     screen.queryByRole('button', { name: 'My team' }),
   ).not.toBeInTheDocument()
@@ -264,7 +265,7 @@ test('keeps tabs in URL state and opens a deep-linked task outside the current l
   expect(mocks.get).toHaveBeenCalledWith('task-remote')
 
   fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
-  fireEvent.click(screen.getByRole('tab', { name: 'Activities' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Activity history' }))
   expect(window.location.search).toContain('tab=activities')
   expect(
     screen.getByText('Prepared the customer review evidence.'),

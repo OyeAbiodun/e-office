@@ -79,6 +79,51 @@ async def create(
     return response.json()["data"]  # type: ignore[no-any-return]
 
 
+async def test_expense_category_management_preserves_historical_vouchers(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    created = await organization_client.post(
+        "/api/v1/finance/categories",
+        headers=admin_headers,
+        json={"name": "Travel", "code": "travel", "description": "Travel costs"},
+    )
+    assert created.status_code == 201, created.text
+    category_id = created.json()["data"]["id"]
+    assert created.json()["data"]["code"] == "TRAVEL"
+    duplicate = await organization_client.post(
+        "/api/v1/finance/categories",
+        headers=admin_headers,
+        json={"name": "Different", "code": "TRAVEL"},
+    )
+    assert duplicate.status_code == 409
+    voucher = await create(organization_client, admin_headers, expense_category_id=category_id)
+    deactivated = await organization_client.patch(
+        f"/api/v1/finance/categories/{category_id}",
+        headers=admin_headers,
+        json={"name": "Business travel", "is_active": False},
+    )
+    assert deactivated.status_code == 200, deactivated.text
+    assert deactivated.json()["data"]["is_active"] is False
+    active = await organization_client.get(
+        "/api/v1/finance/categories?active_only=true", headers=admin_headers
+    )
+    assert active.json()["data"] == []
+    detail = await organization_client.get(
+        f"/api/v1/vouchers/{voucher['id']}", headers=admin_headers
+    )
+    assert detail.json()["data"]["voucher"]["expense_category_id"] == category_id
+    rejected = await organization_client.post(
+        "/api/v1/vouchers",
+        headers=admin_headers,
+        json={
+            "title": "New travel",
+            "expense_category_id": category_id,
+            "line_items": [{"description": "Fare", "unit_price": "10.00"}],
+        },
+    )
+    assert rejected.status_code == 404
+
+
 async def test_finance_complete_workflow_and_replay(
     organization_client: AsyncClient,
     admin_headers: dict[str, str],

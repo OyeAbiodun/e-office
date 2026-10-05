@@ -69,8 +69,22 @@ class VoucherCommentInput(InputModel):
 
 class ExpenseCategoryInput(InputModel):
     name: str = Field(min_length=1, max_length=120)
+    code: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     description: str | None = Field(default=None, max_length=1000)
     is_active: bool = True
+
+
+class ExpenseCategoryUpdate(InputModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    code: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    description: str | None = Field(default=None, max_length=1000)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def non_empty_update(self) -> ExpenseCategoryUpdate:
+        if not self.model_fields_set:
+            raise ValueError("At least one field is required")
+        return self
 
 
 class FinanceAccountInput(InputModel):

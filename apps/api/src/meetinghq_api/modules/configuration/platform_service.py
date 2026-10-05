@@ -171,6 +171,15 @@ DEFAULT_MENUS = (
         None,
         "admin",
     ),
+    (
+        "departments",
+        "Departments",
+        "/organization?section=departments",
+        "building",
+        "admin.manage",
+        None,
+        "admin",
+    ),
     ("health", "System Health", "/system-health", "activity", "admin.manage", None, "admin"),
     ("audit", "Audit Center", "/audit", "file-clock", "admin.manage", None, "admin"),
     (

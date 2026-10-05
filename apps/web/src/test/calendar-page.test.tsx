@@ -23,6 +23,11 @@ const calendarMocks = vi.hoisted(() => ({
   share: vi.fn(),
   revokeShare: vi.fn(),
   createCategory: vi.fn(),
+  updateCalendar: vi.fn(),
+}))
+
+vi.mock('@/features/auth/auth-store', () => ({
+  useAuth: () => ({ user: { id: 'user-1', permissions: ['calendar.write'] } }),
 }))
 
 vi.mock('@/features/calendar/api', () => ({ calendarApi: calendarMocks }))
@@ -60,9 +65,10 @@ const calendar = {
   type: 'organization',
   timezone: 'UTC',
   is_default: true,
+  owner_id: 'user-1',
 }
 
-function renderCalendar(view: 'agenda' | 'resources' = 'agenda') {
+function renderCalendar(view: 'agenda' | 'resources' | 'settings' = 'agenda') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -152,5 +158,22 @@ test('resource management creates a real room in the active workspace', async ()
         category: 'room',
       }),
     ),
+  )
+})
+
+test('makes owned-calendar sharing discoverable and persists color choices', async () => {
+  calendarMocks.updateCalendar.mockResolvedValue({
+    ...calendar,
+    color: '#dc2626',
+  })
+  renderCalendar('settings')
+  expect(await screen.findByText(/choose a calendar you own/i)).toBeVisible()
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Rose calendar color' }),
+  )
+  await waitFor(() =>
+    expect(calendarMocks.updateCalendar).toHaveBeenCalledWith('calendar-1', {
+      color: '#e11d48',
+    }),
   )
 })

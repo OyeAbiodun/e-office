@@ -20,6 +20,12 @@ class OrganizationSettings(BaseModel):
     password_policy: dict[str, object] = Field(default_factory=dict)
     session_timeout_minutes: int = Field(default=1440, ge=15)
     default_theme: str = Field(default="system", pattern="^(light|dark|system)$")
+    contact_email: str | None = Field(default=None, max_length=254)
+    contact_phone: str | None = Field(default=None, max_length=40)
+    website: str | None = Field(default=None, max_length=2048)
+    street_address: str | None = Field(default=None, max_length=500)
+    city: str | None = Field(default=None, max_length=120)
+    postal_code: str | None = Field(default=None, max_length=32)
 
 
 class OrganizationUpdate(BaseModel):

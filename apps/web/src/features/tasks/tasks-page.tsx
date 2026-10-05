@@ -32,26 +32,22 @@ const statuses: Array<[TaskStatus, string]> = [
   ['cancelled', 'Cancelled'],
 ]
 const priorities: TaskPriority[] = ['low', 'normal', 'high', 'urgent']
-type WorkTab = 'overview' | 'tasks' | 'activities'
+type WorkTab = 'tasks' | 'activities'
 
 const workTabs: Array<[WorkTab, string]> = [
-  ['overview', 'Overview'],
   ['tasks', 'Tasks'],
-  ['activities', 'Activities'],
+  ['activities', 'Activity history'],
 ]
 
 export function TasksPage() {
+  const showExpandedSummary: boolean = false
   const initial = useMemo(() => new URLSearchParams(window.location.search), [])
   const client = useQueryClient()
   const { user } = useAuth()
   const permissions = new Set(user?.permissions ?? [])
   const requestedTab = initial.get('tab')
   const [activeTab, setActiveTab] = useState<WorkTab>(
-    initial.has('task')
-      ? 'tasks'
-      : requestedTab === 'tasks' || requestedTab === 'activities'
-        ? requestedTab
-        : 'overview',
+    requestedTab === 'activities' ? 'activities' : 'tasks',
   )
   const [scope, setScope] = useState(initial.get('scope') ?? 'mine')
   const [due, setDue] = useState<string | undefined>(
@@ -146,8 +142,12 @@ export function TasksPage() {
 
   useEffect(() => {
     const parameters = new URLSearchParams()
-    if (activeTab !== 'overview') parameters.set('tab', activeTab)
+    if (activeTab === 'activities') parameters.set('tab', activeTab)
+    const existingTaskId = new URLSearchParams(window.location.search).get(
+      'task',
+    )
     if (selected) parameters.set('task', selected.id)
+    else if (existingTaskId) parameters.set('task', existingTaskId)
     if (scope !== 'mine') parameters.set('scope', scope)
     if (due) parameters.set('due', due)
     if (status) parameters.set('status', status)
@@ -161,7 +161,7 @@ export function TasksPage() {
   }, [activeTab, due, page, priority, scope, search, selected, status])
 
   useEffect(() => {
-    const taskId = initial.get('task')
+    const taskId = new URLSearchParams(window.location.search).get('task')
     if (!taskId || selected) return
     const listed = rows.find((task) => task.id === taskId)
     if (listed) {
@@ -172,18 +172,16 @@ export function TasksPage() {
       .get(taskId)
       .then((result) => setSelected(result.task))
       .catch(() => setSelected(null))
-  }, [initial, rows, selected])
+  }, [rows, selected])
 
   useEffect(() => {
     const restoreFromUrl = () => {
       const parameters = new URLSearchParams(window.location.search)
       const tab = parameters.get('tab')
       setActiveTab(
-        parameters.has('task')
-          ? 'tasks'
-          : tab === 'tasks' || tab === 'activities'
-            ? tab
-            : 'overview',
+        tab === 'activities' && !parameters.has('task')
+          ? 'activities'
+          : 'tasks',
       )
       setScope(parameters.get('scope') ?? 'mine')
       setDue(parameters.get('due') ?? 'today')
@@ -218,7 +216,7 @@ export function TasksPage() {
   ]
   const selectTab = (tab: WorkTab) => {
     const parameters = new URLSearchParams(window.location.search)
-    if (tab === 'overview') parameters.delete('tab')
+    if (tab === 'tasks') parameters.delete('tab')
     else parameters.set('tab', tab)
     if (tab !== 'tasks') parameters.delete('task')
     window.history.pushState(
@@ -229,17 +227,26 @@ export function TasksPage() {
     setActiveTab(tab)
     if (tab !== 'tasks') setSelected(null)
   }
+  const closeTask = () => {
+    const parameters = new URLSearchParams(window.location.search)
+    parameters.delete('task')
+    window.history.pushState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${parameters.size ? `?${parameters}` : ''}`,
+    )
+    setSelected(null)
+  }
 
   return (
     <div className="page-container space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium text-primary">Work management</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Tasks & Activities
-          </h1>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Tasks</h1>
           <p className="mt-2 text-muted-foreground">
-            Focus on the work that needs attention, then capture the outcome.
+            Open work is front and center, with activity history available when
+            you need it.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -261,6 +268,29 @@ export function TasksPage() {
           </button>
         </div>
       </header>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric icon={Clock3} label="Due today" value={today} />
+        <Metric
+          icon={ListChecks}
+          label="Open work"
+          value={
+            rows.filter(
+              (task) => !['completed', 'cancelled'].includes(task.status),
+            ).length
+          }
+        />
+        <Metric
+          icon={Sparkles}
+          label="Overdue"
+          value={overdue}
+          tone={overdue ? 'danger' : undefined}
+        />
+        <Metric
+          icon={CheckCircle2}
+          label="Completed"
+          value={rows.filter((task) => task.status === 'completed').length}
+        />
+      </section>
       <nav
         aria-label="Tasks and activities sections"
         className="flex gap-1 rounded-2xl border bg-card p-1 shadow-sm"
@@ -281,7 +311,8 @@ export function TasksPage() {
             </button>
           ))}
       </nav>
-      {activeTab === 'overview' && (
+      {/* The task list is intentionally the primary surface; summary signals stay compact above. */}
+      {showExpandedSummary && dailySummary.data && weeklySummary.data ? (
         <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric icon={Clock3} label="Due today" value={today} />
@@ -457,7 +488,7 @@ export function TasksPage() {
             </div>
           </section>
         </>
-      )}
+      ) : null}
       {activeTab !== 'tasks' && canViewActivity && (
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -489,10 +520,7 @@ export function TasksPage() {
             </div>
           ) : activities.data?.length ? (
             <div className="mt-4 divide-y">
-              {(activeTab === 'overview'
-                ? activities.data.slice(0, 5)
-                : activities.data
-              ).map((entry) => (
+              {activities.data.map((entry) => (
                 <article
                   className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between"
                   key={entry.id}
@@ -732,7 +760,7 @@ export function TasksPage() {
       {selected && (
         <TaskDetail
           task={selected}
-          onClose={() => setSelected(null)}
+          onClose={closeTask}
           onUpdate={(body) => update.mutate({ id: selected.id, body })}
         />
       )}

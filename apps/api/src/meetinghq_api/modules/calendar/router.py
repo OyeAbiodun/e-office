@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from meetinghq_api.infrastructure.database import get_database_session
 from meetinghq_api.modules.auth.domain.permissions import Permissions
-from meetinghq_api.modules.auth.presentation.dependencies import require_permission
+from meetinghq_api.modules.auth.presentation.dependencies import CurrentUser, require_permission
 from meetinghq_api.modules.calendar.schemas import (
     AvailabilityCreate,
     AvailabilityResponse,
@@ -236,10 +236,19 @@ async def share_calendar(
     calendar_id: uuid.UUID,
     body: CalendarShareCreate,
     session: Session,
-    user: Annotated[User, require_permission(Permissions.CALENDAR_MANAGE)],
+    user: CurrentUser,
 ) -> CalendarShareResponse:
     service = CalendarService(session)
-    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
+    await service.share_manageable(
+        user.organization_id,
+        calendar_id,
+        user.id,
+        administrative=any(
+            permission.name == Permissions.CALENDAR_MANAGE
+            for role in user.roles
+            for permission in role.permissions
+        ),
+    )
     return CalendarShareResponse.model_validate(
         await service.share(
             user.organization_id,
@@ -256,10 +265,19 @@ async def revoke_calendar_share(
     calendar_id: uuid.UUID,
     share_id: uuid.UUID,
     session: Session,
-    user: Annotated[User, require_permission(Permissions.CALENDAR_MANAGE)],
+    user: CurrentUser,
 ) -> OperationResponse:
     service = CalendarService(session)
-    await service.accessible(user.organization_id, calendar_id, user.id, write=True)
+    await service.share_manageable(
+        user.organization_id,
+        calendar_id,
+        user.id,
+        administrative=any(
+            permission.name == Permissions.CALENDAR_MANAGE
+            for role in user.roles
+            for permission in role.permissions
+        ),
+    )
     await service.revoke_share(user.organization_id, calendar_id, share_id, user.id)
     return OperationResponse(message="Calendar access revoked")
 

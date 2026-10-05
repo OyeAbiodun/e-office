@@ -6,6 +6,7 @@ import { FinancePage } from '@/features/finance/finance-page'
 const mocks = vi.hoisted(() => ({
   categories: vi.fn(),
   createCategory: vi.fn(),
+  updateCategory: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -30,6 +31,7 @@ vi.mock('@/features/finance/api', async (importOriginal) => {
       ...actual.financeApi,
       categories: mocks.categories,
       createCategory: mocks.createCategory,
+      updateCategory: mocks.updateCategory,
     },
   }
 })
@@ -39,17 +41,20 @@ test('shows tenant categories and creates only through the authorized contract',
     {
       id: 'category-1',
       name: 'Travel',
+      code: 'TRAVEL',
       description: 'Approved travel costs',
       is_active: true,
     },
     {
       id: 'category-2',
       name: 'Legacy supplies',
+      code: null,
       description: null,
       is_active: false,
     },
   ])
   mocks.createCategory.mockResolvedValue({ id: 'category-3', name: 'Meals' })
+  mocks.updateCategory.mockResolvedValue({})
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -74,10 +79,17 @@ test('shows tenant categories and creates only through the authorized contract',
   await waitFor(() => expect(mocks.createCategory).toHaveBeenCalledTimes(1))
   expect(mocks.createCategory.mock.calls[0]?.[0]).toEqual({
     name: 'Meals',
+    code: null,
     description: 'Staff meals',
     is_active: true,
   })
-  expect(
-    screen.getByText(/current API does not support editing or deactivation/i),
-  ).toBeVisible()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1]!)
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Activate category' }),
+  )
+  await waitFor(() =>
+    expect(mocks.updateCategory).toHaveBeenCalledWith('category-2', {
+      is_active: true,
+    }),
+  )
 })

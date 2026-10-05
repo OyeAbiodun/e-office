@@ -132,9 +132,7 @@ export function Sidebar({
   const organizationLabel = organization.data?.name ?? 'Your organization'
   const workspace = workspaces.data?.[0]
   const allItems = navigation.data ?? []
-  const sidebarItems = allItems.filter(
-    (item) => item.parent_key !== 'administration',
-  )
+  const sidebarItems = allItems
   const groupedNavigation = useMemo(
     () => buildSidebarNavigation(sidebarItems),
     [sidebarItems],

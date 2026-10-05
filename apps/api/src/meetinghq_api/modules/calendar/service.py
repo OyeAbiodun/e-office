@@ -108,6 +108,29 @@ class CalendarService:
             raise NotFoundError("Calendar not found")
         return calendar
 
+    async def share_manageable(
+        self,
+        organization_id: uuid.UUID,
+        calendar_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        administrative: bool = False,
+    ) -> Calendar:
+        """Authorize share administration without conflating it with event writes."""
+        calendar = await self.get(organization_id, calendar_id)
+        if administrative or calendar.owner_id == user_id:
+            return calendar
+        managed = await self.session.scalar(
+            select(CalendarShare.id).where(
+                CalendarShare.calendar_id == calendar_id,
+                CalendarShare.user_id == user_id,
+                CalendarShare.permission == "manage",
+            )
+        )
+        if managed is None:
+            raise NotFoundError("Calendar not found")
+        return calendar
+
     async def accessible_event(
         self,
         organization_id: uuid.UUID,

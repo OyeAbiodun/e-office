@@ -35,6 +35,7 @@ class ExpenseCategory(SoftDeleteMixin, Base):
     __tablename__ = "expense_categories"
     __table_args__ = (
         UniqueConstraint("organization_id", "name", name="uq_expense_categories_org_name"),
+        UniqueConstraint("organization_id", "code", name="uq_expense_categories_org_code"),
         Index("ix_expense_categories_org_active", "organization_id", "is_active"),
     )
 
@@ -43,6 +44,7 @@ class ExpenseCategory(SoftDeleteMixin, Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(120))
+    code: Mapped[str | None] = mapped_column(String(64))
     description: Mapped[str | None] = mapped_column(String(1000))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

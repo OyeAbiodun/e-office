@@ -34,7 +34,7 @@ const GROUPS: Array<{ key: string; label: string; itemKeys: string[] }> = [
   },
 ]
 
-const DIRECT_KEYS = new Set(['dashboard', 'administration', 'help'])
+const DIRECT_KEYS = new Set(['dashboard', 'help'])
 
 /**
  * Creates a presentation hierarchy from the already authorized server menu.
@@ -65,6 +65,18 @@ export function buildSidebarNavigation(items: MenuDefinition[]) {
     })
     return { key: definition.key, label: definition.label, items: groupItems }
   }).filter((group) => group.items.length > 0)
+  const administration = items.find((item) => item.key === 'administration')
+  const administrationItems = items
+    .filter((item) => item.parent_key === 'administration')
+    .sort((left, right) => left.position - right.position)
+  if (administration && administrationItems.length) {
+    consumed.add(administration.key)
+    groups.push({
+      key: 'administration',
+      label: administration.label,
+      items: administrationItems,
+    })
+  }
   const ungrouped = roots.filter((item) => !consumed.has(item.key))
   if (ungrouped.length)
     groups.push({ key: 'more', label: 'More', items: ungrouped })

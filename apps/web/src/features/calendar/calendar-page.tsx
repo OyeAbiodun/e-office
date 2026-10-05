@@ -28,6 +28,7 @@ import {
   type Resource,
 } from './api'
 import { organizationApi } from '@/features/organizations/api'
+import { useAuth } from '@/features/auth/auth-store'
 import { toLocalDateTimeInput } from '@/lib/date-time'
 
 type CalendarView =
@@ -68,6 +69,14 @@ const addDays = (date: Date, amount: number) => {
   return value
 }
 const localInput = toLocalDateTimeInput
+const calendarColors = [
+  ['Ocean', '#2563eb'],
+  ['Violet', '#7c3aed'],
+  ['Rose', '#e11d48'],
+  ['Amber', '#d97706'],
+  ['Emerald', '#059669'],
+  ['Slate', '#475569'],
+] as const
 
 function EmptyCalendar({ onCreate }: { onCreate: () => void }) {
   return (
@@ -670,6 +679,7 @@ function CalendarSurface({
 }
 
 export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
+  const { user } = useAuth()
   const client = useQueryClient()
   const [date, setDate] = useState(new Date())
   const [search, setSearch] = useState('')
@@ -683,6 +693,7 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
     location: '',
   })
   const [calendarAction, setCalendarAction] = useState('')
+  const [managedCalendarId, setManagedCalendarId] = useState('')
   const [availabilityForm, setAvailabilityForm] = useState({
     weekday: 0,
     start_time: '09:00',
@@ -728,15 +739,21 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
     queryFn: organizationApi.members,
   })
   const primaryCalendarId = calendars.data?.[0]?.id
+  const manageableCalendars =
+    calendars.data?.filter((calendar) => calendar.owner_id === user?.id) ?? []
+  const managedCalendar =
+    manageableCalendars.find((calendar) => calendar.id === managedCalendarId) ??
+    manageableCalendars[0]
+  const managedCalendarIdResolved = managedCalendar?.id
   const availability = useQuery({
     queryKey: ['calendar-availability', primaryCalendarId],
     queryFn: () => calendarApi.availability(primaryCalendarId!),
     enabled: Boolean(primaryCalendarId),
   })
   const shares = useQuery({
-    queryKey: ['calendar-shares', primaryCalendarId],
-    queryFn: () => calendarApi.shares(primaryCalendarId!),
-    enabled: Boolean(primaryCalendarId),
+    queryKey: ['calendar-shares', managedCalendarIdResolved],
+    queryFn: () => calendarApi.shares(managedCalendarIdResolved!),
+    enabled: Boolean(managedCalendarIdResolved),
   })
   const holidays = useQuery({
     queryKey: ['calendar-holidays'],
@@ -889,10 +906,16 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
     setCalendarAction(`${slots.length} shared slots found`)
   }
   const shareCalendar = async () => {
-    if (!primaryCalendarId || !shareForm.user_id) return
-    await calendarApi.share(primaryCalendarId, shareForm)
+    if (!managedCalendarIdResolved || !shareForm.user_id) return
+    await calendarApi.share(managedCalendarIdResolved, shareForm)
     await client.invalidateQueries({ queryKey: ['calendar-shares'] })
     setCalendarAction('Calendar sharing updated')
+  }
+  const updateCalendarColor = async (color: string) => {
+    if (!managedCalendarIdResolved) return
+    await calendarApi.updateCalendar(managedCalendarIdResolved, { color })
+    await client.invalidateQueries({ queryKey: ['calendars'] })
+    setCalendarAction('Calendar color updated')
   }
   const createCategory = async () => {
     if (!categoryForm.name.trim()) return
@@ -991,6 +1014,16 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
             <p className="rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">
               No calendars are available.
             </p>
+          )}
+          {!!calendars.data?.some(
+            (calendar) => calendar.owner_id === user?.id,
+          ) && (
+            <Link
+              className="mt-2 flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm font-semibold text-primary"
+              to="/calendar/settings"
+            >
+              <Settings2 className="size-4" /> Share or customize calendar
+            </Link>
           )}
           <div className="my-3 border-t" />
           <div className="grid grid-cols-2 gap-2 px-1 pb-3">
@@ -1345,6 +1378,54 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
                 {view === 'settings' && (
                   <>
                     <div className="rounded-xl border p-4">
+                      <h3 className="font-semibold">
+                        Calendar appearance and access
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Choose a calendar you own, then set its color or share
+                        it with an employee.
+                      </p>
+                      <select
+                        aria-label="Calendar to manage"
+                        className="mt-3 h-10 w-full rounded-lg border bg-background px-3 text-sm"
+                        onChange={(event) =>
+                          setManagedCalendarId(event.target.value)
+                        }
+                        value={managedCalendarIdResolved ?? ''}
+                      >
+                        {calendars.data
+                          ?.filter((calendar) => calendar.owner_id === user?.id)
+                          .map((calendar) => (
+                            <option key={calendar.id} value={calendar.id}>
+                              {calendar.name}
+                            </option>
+                          ))}
+                      </select>
+                      <fieldset className="mt-4">
+                        <legend className="text-sm font-medium">
+                          Calendar color
+                        </legend>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {calendarColors.map(([label, color]) => (
+                            <button
+                              aria-label={`${label} calendar color`}
+                              aria-pressed={managedCalendar?.color === color}
+                              className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                              key={color}
+                              onClick={() => void updateCalendarColor(color)}
+                              type="button"
+                            >
+                              <span
+                                className="size-4 rounded-full"
+                                style={{ backgroundColor: color }}
+                              />{' '}
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </fieldset>
+                    </div>
+                    <div className="rounded-xl border p-4">
                       <h3 className="font-semibold">Event color categories</h3>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <input
@@ -1394,7 +1475,7 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
                     <div className="rounded-xl border p-4">
                       <h3 className="font-semibold">Calendar sharing</h3>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Grant explicit access to the primary calendar.
+                        Grant explicit access to the selected personal calendar.
                       </p>
                       <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_140px_auto]">
                         <select
@@ -1455,9 +1536,9 @@ export function CalendarPage({ view = 'week' }: { view?: CalendarView }) {
                             <button
                               className="ml-auto text-red-600"
                               onClick={async () => {
-                                if (!primaryCalendarId) return
+                                if (!managedCalendarIdResolved) return
                                 await calendarApi.revokeShare(
-                                  primaryCalendarId,
+                                  managedCalendarIdResolved,
                                   share.id,
                                 )
                                 await client.invalidateQueries({
