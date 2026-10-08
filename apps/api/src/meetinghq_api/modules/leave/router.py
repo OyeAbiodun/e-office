@@ -32,6 +32,8 @@ from meetinghq_api.modules.leave.schemas import (
     LeaveEligibilityResponse,
     LeavePeriodInput,
     LeavePeriodResponse,
+    LeavePolicyInput,
+    LeavePolicyResponse,
     LeaveReportRow,
     LeaveRequestDetail,
     LeaveRequestInput,
@@ -569,6 +571,23 @@ async def get_working_week(
     return await LeaveService(session).working_week(user)
 
 
+@router.get("/policy", response_model=LeavePolicyResponse)
+async def get_leave_policy(
+    session: Session,
+    user: Annotated[User, require_permission("leave.types.view")],
+) -> LeavePolicyResponse:
+    return LeavePolicyResponse.model_validate(await LeaveService(session).leave_policy(user))
+
+
+@router.put("/policy", response_model=LeavePolicyResponse)
+async def update_leave_policy(
+    body: LeavePolicyInput,
+    session: Session,
+    user: Annotated[User, require_permission("leave.types.manage")],
+) -> LeavePolicyResponse:
+    return await LeaveService(session).update_leave_policy(user, body)
+
+
 @router.put("/policy/working-week", response_model=WorkingWeekResponse)
 async def set_working_week(
     body: WorkingWeekInput,
@@ -597,6 +616,18 @@ async def create_request(
 ) -> LeaveRequestResponse:
     return LeaveRequestResponse.model_validate(
         await LeaveService(session).create_request(user, body)
+    )
+
+
+@router.patch("/requests/{request_id}", response_model=LeaveRequestResponse)
+async def update_request(
+    request_id: uuid.UUID,
+    body: LeaveRequestInput,
+    session: Session,
+    user: Annotated[User, require_permission("leave.request")],
+) -> LeaveRequestResponse:
+    return LeaveRequestResponse.model_validate(
+        await LeaveService(session).update_request(user, request_id, body)
     )
 
 

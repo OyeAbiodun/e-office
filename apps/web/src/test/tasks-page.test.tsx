@@ -197,7 +197,7 @@ test('keeps tasks primary with compact metrics and supports lightweight creation
 
   expect(await screen.findByText('Prepare the customer review')).toBeVisible()
   expect(screen.queryByText('Today’s summary')).not.toBeInTheDocument()
-  expect(screen.getByText('Due today')).toBeVisible()
+  expect(screen.getByLabelText('Filter task scope')).toHaveValue('')
   expect(
     screen.queryByRole('button', { name: 'My team' }),
   ).not.toBeInTheDocument()
@@ -222,18 +222,26 @@ test('keeps tasks primary with compact metrics and supports lightweight creation
   )
 })
 
-test('clears the implicit today filter when switching to a broader work scope', async () => {
+test('shows all tasks by default and combines scope with other filters', async () => {
   renderPage()
 
   await screen.findByText('Prepare the customer review')
-  fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Created by me' }))
+    fireEvent.change(screen.getByLabelText('Filter task scope'), {
+      target: { value: 'created' },
+    })
+    fireEvent.change(screen.getByLabelText('Filter task status'), {
+      target: { value: 'blocked' },
+    })
   })
 
   await vi.waitFor(() =>
     expect(mocks.list).toHaveBeenLastCalledWith(
-      expect.objectContaining({ scope: 'created', due: undefined }),
+      expect.objectContaining({
+        scope: 'created',
+        status: 'blocked',
+        due: undefined,
+      }),
     ),
   )
 })

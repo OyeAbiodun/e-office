@@ -16,6 +16,7 @@ import {
   type LeaveAttachment,
   type LeaveBalance,
   type LeaveRequest,
+  type LeaveRequestDetail,
   type LeaveType,
 } from './api'
 import {
@@ -31,6 +32,7 @@ import { formatDateTime, formatDay, formatDays } from './utils'
 import { notify } from '@/components/feedback/events'
 import { useConfirmation } from '@/components/feedback/confirmation'
 import { useAuth } from '@/features/auth/auth-store'
+import { organizationApi, type Member } from '@/features/organizations/api'
 
 function balanceType(balance: LeaveBalance, types: LeaveType[]) {
   return types.find((item) => item.id === balance.leave_type_id)
@@ -59,6 +61,15 @@ export function LeavePage() {
     queryKey: ['leave', 'types', 'active'],
     queryFn: () => leaveApi.types({ active: true }),
   })
+  const policy = useQuery({
+    queryKey: ['leave', 'policy'],
+    queryFn: leaveApi.policy,
+  })
+  const employees = useQuery({
+    queryKey: ['leave', 'relief-employees'],
+    queryFn: organizationApi.members,
+    enabled: policy.data?.relief_person_mode !== 'disabled',
+  })
   const requests = useQuery({
     queryKey: ['leave', 'requests', 'mine', status, page],
     queryFn: () =>
@@ -69,8 +80,13 @@ export function LeavePage() {
         page_size: 10,
       }),
   })
-  const loading = summary.isLoading || types.isLoading || requests.isLoading
-  const error = summary.isError || types.isError || requests.isError
+  const loading =
+    summary.isLoading ||
+    types.isLoading ||
+    requests.isLoading ||
+    policy.isLoading
+  const error =
+    summary.isError || types.isError || requests.isError || policy.isError
   const refresh = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: ['leave'] }),
@@ -306,6 +322,11 @@ export function LeavePage() {
           balances={summary.data.balances}
           onClose={() => setRequestOpen(false)}
           onSaved={refresh}
+          policy={policy.data!}
+          employees={(employees.data ?? []).filter(
+            (employee) =>
+              employee.status === 'active' && employee.id !== user?.id,
+          )}
           types={types.data}
         />
       )}
@@ -399,20 +420,39 @@ function RequestLeaveDialog({
   types,
   onClose,
   onSaved,
+  policy,
+  employees,
+  draft,
 }: {
   balances: LeaveBalance[]
   types: LeaveType[]
   onClose: () => void
   onSaved: () => Promise<void>
+  policy: Awaited<ReturnType<typeof leaveApi.policy>>
+  employees: Member[]
+  draft?: LeaveRequestDetail
 }) {
-  const [leaveTypeId, setLeaveTypeId] = useState(types[0]?.id ?? '')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [halfDay, setHalfDay] = useState(false)
-  const [reason, setReason] = useState('')
+  const [leaveTypeId, setLeaveTypeId] = useState(
+    draft?.leave_type_id ?? types[0]?.id ?? '',
+  )
+  const [startDate, setStartDate] = useState(draft?.start_date ?? '')
+  const [endDate, setEndDate] = useState(draft?.end_date ?? '')
+  const [halfDay, setHalfDay] = useState(draft?.half_day ?? false)
+  const [reason, setReason] = useState(draft?.reason ?? '')
   const [file, setFile] = useState<File | null>(null)
+  const [reliefPersonId, setReliefPersonId] = useState(
+    draft?.relief_person_id ?? '',
+  )
+  const [attachments, setAttachments] = useState(draft?.attachments ?? [])
+  const persistedDraftId = useRef(draft?.id)
   const intent = useRef<'draft' | 'submit'>('submit')
   const selectedType = types.find((type) => type.id === leaveTypeId)
+  const today = new Date().toISOString().slice(0, 10)
+  const earliestStart = (() => {
+    const value = new Date(`${today}T00:00:00`)
+    value.setDate(value.getDate() + (selectedType?.minimum_notice_days ?? 0))
+    return value.toISOString().slice(0, 10)
+  })()
   const balance = balances.find((item) => item.leave_type_id === leaveTypeId)
   const preview = useQuery({
     queryKey: ['leave', 'preview', startDate, endDate, halfDay],
@@ -439,15 +479,24 @@ function RequestLeaveDialog({
   )
   const save = useMutation({
     mutationFn: async () => {
-      const draft = await leaveApi.createRequest({
+      const payload = {
         leave_type_id: leaveTypeId,
         start_date: startDate,
         end_date: endDate,
         half_day: halfDay,
         reason: reason || null,
-      })
-      if (file) await leaveApi.uploadAttachment(draft.id, file)
-      return intent.current === 'submit' ? leaveApi.submit(draft.id) : draft
+        relief_person_id: reliefPersonId || null,
+      }
+      const saved = persistedDraftId.current
+        ? await leaveApi.updateRequest(persistedDraftId.current, payload)
+        : await leaveApi.createRequest(payload)
+      persistedDraftId.current = saved.id
+      if (file) {
+        const uploaded = await leaveApi.uploadAttachment(saved.id, file)
+        setAttachments((current) => [...current, uploaded])
+        setFile(null)
+      }
+      return intent.current === 'submit' ? leaveApi.submit(saved.id) : saved
     },
     onSuccess: async () => {
       notify({
@@ -461,7 +510,7 @@ function RequestLeaveDialog({
             ? 'Your manager can now review the request.'
             : 'You can submit the request from its detail page.',
       })
-      await onSaved()
+      await onSaved().catch(() => undefined)
       onClose()
     },
   })
@@ -475,7 +524,11 @@ function RequestLeaveDialog({
     eligibility.isFetching ||
     eligibility.data?.eligible === false
   const invalidSubmit =
-    invalidBase || Boolean(selectedType?.attachment_required && !file)
+    invalidBase ||
+    Boolean(
+      selectedType?.attachment_required && !file && attachments.length === 0,
+    ) ||
+    (policy.relief_person_mode === 'required' && !reliefPersonId)
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!(intent.current === 'submit' ? invalidSubmit : invalidBase))
@@ -485,7 +538,7 @@ function RequestLeaveDialog({
     <Modal
       description="Choose dates and review the authoritative working-day calculation before submitting."
       onClose={onClose}
-      title="Request leave"
+      title={draft ? 'Edit leave draft' : 'Request leave'}
     >
       <form className="space-y-5" onSubmit={submit}>
         <section className="grid gap-4 sm:grid-cols-2">
@@ -514,10 +567,18 @@ function RequestLeaveDialog({
                 if (halfDay) setEndDate(event.target.value)
               }}
               required
+              min={earliestStart}
               type="date"
               value={startDate}
             />
           </label>
+          {selectedType && selectedType.minimum_notice_days > 0 && (
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              {selectedType.name} requires {selectedType.minimum_notice_days}{' '}
+              days' notice. The earliest available start date is {earliestStart}
+              .
+            </p>
+          )}
           <label className="text-sm font-medium">
             End date
             <input
@@ -571,7 +632,9 @@ function RequestLeaveDialog({
                         Number(balance.available_after_pending) -
                           Number(preview.data.chargeable_days),
                       )
-                    : 'No entitlement'
+                    : policy.entitlements_required
+                      ? 'No entitlement'
+                      : 'Tracked after approval'
                 }
               />
             </div>
@@ -616,6 +679,35 @@ function RequestLeaveDialog({
             value={reason}
           />
         </label>
+        {policy.relief_person_mode !== 'disabled' && (
+          <label className="block text-sm font-medium">
+            Relief / Covering Employee{' '}
+            {policy.relief_person_mode === 'required' && (
+              <span className="text-destructive">required</span>
+            )}
+            <select
+              className="mt-1.5 w-full rounded-xl border bg-background px-3 py-2.5"
+              onChange={(event) => setReliefPersonId(event.target.value)}
+              required={policy.relief_person_mode === 'required'}
+              value={reliefPersonId}
+            >
+              <option value="">
+                {policy.relief_person_mode === 'required'
+                  ? 'Choose a covering employee'
+                  : 'No covering employee'}
+              </option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.display_name}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Select an active colleague who will cover responsibilities while
+              you are away.
+            </span>
+          </label>
+        )}
         <label className="block rounded-xl border border-dashed p-4 text-sm font-medium">
           Supporting document{' '}
           {selectedType?.attachment_required ? (
@@ -648,6 +740,58 @@ function RequestLeaveDialog({
               </button>
             </span>
           )}
+          {attachments.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {attachments.map((attachment) => (
+                <div
+                  className="flex items-center justify-between gap-3 rounded-lg bg-muted/55 px-3 py-2 text-xs"
+                  key={attachment.id}
+                >
+                  <button
+                    className="min-w-0 truncate text-left font-semibold text-primary"
+                    onClick={() =>
+                      void leaveApi.downloadAttachment(
+                        persistedDraftId.current ?? draft?.id ?? '',
+                        attachment,
+                      )
+                    }
+                    type="button"
+                  >
+                    {attachment.filename}
+                  </button>
+                  <button
+                    className="shrink-0 font-semibold text-destructive"
+                    disabled={save.isPending}
+                    onClick={async () => {
+                      const requestId = persistedDraftId.current
+                      if (!requestId) return
+                      try {
+                        await leaveApi.removeAttachment(
+                          requestId,
+                          attachment.id,
+                        )
+                        setAttachments((current) =>
+                          current.filter((item) => item.id !== attachment.id),
+                        )
+                      } catch (error) {
+                        notify({
+                          tone: 'error',
+                          title: 'Document could not be removed',
+                          description:
+                            error instanceof Error
+                              ? error.message
+                              : 'Please try again.',
+                        })
+                      }
+                    }}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </label>
         {save.isPending && file && (
           <p aria-live="polite" className="text-sm text-muted-foreground">
@@ -660,6 +804,9 @@ function RequestLeaveDialog({
             role="alert"
           >
             {save.error.message}
+            {persistedDraftId.current
+              ? ' Your draft is safe. Choose the file and retry.'
+              : ''}
           </p>
         )}
         <footer className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
@@ -671,7 +818,7 @@ function RequestLeaveDialog({
             }}
             type="submit"
           >
-            Save draft
+            {draft ? 'Save changes' : 'Save draft'}
           </button>
           <button
             className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
@@ -777,8 +924,22 @@ export function LeaveRequestDetailPage() {
     queryKey: ['leave', 'request', requestId],
     queryFn: () => leaveApi.request(requestId),
   })
+  const policy = useQuery({
+    queryKey: ['leave', 'policy'],
+    queryFn: leaveApi.policy,
+  })
+  const types = useQuery({
+    queryKey: ['leave', 'types', 'active'],
+    queryFn: () => leaveApi.types({ active: true }),
+  })
+  const employees = useQuery({
+    queryKey: ['leave', 'relief-employees'],
+    queryFn: organizationApi.members,
+    enabled: policy.data?.relief_person_mode !== 'disabled',
+  })
   const [rejectReason, setRejectReason] = useState('')
   const [rejectOpen, setRejectOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const mutate = useMutation({
     mutationFn: async (
       action: 'submit' | 'withdraw' | 'cancel' | 'approve' | 'reject',
@@ -844,13 +1005,22 @@ export function LeaveRequestDetailPage() {
               Back to leave
             </Link>
             {own && item.status === 'draft' && (
-              <button
-                className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
-                onClick={() => void perform('submit')}
-                type="button"
-              >
-                Submit
-              </button>
+              <>
+                <button
+                  className="rounded-xl border px-4 py-2.5 text-sm font-semibold"
+                  onClick={() => setEditOpen(true)}
+                  type="button"
+                >
+                  Edit draft
+                </button>
+                <button
+                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                  onClick={() => void perform('submit')}
+                  type="button"
+                >
+                  Submit
+                </button>
+              </>
             )}
             {own && item.status === 'submitted' && (
               <button
@@ -915,6 +1085,22 @@ export function LeaveRequestDetailPage() {
               value={item.manager_name || 'Not assigned'}
             />
             <Detail label="Leave period" value={item.leave_period_name} />
+            <Detail
+              label="Approval stage"
+              value={
+                item.approval_stage === 'manager'
+                  ? 'Pending Manager Approval'
+                  : item.approval_stage === 'hr'
+                    ? 'Pending HR Approval'
+                    : item.approval_stage === 'complete'
+                      ? 'Approval complete'
+                      : 'Draft'
+              }
+            />
+            <Detail
+              label="Relief / Covering Employee"
+              value={item.relief_person_name || 'Not assigned'}
+            />
             <Detail
               label="Balance impact"
               value={formatDays(Number(item.balance_effect))}
@@ -1022,6 +1208,19 @@ export function LeaveRequestDetailPage() {
             </button>
           </div>
         </Modal>
+      )}
+      {editOpen && policy.data && types.data && (
+        <RequestLeaveDialog
+          balances={[]}
+          draft={item}
+          employees={employees.data ?? []}
+          onClose={() => setEditOpen(false)}
+          onSaved={async () => {
+            await client.invalidateQueries({ queryKey: ['leave'] })
+          }}
+          policy={policy.data}
+          types={types.data}
+        />
       )}
     </div>
   )

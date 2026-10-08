@@ -290,6 +290,11 @@ function VoucherActions({
     queryFn: financeApi.accounts,
     enabled: d.allowed_actions.includes('disburse'),
   })
+  const categories = useQuery({
+    queryKey: ['finance', 'expense-categories', 'voucher-confirmation'],
+    queryFn: () => financeApi.categories(false),
+    enabled: d.allowed_actions.includes('submit'),
+  })
   const mutation = useMutation({
     mutationFn: ({
       action,
@@ -305,14 +310,29 @@ function VoucherActions({
     },
   })
   const act = async (action: string, body: Record<string, unknown>) => {
+    const categoryIds = new Set(
+      [
+        d.voucher.expense_category_id,
+        ...d.line_items.map((line) => line.expense_category_id),
+      ].filter((value): value is string => Boolean(value)),
+    )
+    const categorySummary = [...categoryIds]
+      .map(
+        (id) =>
+          categories.data?.find((category) => category.id === id)?.name ??
+          'Unspecified category',
+      )
+      .join(', ')
     if (
       await confirm({
         title: `${label(action)} voucher?`,
         description:
           action === 'disburse'
             ? `Record ${money(String(body.amount), d.voucher.currency)} against this voucher and its finance account. Check the payment reference before confirming.`
-            : `This will ${action} ${d.voucher.voucher_number}. The decision is recorded in its history.`,
-        confirmLabel: label(action),
+            : action === 'submit'
+              ? `${d.voucher.title} · ${money(d.voucher.requested_amount, d.voucher.currency)} · ${categorySummary || 'No expense category'}. Submit this voucher for formal review?`
+              : `This will ${action} ${d.voucher.voucher_number}. The decision is recorded in its history.`,
+        confirmLabel: action === 'submit' ? 'Submit for review' : label(action),
       })
     )
       mutation.mutate({ action, body })
@@ -335,7 +355,9 @@ function VoucherActions({
           <button
             type="button"
             key={a}
-            disabled={mutation.isPending}
+            disabled={
+              mutation.isPending || (a === 'submit' && categories.isLoading)
+            }
             className={
               a === 'approve' || a === 'submit' || a === 'disburse'
                 ? 'finance-primary'

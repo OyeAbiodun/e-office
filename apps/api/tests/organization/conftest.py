@@ -1,9 +1,11 @@
 """Organization management test fixtures."""
 
+import os
 from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from meetinghq_api.infrastructure.database import Base, get_database_session
@@ -13,9 +15,13 @@ from meetinghq_api.main import app
 @pytest.fixture
 async def organization_client() -> AsyncIterator[AsyncClient]:
     """Provide an isolated fully migrated logical schema."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    database_url = os.getenv("MEETINGHQ_TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine(database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with engine.begin() as connection:
+        if database_url.startswith("postgresql"):
+            await connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            await connection.execute(text("CREATE SCHEMA public"))
         await connection.run_sync(Base.metadata.create_all)
 
     async def database_override() -> AsyncIterator[AsyncSession]:
@@ -27,13 +33,24 @@ async def organization_client() -> AsyncIterator[AsyncClient]:
                 await session.rollback()
                 raise
 
+    previous_audit_factory = getattr(app.state, "audit_session_factory", None)
+    app.state.audit_session_factory = factory if database_url.startswith("postgresql") else None
     app.dependency_overrides[get_database_session] = database_override
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1") as client:
-        # Focused service tests can exercise scheduled work against this same
-        # isolated schema without reaching the shared local runtime.
-        client._meetinghq_session_factory = factory  # type: ignore[attr-defined]
-        yield client
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://127.0.0.1"
+        ) as client:
+            # Focused service tests can exercise scheduled and audit work against
+            # this same isolated schema without reaching the shared local runtime.
+            client._meetinghq_session_factory = factory  # type: ignore[attr-defined]
+            yield client
+    finally:
+        app.dependency_overrides.clear()
+        app.state.audit_session_factory = previous_audit_factory
+    if database_url.startswith("postgresql"):
+        async with engine.begin() as connection:
+            await connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            await connection.execute(text("CREATE SCHEMA public"))
     await engine.dispose()
 
 

@@ -128,6 +128,38 @@ async def test_fifteen_day_entitlement_accepts_three_working_day_request(
     }
 
 
+async def test_employee_leave_rejects_past_dates_before_draft_creation(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    leave_type, _, _ = await _foundation(organization_client, admin_headers)
+    yesterday = date.today() - timedelta(days=1)
+
+    eligibility = await organization_client.get(
+        "/api/v1/leave/my/eligibility",
+        headers=admin_headers,
+        params={
+            "leave_type_id": leave_type["id"],
+            "start_date": yesterday.isoformat(),
+            "end_date": yesterday.isoformat(),
+        },
+    )
+    assert eligibility.status_code == 200, eligibility.text
+    assert eligibility.json()["data"]["code"] == "past_start_date"
+
+    draft = await organization_client.post(
+        "/api/v1/leave/requests",
+        headers=admin_headers,
+        json={
+            "leave_type_id": leave_type["id"],
+            "start_date": yesterday.isoformat(),
+            "end_date": yesterday.isoformat(),
+            "half_day": False,
+        },
+    )
+    assert draft.status_code == 422, draft.text
+    assert "cannot start in the past" in draft.text
+
+
 async def _employee_identity(
     client: AsyncClient,
     *,
@@ -563,6 +595,7 @@ async def test_required_secure_attachments_and_withdrawal(
     employee_headers, employee_id = await _employee_identity(
         organization_client, name="documented", manager_id=manager_id
     )
+    request_date = date.today() + timedelta(days=7)
     leave_type = (
         await organization_client.post(
             "/api/v1/leave/types",
@@ -579,7 +612,11 @@ async def test_required_secure_attachments_and_withdrawal(
         await organization_client.post(
             "/api/v1/leave/periods",
             headers=admin_headers,
-            json={"name": "FY 2026", "start_date": "2026-01-01", "end_date": "2026-12-31"},
+            json={
+                "name": f"FY {request_date.year}",
+                "start_date": f"{request_date.year}-01-01",
+                "end_date": f"{request_date.year}-12-31",
+            },
         )
     ).json()["data"]
     await organization_client.post(
@@ -597,8 +634,8 @@ async def test_required_secure_attachments_and_withdrawal(
         headers=employee_headers,
         json={
             "leave_type_id": leave_type["id"],
-            "start_date": "2026-10-05",
-            "end_date": "2026-10-05",
+            "start_date": request_date.isoformat(),
+            "end_date": request_date.isoformat(),
         },
     )
     request_id = request.json()["data"]["id"]

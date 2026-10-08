@@ -69,7 +69,8 @@ export interface LeaveRequest {
   leave_type_id: string
   leave_type_name: string | null
   leave_type_code: string | null
-  leave_period_id: string
+  leave_period_id: string | null
+  relief_person_id: string | null
   leave_period_name: string | null
   start_date: string
   end_date: string
@@ -77,6 +78,7 @@ export interface LeaveRequest {
   half_day: boolean
   reason: string | null
   status: LeaveStatus
+  approval_stage: 'draft' | 'manager' | 'hr' | 'complete'
   reviewed_by_id: string | null
   reviewed_at: string | null
   review_comment: string | null
@@ -98,6 +100,7 @@ export interface LeaveRequestDetail extends LeaveRequest {
   employee_name: string
   manager_id: string | null
   manager_name: string | null
+  relief_person_name: string | null
   leave_type_name: string
   leave_type_code: string
   leave_period_name: string
@@ -204,6 +207,14 @@ export interface WorkingWeek {
   exclude_holidays: boolean
 }
 
+export interface LeavePolicy {
+  periods_required: boolean
+  entitlements_required: boolean
+  auto_open_annual_period: boolean
+  relief_person_mode: 'disabled' | 'optional' | 'required'
+  approval_workflow: 'manager' | 'hr' | 'manager_then_hr'
+}
+
 type QueryValue = string | number | boolean | null | undefined
 
 function query(values: Record<string, QueryValue>) {
@@ -300,6 +311,12 @@ export const leaveApi = {
       { method: 'POST', body: JSON.stringify(body) },
       true,
     ),
+  updateRequest: (id: string, body: Record<string, unknown>) =>
+    apiRequest<LeaveRequest>(
+      `/leave/requests/${id}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+      true,
+    ),
   submit: (id: string) =>
     apiRequest<LeaveRequest>(
       `/leave/requests/${id}/submit`,
@@ -381,6 +398,13 @@ export const leaveApi = {
   updateWorkingWeek: (body: WorkingWeek) =>
     apiRequest<WorkingWeek>(
       '/leave/policy/working-week',
+      { method: 'PUT', body: JSON.stringify(body) },
+      true,
+    ),
+  policy: () => apiRequest<LeavePolicy>('/leave/policy', {}, true),
+  updatePolicy: (body: LeavePolicy) =>
+    apiRequest<LeavePolicy>(
+      '/leave/policy',
       { method: 'PUT', body: JSON.stringify(body) },
       true,
     ),

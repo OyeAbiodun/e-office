@@ -131,12 +131,25 @@ class WorkingWeekInput(InputModel):
         return self
 
 
+class LeavePolicyInput(InputModel):
+    periods_required: bool = True
+    entitlements_required: bool = True
+    auto_open_annual_period: bool = False
+    relief_person_mode: Literal["disabled", "optional", "required"] = "disabled"
+    approval_workflow: Literal["manager", "hr", "manager_then_hr"] = "manager"
+
+
+class LeavePolicyResponse(LeavePolicyInput):
+    model_config = ConfigDict(from_attributes=True)
+
+
 class LeaveRequestInput(InputModel):
     leave_type_id: uuid.UUID
     start_date: date
     end_date: date
     half_day: bool = False
     reason: str | None = Field(default=None, max_length=4000)
+    relief_person_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def valid_dates(self) -> LeaveRequestInput:
@@ -224,13 +237,15 @@ class LeaveRequestResponse(OrmResponse):
     employee_id: uuid.UUID
     department_id: uuid.UUID | None
     leave_type_id: uuid.UUID
-    leave_period_id: uuid.UUID
+    leave_period_id: uuid.UUID | None
+    relief_person_id: uuid.UUID | None
     start_date: date
     end_date: date
     duration_days: Decimal
     half_day: bool
     reason: str | None
     status: str
+    approval_stage: str
     reviewed_by_id: uuid.UUID | None
     reviewed_at: datetime | None
     review_comment: str | None
@@ -286,6 +301,7 @@ class LeaveRequestDetail(LeaveRequestResponse):
     department_name: str | None
     manager_id: uuid.UUID | None
     manager_name: str | None
+    relief_person_name: str | None
     leave_type_name: str
     leave_type_code: str
     leave_period_name: str

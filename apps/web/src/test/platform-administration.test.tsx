@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tanstack/react-router', () => ({
   Navigate: ({ to }: { to: string }) => <div>Navigate to {to}</div>,
+  useLocation: () => ({ searchStr: window.location.search }),
   useNavigate: () => mocks.navigate,
 }))
 
@@ -162,6 +163,8 @@ const calendarFeature = {
   hidden: false,
   maintenance_mode: false,
   release_stage: 'public',
+  dependencies: [],
+  version: '1.0.0',
   updated_at: '2026-08-03T00:00:00Z',
 }
 
@@ -177,6 +180,12 @@ function renderWithClient(node: React.ReactNode) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.navigate.mockImplementation(
+    ({ search }: { search?: Record<string, string> }) => {
+      const query = search?.section ? `?section=${search.section}` : ''
+      window.history.pushState({}, '', `/platform${query}`)
+    },
+  )
   mocks.authPermissions.splice(
     0,
     mocks.authPermissions.length,
@@ -303,6 +312,39 @@ test('Platform Management governs provider availability without exposing credent
       enabled: false,
     }),
   )
+})
+
+test('Platform Management keeps every section on its unique URL and active state', async () => {
+  const matrix = [
+    ['Platform Overview', undefined],
+    ['Feature Flags', 'features'],
+    ['Module Registry', 'modules'],
+    ['Runtime Configuration', 'runtime'],
+    ['Security', 'security'],
+    ['Branding', 'branding'],
+    ['External Connections', 'connections'],
+    ['Scheduler', 'scheduler'],
+    ['Workers', 'workers'],
+    ['Licensing', 'licensing'],
+    ['Menu Manager', 'menus'],
+    ['System Modules', 'system'],
+  ] as const
+  renderWithClient(<PlatformPage />)
+  await screen.findByRole('heading', { name: 'Platform Management' })
+  const navigation = screen.getByRole('navigation', {
+    name: 'Platform Management sections',
+  })
+
+  for (const [label, section] of matrix) {
+    const button = within(navigation).getByRole('button', { name: label })
+    fireEvent.click(button)
+    expect(button).toHaveClass('bg-primary')
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: '/platform',
+      search: section ? { section } : {},
+    })
+  }
+  expect(mocks.navigate).toHaveBeenCalledTimes(matrix.length)
 })
 
 test('Integration Center configures credentials inside its protected boundary', async () => {

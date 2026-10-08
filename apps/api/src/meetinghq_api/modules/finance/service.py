@@ -416,7 +416,29 @@ class FinanceService:
             raise NotFoundError("Task not found")
 
     async def _replace_lines(self, actor: User, voucher: Voucher, body: VoucherCreate) -> None:
-        await self._category(actor, body.expense_category_id)
+        category_ids = {
+            category_id
+            for category_id in (
+                body.expense_category_id,
+                *(line.expense_category_id for line in body.line_items),
+            )
+            if category_id is not None
+        }
+        if category_ids:
+            available = set(
+                (
+                    await self.session.scalars(
+                        select(ExpenseCategory.id).where(
+                            ExpenseCategory.id.in_(category_ids),
+                            ExpenseCategory.organization_id == actor.organization_id,
+                            ExpenseCategory.deleted_at.is_(None),
+                            ExpenseCategory.is_active.is_(True),
+                        )
+                    )
+                ).all()
+            )
+            if available != category_ids:
+                raise NotFoundError("Expense category not found")
         await self._department(actor, body.department_id)
         await self.session.execute(
             delete(VoucherLineItem).where(
@@ -426,7 +448,6 @@ class FinanceService:
         )
         total = ZERO
         for position, line in enumerate(body.line_items):
-            await self._category(actor, line.expense_category_id)
             amount = self._money(line.quantity * line.unit_price + line.tax_amount)
             total += amount
             self.session.add(

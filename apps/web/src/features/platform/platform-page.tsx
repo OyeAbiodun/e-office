@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Navigate, useNavigate } from '@tanstack/react-router'
+import { Navigate, useLocation, useNavigate } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import {
   Activity,
@@ -145,8 +145,9 @@ const managedConfigurations: Record<
 export function PlatformPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const confirm = useConfirmation()
-  const requested = new URLSearchParams(window.location.search).get('section')
+  const requested = new URLSearchParams(location.searchStr).get('section')
   const [section, setSection] = useState<Section>(
     sections.some(([id]) => id === requested)
       ? (requested as Section)

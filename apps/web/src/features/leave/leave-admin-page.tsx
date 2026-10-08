@@ -19,6 +19,7 @@ import { type FormEvent, useMemo, useState } from 'react'
 import {
   leaveApi,
   type LeaveBalanceRow,
+  type LeavePolicy,
   type LeavePeriod,
   type LeaveType,
 } from './api'
@@ -39,7 +40,8 @@ import { useAuth } from '@/features/auth/auth-store'
 import { organizationApi } from '@/features/organizations/api'
 import { userAdminApi } from '@/features/users/api'
 
-type AdminSection = 'types' | 'balances' | 'periods' | 'calendar' | 'reports'
+type AdminSection =
+  'types' | 'policy' | 'balances' | 'periods' | 'calendar' | 'reports'
 
 export function LeaveAdminPage() {
   const { user } = useAuth()
@@ -51,6 +53,9 @@ export function LeaveAdminPage() {
     () => [
       ...(permissions.has('leave.types.view')
         ? [['types', 'Leave Types', SlidersHorizontal] as const]
+        : []),
+      ...(permissions.has('leave.types.view')
+        ? [['policy', 'Leave Policies', Settings2] as const]
         : []),
       ...(permissions.has('leave.balances.adjust')
         ? [['balances', 'Leave Balances', Users] as const]
@@ -167,6 +172,9 @@ export function LeaveAdminPage() {
       {section === 'types' && (
         <LeaveTypesPanel canManage={permissions.has('leave.types.manage')} />
       )}
+      {section === 'policy' && (
+        <LeavePolicyPanel canManage={permissions.has('leave.types.manage')} />
+      )}
       {section === 'balances' && <BalanceManagementPanel />}
       {section === 'periods' && (
         <LeavePeriodsPanel canManage={permissions.has('leave.types.manage')} />
@@ -183,6 +191,125 @@ export function LeaveAdminPage() {
         <ReportsPanel canExport={permissions.has('leave.export')} />
       )}
     </div>
+  )
+}
+
+function LeavePolicyPanel({ canManage }: { canManage: boolean }) {
+  const client = useQueryClient()
+  const policy = useQuery({
+    queryKey: ['leave', 'policy'],
+    queryFn: leaveApi.policy,
+  })
+  const update = useMutation({
+    mutationFn: leaveApi.updatePolicy,
+    onSuccess: (value) => client.setQueryData(['leave', 'policy'], value),
+  })
+  if (policy.isLoading) return <LoadingState />
+  if (policy.isError || !policy.data)
+    return <ErrorState retry={() => void policy.refetch()} />
+  const save = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const values = new FormData(event.currentTarget)
+    update.mutate({
+      periods_required: values.get('periods_required') === 'on',
+      entitlements_required: values.get('entitlements_required') === 'on',
+      auto_open_annual_period: values.get('auto_open_annual_period') === 'on',
+      relief_person_mode: values.get(
+        'relief_person_mode',
+      ) as LeavePolicy['relief_person_mode'],
+      approval_workflow: values.get(
+        'approval_workflow',
+      ) as LeavePolicy['approval_workflow'],
+    })
+  }
+  return (
+    <form className="rounded-2xl border bg-card p-5 shadow-sm" onSubmit={save}>
+      <h2 className="text-lg font-semibold">Leave Policies</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Choose how employees qualify for leave and how requests are approved.
+      </p>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {[
+          [
+            'periods_required',
+            'Require leave periods',
+            'Requests must fall inside an open leave period.',
+          ],
+          [
+            'entitlements_required',
+            'Require employee entitlements',
+            'Employees need an allocated balance before requesting leave.',
+          ],
+          [
+            'auto_open_annual_period',
+            'Open each annual period automatically',
+            'OfficeFlow creates and opens the calendar-year period when scheduled leave maintenance runs.',
+          ],
+        ].map(([name, label, description]) => (
+          <label className="flex gap-3 rounded-xl border p-4" key={name}>
+            <input
+              defaultChecked={policy.data[name as keyof LeavePolicy] === true}
+              disabled={!canManage}
+              name={name}
+              type="checkbox"
+            />
+            <span>
+              <span className="block font-semibold">{label}</span>
+              <span className="mt-1 block text-sm text-muted-foreground">
+                {description}
+              </span>
+            </span>
+          </label>
+        ))}
+        <label className="text-sm font-medium">
+          Relief / covering employee
+          <select
+            className="mt-1.5 w-full rounded-xl border bg-background px-3 py-2.5"
+            defaultValue={policy.data.relief_person_mode}
+            disabled={!canManage}
+            name="relief_person_mode"
+          >
+            <option value="disabled">Not used</option>
+            <option value="optional">Optional</option>
+            <option value="required">Required</option>
+          </select>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Controls whether employees identify an active colleague who will
+            cover their work.
+          </span>
+        </label>
+        <label className="text-sm font-medium">
+          Approval workflow
+          <select
+            className="mt-1.5 w-full rounded-xl border bg-background px-3 py-2.5"
+            defaultValue={policy.data.approval_workflow}
+            disabled={!canManage}
+            name="approval_workflow"
+          >
+            <option value="manager">Manager / Team Lead only</option>
+            <option value="hr">HR only</option>
+            <option value="manager_then_hr">
+              Manager / Team Lead, then HR
+            </option>
+          </select>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Sets who must approve and the order in which decisions occur.
+          </span>
+        </label>
+      </div>
+      {canManage && (
+        <button
+          className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+          disabled={update.isPending}
+          type="submit"
+        >
+          {update.isPending ? 'Saving…' : 'Save leave policies'}
+        </button>
+      )}
+      {update.error && (
+        <p className="mt-3 text-sm text-destructive">{update.error.message}</p>
+      )}
+    </form>
   )
 }
 

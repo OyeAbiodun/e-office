@@ -1,4 +1,5 @@
 import { Outlet, useRouterState } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
 import { CommandCenter, type ShellPanel } from '@/components/command-center'
@@ -7,6 +8,7 @@ import { TopNav } from '@/components/top-nav'
 import { ContextHelp } from '@/features/help/context-help'
 import { useAuth } from '@/features/auth/auth-store'
 import { useNotificationRealtime } from '@/features/notifications/use-notification-realtime'
+import { organizationApi } from '@/features/organizations/api'
 import { recordRecentPage } from '@/lib/recent-pages'
 import { resolveBreadcrumbs } from '@/lib/route-metadata'
 
@@ -18,6 +20,11 @@ export function AppShell() {
     select: (state) => state.location.searchStr,
   })
   const { user } = useAuth()
+  const organization = useQuery({
+    queryKey: ['organization', user?.organization_id],
+    queryFn: organizationApi.organization,
+    enabled: Boolean(user),
+  })
   useNotificationRealtime(user)
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('officeflow-sidebar-collapsed') === 'true',
@@ -51,6 +58,18 @@ export function AppShell() {
   useEffect(() => {
     localStorage.setItem('officeflow-sidebar-collapsed', String(collapsed))
   }, [collapsed])
+
+  useEffect(() => {
+    const color = organization.data?.brand_color
+    if (!color) return
+    const root = document.documentElement
+    root.style.setProperty('--primary', color)
+    root.style.setProperty('--primary-hover', mixHex(color, '#000000', 0.16))
+    root.style.setProperty('--primary-subtle', mixHex(color, '#ffffff', 0.88))
+    root.style.setProperty('--primary-border', mixHex(color, '#ffffff', 0.58))
+    root.style.setProperty('--sidebar-accent', mixHex(color, '#ffffff', 0.88))
+    root.style.setProperty('--sidebar-accent-foreground', color)
+  }, [organization.data?.brand_color])
 
   useEffect(() => {
     if (!user) return
@@ -103,6 +122,19 @@ export function AppShell() {
       />
     </div>
   )
+}
+
+function mixHex(source: string, target: string, amount: number) {
+  const channel = (value: string, offset: number) =>
+    Number.parseInt(value.slice(offset, offset + 2), 16)
+  const mixed = [1, 3, 5].map((offset) =>
+    Math.round(
+      channel(source, offset) * (1 - amount) + channel(target, offset) * amount,
+    )
+      .toString(16)
+      .padStart(2, '0'),
+  )
+  return `#${mixed.join('')}`
 }
 
 function getHelpContextId(pathname: string) {

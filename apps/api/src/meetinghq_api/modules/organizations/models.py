@@ -11,6 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from meetinghq_api.infrastructure.database import Base
 from meetinghq_api.shared.soft_delete import SoftDeleteMixin
 
+SESSION_TIMEOUT_MINUTES_DEFAULT = 1440
+SESSION_TIMEOUT_MINUTES_MIN = 15
+SESSION_TIMEOUT_MINUTES_MAX = 43200
+
 
 class OrganizationStatus(enum.StrEnum):
     """Organization lifecycle state."""

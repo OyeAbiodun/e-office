@@ -6,6 +6,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from meetinghq_api.modules.organizations.models import (
+    SESSION_TIMEOUT_MINUTES_DEFAULT,
+    SESSION_TIMEOUT_MINUTES_MAX,
+    SESSION_TIMEOUT_MINUTES_MIN,
     OrganizationStatus,
     OrganizationUnitType,
 )
@@ -18,7 +21,11 @@ class OrganizationSettings(BaseModel):
     week_start_day: int = Field(default=1, ge=0, le=6)
     meeting_defaults: dict[str, object] = Field(default_factory=dict)
     password_policy: dict[str, object] = Field(default_factory=dict)
-    session_timeout_minutes: int = Field(default=1440, ge=15)
+    session_timeout_minutes: int = Field(
+        default=SESSION_TIMEOUT_MINUTES_DEFAULT,
+        ge=SESSION_TIMEOUT_MINUTES_MIN,
+        le=SESSION_TIMEOUT_MINUTES_MAX,
+    )
     default_theme: str = Field(default="system", pattern="^(light|dark|system)$")
     contact_email: str | None = Field(default=None, max_length=254)
     contact_phone: str | None = Field(default=None, max_length=40)

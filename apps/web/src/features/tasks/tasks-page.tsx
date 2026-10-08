@@ -49,14 +49,20 @@ export function TasksPage() {
   const [activeTab, setActiveTab] = useState<WorkTab>(
     requestedTab === 'activities' ? 'activities' : 'tasks',
   )
-  const [scope, setScope] = useState(initial.get('scope') ?? 'mine')
+  const [scope, setScope] = useState(initial.get('scope') ?? '')
   const [due, setDue] = useState<string | undefined>(
-    initial.get('due') ?? 'today',
+    initial.get('due') ?? undefined,
   )
   const [status, setStatus] = useState<string | undefined>(
     initial.get('status') ?? undefined,
   )
   const [priority, setPriority] = useState<string | undefined>()
+  const [projectId, setProjectId] = useState<string | undefined>(
+    initial.get('project_id') ?? undefined,
+  )
+  const [assigneeId, setAssigneeId] = useState<string | undefined>(
+    initial.get('assignee_id') ?? undefined,
+  )
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(initial.get('create') === 'task')
   const [showActivity, setShowActivity] = useState(
@@ -72,8 +78,18 @@ export function TasksPage() {
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
   const weekStartDate = weekStart.toISOString().slice(0, 10)
   const filters = useMemo(
-    () => ({ scope, due, status, priority, search, page, page_size: 25 }),
-    [due, page, priority, scope, search, status],
+    () => ({
+      scope,
+      due,
+      status,
+      priority,
+      project_id: projectId,
+      assignee_id: assigneeId,
+      search,
+      page,
+      page_size: 25,
+    }),
+    [assigneeId, due, page, priority, projectId, scope, search, status],
   )
   const tasks = useQuery({
     queryKey: ['tasks', filters],
@@ -82,6 +98,10 @@ export function TasksPage() {
   const people = useQuery({
     queryKey: ['task-assignees'],
     queryFn: tasksApi.assignees,
+  })
+  const filterProjects = useQuery({
+    queryKey: ['task-filter-projects'],
+    queryFn: () => projectsApi.list({ page_size: 100 }),
   })
   const dailySummary = useQuery({
     queryKey: ['task-daily-summary', todayDate],
@@ -148,17 +168,30 @@ export function TasksPage() {
     )
     if (selected) parameters.set('task', selected.id)
     else if (existingTaskId) parameters.set('task', existingTaskId)
-    if (scope !== 'mine') parameters.set('scope', scope)
+    if (scope) parameters.set('scope', scope)
     if (due) parameters.set('due', due)
     if (status) parameters.set('status', status)
     if (priority) parameters.set('priority', priority)
+    if (projectId) parameters.set('project_id', projectId)
+    if (assigneeId) parameters.set('assignee_id', assigneeId)
     if (search) parameters.set('search', search)
     if (page > 1) parameters.set('page', String(page))
     const next = parameters.size
       ? `${window.location.pathname}?${parameters}`
       : window.location.pathname
     window.history.replaceState(window.history.state, '', next)
-  }, [activeTab, due, page, priority, scope, search, selected, status])
+  }, [
+    activeTab,
+    assigneeId,
+    due,
+    page,
+    priority,
+    projectId,
+    scope,
+    search,
+    selected,
+    status,
+  ])
 
   useEffect(() => {
     const taskId = new URLSearchParams(window.location.search).get('task')
@@ -183,10 +216,12 @@ export function TasksPage() {
           ? 'activities'
           : 'tasks',
       )
-      setScope(parameters.get('scope') ?? 'mine')
-      setDue(parameters.get('due') ?? 'today')
+      setScope(parameters.get('scope') ?? '')
+      setDue(parameters.get('due') ?? undefined)
       setStatus(parameters.get('status') ?? undefined)
       setPriority(parameters.get('priority') ?? undefined)
+      setProjectId(parameters.get('project_id') ?? undefined)
+      setAssigneeId(parameters.get('assignee_id') ?? undefined)
       setSearch(parameters.get('search') ?? '')
       setPage(Number(parameters.get('page') ?? 1))
       const taskId = parameters.get('task')
@@ -203,7 +238,8 @@ export function TasksPage() {
   const overdue = rows.filter((task) => task.is_overdue).length
   const today = rows.filter((task) => task.due_date === todayDate).length
   const scopeTabs: Array<[string, string]> = [
-    ['mine', 'Today'],
+    ['', 'All tasks'],
+    ['mine', 'My tasks'],
     ['assigned', 'Assigned to me'],
     ['created', 'Created by me'],
     ...(permissions.has('tasks.view_team') || permissions.has('tasks.manage')
@@ -268,32 +304,9 @@ export function TasksPage() {
           </button>
         </div>
       </header>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Clock3} label="Due today" value={today} />
-        <Metric
-          icon={ListChecks}
-          label="Open work"
-          value={
-            rows.filter(
-              (task) => !['completed', 'cancelled'].includes(task.status),
-            ).length
-          }
-        />
-        <Metric
-          icon={Sparkles}
-          label="Overdue"
-          value={overdue}
-          tone={overdue ? 'danger' : undefined}
-        />
-        <Metric
-          icon={CheckCircle2}
-          label="Completed"
-          value={rows.filter((task) => task.status === 'completed').length}
-        />
-      </section>
       <nav
         aria-label="Tasks and activities sections"
-        className="flex gap-1 rounded-2xl border bg-card p-1 shadow-sm"
+        className="inline-flex gap-1 rounded-xl border bg-card p-1"
         role="tablist"
       >
         {workTabs
@@ -301,7 +314,7 @@ export function TasksPage() {
           .map(([key, label]) => (
             <button
               aria-selected={activeTab === key}
-              className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${activeTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${activeTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
               key={key}
               onClick={() => selectTab(key)}
               role="tab"
@@ -578,22 +591,6 @@ export function TasksPage() {
       {activeTab === 'tasks' && (
         <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2" aria-label="Task scope">
-              {scopeTabs.map(([key, label]) => (
-                <button
-                  className={`rounded-lg px-3 py-2 text-sm font-medium ${scope === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/70'}`}
-                  key={key}
-                  onClick={() => {
-                    setScope(key)
-                    setDue(key === 'mine' ? 'today' : undefined)
-                    setPage(1)
-                  }}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
             <div className="flex flex-wrap gap-2">
               <input
                 aria-label="Search tasks"
@@ -602,6 +599,21 @@ export function TasksPage() {
                 placeholder="Search work"
                 value={search}
               />
+              <select
+                aria-label="Filter task scope"
+                className="h-10 rounded-lg border bg-background px-2 text-sm"
+                onChange={(event) => {
+                  setScope(event.target.value)
+                  setPage(1)
+                }}
+                value={scope}
+              >
+                {scopeTabs.map(([value, label]) => (
+                  <option key={value || 'all'} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
               <select
                 aria-label="Filter task status"
                 className="h-10 rounded-lg border bg-background px-2 text-sm"
@@ -615,6 +627,56 @@ export function TasksPage() {
                   </option>
                 ))}
               </select>
+              <select
+                aria-label="Filter task project"
+                className="h-10 rounded-lg border bg-background px-2 text-sm"
+                onChange={(event) =>
+                  setProjectId(event.target.value || undefined)
+                }
+                value={projectId ?? ''}
+              >
+                <option value="">All projects</option>
+                {filterProjects.data?.items.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              {(permissions.has('tasks.view_team') ||
+                permissions.has('tasks.view_department') ||
+                permissions.has('tasks.manage')) && (
+                <select
+                  aria-label="Filter task assignee"
+                  className="h-10 rounded-lg border bg-background px-2 text-sm"
+                  onChange={(event) =>
+                    setAssigneeId(event.target.value || undefined)
+                  }
+                  value={assigneeId ?? ''}
+                >
+                  <option value="">All assignees</option>
+                  {people.data?.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.display_name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                className="h-10 rounded-lg border px-3 text-sm font-semibold"
+                onClick={() => {
+                  setScope('')
+                  setDue(undefined)
+                  setStatus(undefined)
+                  setPriority(undefined)
+                  setProjectId(undefined)
+                  setAssigneeId(undefined)
+                  setSearch('')
+                  setPage(1)
+                }}
+                type="button"
+              >
+                Clear filters
+              </button>
               <select
                 aria-label="Filter task priority"
                 className="h-10 rounded-lg border bg-background px-2 text-sm"
@@ -1355,23 +1417,21 @@ function TaskDetail({
           <Info label="Assignee" value={task.assignee_name ?? '—'} />
           <Info label="Due" value={task.due_date ?? '—'} />
           <Info label="Priority" value={task.priority} />
-          <Info
-            label="Progress"
-            value={task.progress === null ? 'Not set' : `${task.progress}%`}
-          />
+          <Info label="Status" value={task.status.replaceAll('_', ' ')} />
         </div>
         <label className="block text-sm font-medium">
-          Progress
-          <input
-            className="mt-1 w-full"
-            max="100"
-            min="0"
-            onChange={(event) =>
-              onUpdate({ progress: Number(event.target.value) })
-            }
-            type="range"
-            value={task.progress ?? 0}
-          />
+          Task status
+          <select
+            className="mt-1.5 w-full rounded-xl border bg-background px-3 py-2.5 capitalize"
+            onChange={(event) => onUpdate({ status: event.target.value })}
+            value={task.status}
+          >
+            {statuses.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <section>
           <h3 className="font-semibold">Checklist</h3>

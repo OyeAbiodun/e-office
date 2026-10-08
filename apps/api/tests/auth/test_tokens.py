@@ -1,12 +1,14 @@
 """Token rotation and access token tests."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from httpx import AsyncClient
 from pytest import MonkeyPatch
 
 from meetinghq_api.core.config import Settings
+from meetinghq_api.modules.auth.application import service as auth_service_module
 from meetinghq_api.modules.auth.infrastructure.email import IdentityEmailSender
 from meetinghq_api.modules.auth.infrastructure.tokens import (
     AccessTokenService,
@@ -46,6 +48,31 @@ async def test_refresh_rotation_rejects_replay(
     assert rotated.json()["data"]["refresh_token"] != original
     replay = await auth_client.post("/api/v1/auth/refresh", json={"refresh_token": original})
     assert replay.status_code == 401
+
+
+async def test_organization_inactivity_timeout_expires_existing_refresh_session(
+    auth_client: AsyncClient,
+    registration_payload: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """A changed tenant timeout applies to an already-active session on its next refresh."""
+    registered = await auth_client.post("/api/v1/auth/register", json=registration_payload)
+    data = registered.json()["data"]
+    updated = await auth_client.patch(
+        "/api/v1/organizations/current",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+        json={"settings": {"session_timeout_minutes": 15}},
+    )
+    assert updated.status_code == 200
+
+    future = datetime.now(UTC) + timedelta(minutes=16)
+    monkeypatch.setattr(auth_service_module, "utc_now", lambda: future)
+    expired = await auth_client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": data["refresh_token"]},
+    )
+    assert expired.status_code == 401
+    assert "inactivity" in expired.text.lower()
 
 
 async def test_cookie_refresh_allows_brief_retry_after_aborted_navigation(

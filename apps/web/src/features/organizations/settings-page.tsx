@@ -23,6 +23,7 @@ export function OrganizationSettingsPage() {
   const [streetAddress, setStreetAddress] = useState('')
   const [city, setCity] = useState('')
   const [postalCode, setPostalCode] = useState('')
+  const [sessionTimeout, setSessionTimeout] = useState(1440)
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     if (organization.data) {
@@ -38,6 +39,9 @@ export function OrganizationSettingsPage() {
       setStreetAddress(String(organization.data.settings.street_address ?? ''))
       setCity(String(organization.data.settings.city ?? ''))
       setPostalCode(String(organization.data.settings.postal_code ?? ''))
+      setSessionTimeout(
+        Number(organization.data.settings.session_timeout_minutes ?? 1440),
+      )
     }
   }, [organization.data])
   const save = async () => {
@@ -58,6 +62,7 @@ export function OrganizationSettingsPage() {
           street_address: streetAddress || null,
           city: city || null,
           postal_code: postalCode || null,
+          session_timeout_minutes: sessionTimeout,
         },
       })
       await queryClient.invalidateQueries({ queryKey: ['organization'] })
@@ -98,23 +103,68 @@ export function OrganizationSettingsPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Keep the employee experience recognizable and consistent.
         </p>
-        <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_10rem]">
+        <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_12rem]">
           <Field
             label="Logo URL"
             value={logoUrl}
             onChange={setLogoUrl}
             placeholder="https://…"
           />
-          <label className="block text-sm font-medium">
-            Brand color
-            <input
-              aria-label="Brand color"
-              className="mt-2 h-11 w-full rounded-xl border bg-background p-1"
-              type="color"
-              value={color}
-              onChange={(event) => setColor(event.target.value)}
-            />
-          </label>
+          <div>
+            <label className="block text-sm font-medium">
+              Brand color
+              <span className="mt-2 flex gap-2">
+                <input
+                  aria-label="Brand color picker"
+                  className="h-11 w-14 rounded-xl border bg-background p-1"
+                  type="color"
+                  value={color}
+                  onChange={(event) => setColor(event.target.value)}
+                />
+                <input
+                  aria-label="Brand color HEX value"
+                  className="h-11 min-w-0 flex-1 rounded-xl border bg-background px-3 font-mono uppercase"
+                  maxLength={7}
+                  pattern="#[0-9a-fA-F]{6}"
+                  value={color}
+                  onChange={(event) => setColor(event.target.value)}
+                />
+              </span>
+            </label>
+            <div aria-label="Brand color presets" className="mt-3 flex gap-2">
+              {['#2563eb', '#7c3aed', '#0f766e', '#c2410c', '#be185d'].map(
+                (preset) => (
+                  <button
+                    aria-label={`Use ${preset}`}
+                    className="size-7 rounded-full border-2 border-background shadow ring-1 ring-border"
+                    key={preset}
+                    onClick={() => setColor(preset)}
+                    style={{ backgroundColor: preset }}
+                    type="button"
+                  />
+                ),
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 rounded-xl border p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Live preview
+          </p>
+          <button
+            className="mt-3 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+            style={{ backgroundColor: color }}
+            type="button"
+          >
+            Primary action
+          </button>
+          <a
+            className="ml-4 text-sm font-semibold"
+            href="#branding"
+            style={{ color }}
+          >
+            Branded link
+          </a>
         </div>
       </section>
       <section className="rounded-2xl border bg-card p-6 shadow-sm">
@@ -152,6 +202,29 @@ export function OrganizationSettingsPage() {
             onChange={setPostalCode}
           />
         </div>
+      </section>
+      <section className="rounded-2xl border bg-card p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Security</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          End inactive sign-ins across this organization. Enforcement occurs on
+          the server when the browser rotates its refresh session; an existing
+          access token can remain valid for no more than 15 minutes.
+        </p>
+        <label className="mt-5 block max-w-sm text-sm font-medium">
+          Inactivity timeout (minutes)
+          <input
+            className="mt-2 h-11 w-full rounded-xl border bg-background px-3"
+            max={43200}
+            min={15}
+            onChange={(event) => setSessionTimeout(Number(event.target.value))}
+            type="number"
+            value={sessionTimeout}
+          />
+          <span className="mt-2 block text-xs text-muted-foreground">
+            Default 1,440 minutes (24 hours). Allowed range: 15 minutes to 30
+            days. Changes apply to existing sessions at their next refresh.
+          </span>
+        </label>
       </section>
       <section className="rounded-2xl border bg-card p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Defaults</h2>

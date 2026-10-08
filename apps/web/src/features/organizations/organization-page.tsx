@@ -10,10 +10,10 @@ import {
   Globe2,
   Pencil,
   Plus,
+  Power,
   Search,
   Settings,
   ShieldCheck,
-  Trash2,
   UserCog,
   Users,
   Workflow,
@@ -39,7 +39,15 @@ const sections: Array<{ id: Section; label: string; icon: typeof Building2 }> =
   ]
 
 export function OrganizationPage() {
-  const [section, setSection] = useState<Section>('overview')
+  const requestedSection = new URLSearchParams(window.location.search).get(
+    'section',
+  )
+  const initialSection: Section = sections.some(
+    ({ id }) => id === requestedSection,
+  )
+    ? (requestedSection as Section)
+    : 'overview'
+  const [section, setSection] = useState<Section>(initialSection)
   const overview = useQuery({
     queryKey: ['organization-overview'],
     queryFn: organizationApi.organizationOverview,
@@ -52,6 +60,31 @@ export function OrganizationPage() {
     queryKey: ['organization-policies'],
     queryFn: organizationApi.organizationPolicies,
   })
+  useEffect(() => {
+    const restore = () => {
+      const requested = new URLSearchParams(window.location.search).get(
+        'section',
+      )
+      setSection(
+        sections.some(({ id }) => id === requested)
+          ? (requested as Section)
+          : 'overview',
+      )
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+  }, [])
+  const selectSection = (next: Section) => {
+    const parameters = new URLSearchParams(window.location.search)
+    if (next === 'overview') parameters.delete('section')
+    else parameters.set('section', next)
+    window.history.pushState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${parameters.size ? `?${parameters}` : ''}`,
+    )
+    setSection(next)
+  }
 
   if (overview.isLoading)
     return (
@@ -147,7 +180,7 @@ export function OrganizationPage() {
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
             key={id}
-            onClick={() => setSection(id)}
+            onClick={() => selectSection(id)}
             type="button"
           >
             <Icon className="size-4" />
@@ -576,11 +609,23 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
                   <Pencil className="size-4" />
                 </button>
                 <button
-                  aria-label={`Archive ${unit.name}`}
-                  className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                  aria-label={`${unit.status === 'active' ? 'Deactivate' : 'Activate'} ${unit.name}`}
+                  className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={() =>
                     void organizationApi
-                      .deleteOrganizationUnit(unit.id)
+                      .updateOrganizationUnit(unit.id, {
+                        parent_id: unit.parent_id,
+                        unit_type: unit.unit_type,
+                        name: unit.name,
+                        code: unit.code,
+                        description: unit.description,
+                        manager_id: unit.manager_id,
+                        status:
+                          unit.status === 'active' ? 'inactive' : 'active',
+                        address: unit.address,
+                        timezone: unit.timezone,
+                        working_hours: unit.working_hours,
+                      })
                       .then(async () => {
                         await Promise.all([
                           client.invalidateQueries({
@@ -600,7 +645,7 @@ function Structure({ units }: { units: OrganizationUnit[] }) {
                   }
                   type="button"
                 >
-                  <Trash2 className="size-4" />
+                  <Power className="size-4" />
                 </button>
               </div>
             </div>

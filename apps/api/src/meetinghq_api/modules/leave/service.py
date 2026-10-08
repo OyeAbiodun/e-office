@@ -29,6 +29,7 @@ from meetinghq_api.modules.leave.models import (
     LeaveRequest,
     LeaveRequestHistory,
     LeaveType,
+    OrganizationLeavePolicy,
 )
 from meetinghq_api.modules.leave.schemas import (
     AdjustmentInput,
@@ -45,6 +46,8 @@ from meetinghq_api.modules.leave.schemas import (
     LeaveEligibilityResponse,
     LeaveHistoryResponse,
     LeavePeriodInput,
+    LeavePolicyInput,
+    LeavePolicyResponse,
     LeaveReportRow,
     LeaveRequestDetail,
     LeaveRequestInput,
@@ -77,6 +80,63 @@ class LeaveService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def leave_policy(self, user: User) -> OrganizationLeavePolicy:
+        policy = await self.session.scalar(
+            select(OrganizationLeavePolicy).where(
+                OrganizationLeavePolicy.organization_id == user.organization_id
+            )
+        )
+        if policy is None:
+            policy = OrganizationLeavePolicy(organization_id=user.organization_id)
+            self.session.add(policy)
+            await self.session.flush()
+        return policy
+
+    async def update_leave_policy(self, user: User, body: LeavePolicyInput) -> LeavePolicyResponse:
+        policy = await self.leave_policy(user)
+        for key, value in body.model_dump().items():
+            setattr(policy, key, value)
+        policy.updated_by_id = user.id
+        await self.session.flush()
+        return LeavePolicyResponse.model_validate(policy)
+
+    async def _annual_period(self, user: User, year: int) -> LeavePeriod:
+        start, end = date(year, 1, 1), date(year, 12, 31)
+        period = await self.session.scalar(
+            select(LeavePeriod).where(
+                LeavePeriod.organization_id == user.organization_id,
+                LeavePeriod.start_date == start,
+                LeavePeriod.end_date == end,
+            )
+        )
+        if period is None:
+            period = LeavePeriod(
+                organization_id=user.organization_id,
+                name=f"Annual Leave {year}",
+                start_date=start,
+                end_date=end,
+                status="open",
+            )
+            self.session.add(period)
+            await self.session.flush()
+        elif period.status != "open":
+            period.status = "open"
+        return period
+
+    async def _request_period(
+        self, user: User, policy: OrganizationLeavePolicy, start_date: date, end_date: date
+    ) -> LeavePeriod:
+        if not policy.periods_required:
+            if start_date.year != end_date.year:
+                raise ValidationError("Leave without explicit periods must remain within one year")
+            return await self._annual_period(user, start_date.year)
+        if policy.auto_open_annual_period and start_date.year == date.today().year:
+            await self._annual_period(user, start_date.year)
+        period = await self._period(user, on_date=start_date)
+        if end_date > period.end_date:
+            raise ValidationError("Leave must be within the active leave period")
+        return period
+
     async def process_scheduled_policies(self, effective_date: date | None = None) -> int:
         """Run tenant-isolated policy maintenance through the shared worker."""
         when = effective_date or date.today()
@@ -98,6 +158,9 @@ class LeaveService:
             try:
                 tenant_processed = 0
                 async with self.session.begin_nested():
+                    policy = await self.leave_policy(actor)
+                    if policy.auto_open_annual_period:
+                        await self._annual_period(actor, when.year)
                     tenant_processed += await self.process_accruals(actor, when)
                     current = await self.session.scalar(
                         select(LeavePeriod)
@@ -1155,7 +1218,7 @@ class LeaveService:
         for row in rows:
             employee = employees[row.employee_id]
             leave_type = leave_types[row.leave_type_id]
-            period = periods[row.leave_period_id]
+            period = periods.get(row.leave_period_id) if row.leave_period_id else None
             department = departments.get(row.department_id) if row.department_id else None
             items.append(
                 LeaveRequestResponse.model_validate(row).model_copy(
@@ -1165,7 +1228,7 @@ class LeaveService:
                         "department_name": department.name if department else None,
                         "leave_type_name": leave_type.name,
                         "leave_type_code": leave_type.code,
-                        "leave_period_name": period.name,
+                        "leave_period_name": period.name if period else "Calendar year",
                     }
                 )
             )
@@ -1184,6 +1247,11 @@ class LeaveService:
         reviewer = (
             await self._employee(user, request.reviewed_by_id) if request.reviewed_by_id else None
         )
+        relief_person = (
+            await self._employee(user, request.relief_person_id)
+            if request.relief_person_id
+            else None
+        )
         department = (
             await self.session.scalar(
                 select(OrganizationUnit).where(
@@ -1195,7 +1263,11 @@ class LeaveService:
             else None
         )
         leave_type = await self._type(user, request.leave_type_id)
-        period = await self._period(user, period_id=request.leave_period_id)
+        period = (
+            await self._period(user, period_id=request.leave_period_id)
+            if request.leave_period_id
+            else None
+        )
         attachments = await self.list_attachments(user, request.id)
         history = list(
             (
@@ -1223,9 +1295,10 @@ class LeaveService:
                 "department_name": department.name if department else None,
                 "manager_id": manager.id if manager else None,
                 "manager_name": manager.display_name if manager else None,
+                "relief_person_name": relief_person.display_name if relief_person else None,
                 "leave_type_name": leave_type.name,
                 "leave_type_code": leave_type.code,
-                "leave_period_name": period.name,
+                "leave_period_name": period.name if period else "Calendar year",
                 "reviewer_name": reviewer.display_name if reviewer else None,
                 "balance_effect": (
                     -request.duration_days if request.status == "approved" else Decimal("0")
@@ -1794,11 +1867,28 @@ class LeaveService:
         }:
             raise ValidationError("Inactive employees cannot request leave")
         kind = await self._type(user, body.leave_type_id, True)
-        period = await self._period(user, on_date=body.start_date)
+        if body.start_date < date.today():
+            raise ValidationError("Leave cannot start in the past")
+        policy = await self.leave_policy(user)
+        period = await self._request_period(user, policy, body.start_date, body.end_date)
         if body.half_day and not kind.half_day_supported:
             raise ValidationError("This leave type does not support half-day requests")
-        if body.end_date > period.end_date:
-            raise ValidationError("Leave must be within the active leave period")
+        relief_person = None
+        if body.relief_person_id is not None:
+            relief_person = await self.session.scalar(
+                select(User).where(
+                    User.id == body.relief_person_id,
+                    User.organization_id == user.organization_id,
+                    User.status == UserStatus.ACTIVE,
+                    User.removed_at.is_(None),
+                )
+            )
+            if relief_person is None or relief_person.id == user.id:
+                raise ValidationError("Choose an active relief person from your organization")
+        if policy.relief_person_mode == "disabled" and relief_person is not None:
+            raise ValidationError("Relief people are disabled by organization policy")
+        if policy.relief_person_mode == "required" and relief_person is None:
+            raise ValidationError("A relief person is required by organization policy")
         if (
             kind.eligible_employment_types
             and employee.employment_type not in kind.eligible_employment_types.split(",")
@@ -1826,16 +1916,67 @@ class LeaveService:
             department_id=employee.department_id,
             leave_type_id=kind.id,
             leave_period_id=period.id,
+            relief_person_id=relief_person.id if relief_person else None,
             start_date=body.start_date,
             end_date=body.end_date,
             duration_days=result.chargeable_days,
             half_day=body.half_day,
             reason=body.reason,
+            approval_stage="draft",
         )
         self.session.add(item)
         await self.session.flush()
         await self._history(user, item, "draft_created")
         self._audit(user, "leave.request.drafted", item.id)
+        return item
+
+    async def update_request(
+        self, user: User, request_id: uuid.UUID, body: LeaveRequestInput
+    ) -> LeaveRequest:
+        item = await self._request(user, request_id, True)
+        if item.employee_id != user.id or item.status != "draft":
+            raise AuthorizationError("Only your own draft leave request can be edited")
+        kind = await self._type(user, body.leave_type_id, True)
+        if body.start_date < date.today():
+            raise ValidationError("Leave cannot start in the past")
+        if body.half_day and not kind.half_day_supported:
+            raise ValidationError("This leave type does not support half-day requests")
+        if (body.start_date - date.today()).days < kind.minimum_notice_days:
+            raise ValidationError(
+                f"This leave type requires {kind.minimum_notice_days} days' notice"
+            )
+        policy = await self.leave_policy(user)
+        period = await self._request_period(user, policy, body.start_date, body.end_date)
+        relief = None
+        if body.relief_person_id:
+            relief = await self.session.scalar(
+                select(User).where(
+                    User.id == body.relief_person_id,
+                    User.organization_id == user.organization_id,
+                    User.status == UserStatus.ACTIVE,
+                    User.removed_at.is_(None),
+                )
+            )
+            if relief is None or relief.id == user.id:
+                raise ValidationError("Choose an active relief person from your organization")
+        if policy.relief_person_mode == "disabled" and relief:
+            raise ValidationError("Relief people are disabled by organization policy")
+        if policy.relief_person_mode == "required" and relief is None:
+            raise ValidationError("A relief person is required by organization policy")
+        days = await self.working_days(user, body.start_date, body.end_date, body.half_day)
+        if not days.chargeable_days:
+            raise ValidationError("The selected dates contain no working days")
+        item.leave_type_id = kind.id
+        item.leave_period_id = period.id
+        item.start_date = body.start_date
+        item.end_date = body.end_date
+        item.duration_days = days.chargeable_days
+        item.half_day = body.half_day
+        item.reason = body.reason
+        item.relief_person_id = relief.id if relief else None
+        await self._history(user, item, "draft_edited")
+        self._audit(user, "leave.request.draft_edited", item.id)
+        await self.session.flush()
         return item
 
     async def eligibility(
@@ -1856,12 +1997,33 @@ class LeaveService:
                 message="Your employee record is not eligible to request leave.",
             )
         kind = await self._type(user, leave_type_id, True)
-        period = await self.session.scalar(
-            select(LeavePeriod).where(
-                LeavePeriod.organization_id == user.organization_id,
-                LeavePeriod.status == "open",
-                LeavePeriod.start_date <= start_date,
-                LeavePeriod.end_date >= end_date,
+        policy = await self.leave_policy(user)
+        if start_date < date.today():
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="past_start_date",
+                message="Leave cannot start in the past.",
+            )
+        earliest_start = date.today() + timedelta(days=kind.minimum_notice_days)
+        if start_date < earliest_start:
+            return LeaveEligibilityResponse(
+                eligible=False,
+                code="notice_period",
+                message=(
+                    f"This leave type requires {kind.minimum_notice_days} days' notice. "
+                    f"The earliest valid start date is {earliest_start.isoformat()}."
+                ),
+            )
+        period = (
+            await self._annual_period(user, start_date.year)
+            if not policy.periods_required and start_date.year == end_date.year
+            else await self.session.scalar(
+                select(LeavePeriod).where(
+                    LeavePeriod.organization_id == user.organization_id,
+                    LeavePeriod.status == "open",
+                    LeavePeriod.start_date <= start_date,
+                    LeavePeriod.end_date >= end_date,
+                )
             )
         )
         if period is None:
@@ -1954,6 +2116,13 @@ class LeaveService:
             )
         )
         if entitlement is None:
+            requested = (await self.working_days(user, start_date, end_date, False)).chargeable_days
+            if not policy.entitlements_required:
+                return LeaveEligibilityResponse(
+                    eligible=True,
+                    message="You are eligible to request leave under the organization policy.",
+                    requested_days=requested,
+                )
             return LeaveEligibilityResponse(
                 eligible=False,
                 code="no_entitlement",
@@ -2010,6 +2179,7 @@ class LeaveService:
         )
         if overlap:
             raise ValidationError("This leave request overlaps an existing request")
+        policy = await self.leave_policy(user)
         entitlement = await self.session.scalar(
             select(LeaveEntitlement).where(
                 LeaveEntitlement.organization_id == user.organization_id,
@@ -2018,11 +2188,16 @@ class LeaveService:
                 LeaveEntitlement.leave_period_id == item.leave_period_id,
             )
         )
-        if entitlement is None:
+        if entitlement is None and policy.entitlements_required:
             raise ValidationError("No leave entitlement is available for this request")
-        if (await self.balance(user, entitlement.id)).available_after_pending < item.duration_days:
+        if (
+            entitlement is not None
+            and (await self.balance(user, entitlement.id)).available_after_pending
+            < item.duration_days
+        ):
             raise ValidationError("Insufficient leave balance")
         item.status = "submitted"
+        item.approval_stage = "hr" if policy.approval_workflow == "hr" else "manager"
         await self._history(user, item, "submitted")
         self._audit(user, "leave.request.submitted", item.id)
         employee = await self._employee(user, item.employee_id)
@@ -2042,12 +2217,32 @@ class LeaveService:
         self, user: User, request_id: uuid.UUID, action: str, comment: str | None = None
     ) -> LeaveRequest:
         item = await self._request(user, request_id, True)
-        if not await self._can_review(user, item):
-            raise AuthorizationError("You are not authorized to review this request")
         if item.status != "submitted":
             raise ValidationError("Only submitted leave requests can be reviewed")
+        policy = await self.leave_policy(user)
+        employee = await self._employee(user, item.employee_id)
+        is_manager = employee.manager_id == user.id and item.employee_id != user.id
+        is_hr = self._manage(user)
+        if item.approval_stage == "manager" and not is_manager:
+            raise AuthorizationError("Manager approval is required at this stage")
+        if item.approval_stage == "hr" and not is_hr:
+            raise AuthorizationError("HR approval is required at this stage")
         if action == "rejected" and not comment:
             raise ValidationError("A rejection reason is required")
+        if (
+            action == "approved"
+            and policy.approval_workflow == "manager_then_hr"
+            and item.approval_stage == "manager"
+        ):
+            item.approval_stage = "hr"
+            item.reviewed_by_id = user.id
+            item.reviewed_at = datetime.now(UTC)
+            item.review_comment = comment
+            await self._history(user, item, "manager_approved", comment)
+            self._audit(user, "leave.request.manager_approved", item.id)
+            await self.session.flush()
+            await self.session.refresh(item)
+            return item
         if action == "approved":
             entitlement = await self.session.scalar(
                 select(LeaveEntitlement)
@@ -2059,21 +2254,22 @@ class LeaveService:
                 )
                 .with_for_update()
             )
-            if (
-                entitlement is None
-                or (await self.balance(user, entitlement.id)).available < item.duration_days
-            ):
+            if entitlement is None and policy.entitlements_required:
                 raise ValidationError("Insufficient leave balance")
-            await self._ledger(
-                user,
-                entitlement,
-                "usage",
-                -item.duration_days,
-                item.start_date,
-                "Approved leave request",
-                item.id,
-            )
+            if entitlement is not None:
+                if (await self.balance(employee, entitlement.id)).available < item.duration_days:
+                    raise ValidationError("Insufficient leave balance")
+                await self._ledger(
+                    user,
+                    entitlement,
+                    "usage",
+                    -item.duration_days,
+                    item.start_date,
+                    "Approved leave request",
+                    item.id,
+                )
         item.status = action
+        item.approval_stage = "complete"
         item.reviewed_by_id = user.id
         item.reviewed_at = datetime.now(UTC)
         item.review_comment = comment

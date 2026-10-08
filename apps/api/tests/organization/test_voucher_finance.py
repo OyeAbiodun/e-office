@@ -3,10 +3,11 @@
 import uuid
 from datetime import date
 from decimal import Decimal
+from time import perf_counter
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from meetinghq_api.core.config import get_settings
 from meetinghq_api.modules.audit.models import AuditLog
@@ -77,6 +78,74 @@ async def create(
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]  # type: ignore[no-any-return]
+
+
+async def test_postgresql_voucher_save_has_bounded_query_count_and_duration(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """A many-line voucher save validates categories in one query on PostgreSQL."""
+    factory = organization_client._meetinghq_session_factory  # type: ignore[attr-defined]
+    engine = factory.kw["bind"].sync_engine
+    if engine.dialect.name != "postgresql":
+        pytest.skip("PostgreSQL release-gate measurement")
+
+    category = await organization_client.post(
+        "/api/v1/finance/categories",
+        headers=admin_headers,
+        json={"name": "Operations", "code": "OPS"},
+    )
+    assert category.status_code == 201, category.text
+    category_id = category.json()["data"]["id"]
+    query_started: list[float] = []
+    query_durations: list[float] = []
+
+    def before_cursor_execute(*_: object) -> None:
+        query_started.append(perf_counter())
+
+    def after_cursor_execute(*_: object) -> None:
+        query_durations.append(perf_counter() - query_started.pop())
+
+    event.listen(engine, "before_cursor_execute", before_cursor_execute)
+    event.listen(engine, "after_cursor_execute", after_cursor_execute)
+    started = perf_counter()
+    try:
+        response = await organization_client.post(
+            "/api/v1/vouchers",
+            headers=admin_headers,
+            json={
+                "title": "Quarterly operating supplies",
+                "expense_category_id": category_id,
+                "line_items": [
+                    {
+                        "description": f"Supply line {index}",
+                        "quantity": "1.000",
+                        "unit_price": "10.00",
+                        "tax_amount": "0.00",
+                        "expense_category_id": category_id,
+                    }
+                    for index in range(25)
+                ],
+            },
+        )
+    finally:
+        total_duration = perf_counter() - started
+        event.remove(engine, "before_cursor_execute", before_cursor_execute)
+        event.remove(engine, "after_cursor_execute", after_cursor_execute)
+
+    assert response.status_code == 201, response.text
+    metrics = {
+        "total_ms": round(total_duration * 1000, 2),
+        "query_count": len(query_durations),
+        "db_execution_ms": round(sum(query_durations) * 1000, 2),
+        "attachment_ms": 0,
+        "notification_ms": 0,
+        "email_ms": 0,
+    }
+    # Includes authentication/permission loading, the voucher transaction, and
+    # the separate immutable audit-log transaction. Line count must not turn
+    # category validation back into an N+1 query path.
+    assert metrics["query_count"] <= 16, metrics
+    assert total_duration < 2.0, metrics
 
 
 async def test_expense_category_management_preserves_historical_vouchers(

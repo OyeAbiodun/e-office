@@ -170,6 +170,51 @@ test('filters the server-paginated department directory', async () => {
   )
 })
 
+test('deactivates and reactivates a department without deleting it', async () => {
+  const department = {
+    id: 'department-1',
+    organization_id: 'org-1',
+    parent_id: null,
+    manager_id: null,
+    unit_type: 'department',
+    name: 'Product',
+    code: 'PRD',
+    description: 'Product delivery',
+    address: {},
+    timezone: null,
+    working_hours: {},
+    status: 'active',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+  organizationApiMock.departments.mockResolvedValue({
+    items: [department],
+    total: 1,
+    page: 1,
+    page_size: 10,
+    total_pages: 1,
+  })
+  organizationApiMock.updateOrganizationUnit.mockResolvedValue({
+    ...department,
+    status: 'inactive',
+  })
+
+  renderPage()
+  await screen.findByRole('heading', { name: 'MeetingHQ' })
+  fireEvent.click(screen.getByRole('button', { name: 'Structure' }))
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Deactivate Product' }),
+  )
+
+  await waitFor(() =>
+    expect(organizationApiMock.updateOrganizationUnit).toHaveBeenCalledWith(
+      'department-1',
+      expect.objectContaining({ status: 'inactive', name: 'Product' }),
+    ),
+  )
+  expect(organizationApiMock.deleteOrganizationUnit).not.toHaveBeenCalled()
+})
+
 test('opens department details in a focus-managed drawer and restores focus', async () => {
   organizationApiMock.departments.mockResolvedValue({
     items: [

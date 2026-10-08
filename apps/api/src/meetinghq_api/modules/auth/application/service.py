@@ -35,7 +35,12 @@ from meetinghq_api.modules.auth.presentation.schemas import (
     TokenResponse,
     UserResponse,
 )
-from meetinghq_api.modules.organizations.models import Organization
+from meetinghq_api.modules.organizations.models import (
+    SESSION_TIMEOUT_MINUTES_DEFAULT,
+    SESSION_TIMEOUT_MINUTES_MAX,
+    SESSION_TIMEOUT_MINUTES_MIN,
+    Organization,
+)
 from meetinghq_api.modules.users.models import (
     Permission,
     Role,
@@ -254,6 +259,7 @@ class AuthService:
         now = utc_now()
         if token is None or token.revoked_at or token.expires_at.replace(tzinfo=UTC) <= now:
             raise AuthenticationError("Refresh token is invalid")
+        within_cookie_retry_grace = False
         if token.used_at:
             used_at = token.used_at.replace(tzinfo=UTC)
             within_cookie_retry_grace = (
@@ -278,11 +284,57 @@ class AuthService:
         session = await self.session.scalar(
             select(UserSession).where(UserSession.refresh_token_id == token.id)
         )
+        if session is None and within_cookie_retry_grace and token.replaced_by_id:
+            replacement_token = await self.session.get(RefreshToken, token.replaced_by_id)
+            if (
+                replacement_token
+                and replacement_token.revoked_at is None
+                and replacement_token.used_at is None
+                and replacement_token.expires_at.replace(tzinfo=UTC) > now
+            ):
+                replacement_session = await self.session.scalar(
+                    select(UserSession).where(UserSession.refresh_token_id == replacement_token.id)
+                )
+                if replacement_session:
+                    token = replacement_token
+                    token.used_at = now
+                    session = replacement_session
+        if session is None:
+            raise AuthenticationError("Refresh session is invalid")
+        organization = await self.session.get(Organization, user.organization_id)
+        configured_timeout = (
+            (organization.settings or {}).get("session_timeout_minutes")
+            if organization
+            else SESSION_TIMEOUT_MINUTES_DEFAULT
+        )
+        try:
+            timeout_minutes = (
+                int(configured_timeout)
+                if isinstance(configured_timeout, (str, int, float))
+                else SESSION_TIMEOUT_MINUTES_DEFAULT
+            )
+        except ValueError:
+            timeout_minutes = SESSION_TIMEOUT_MINUTES_DEFAULT
+        timeout_minutes = min(
+            SESSION_TIMEOUT_MINUTES_MAX,
+            max(SESSION_TIMEOUT_MINUTES_MIN, timeout_minutes),
+        )
+        if now - session.last_activity.replace(tzinfo=UTC) >= timedelta(minutes=timeout_minutes):
+            token.revoked_at = now
+            await self.session.delete(session)
+            await self._audit(
+                user.organization_id,
+                user.id,
+                "auth.session_inactivity_expired",
+                "session",
+                {"timeout_minutes": timeout_minutes},
+            )
+            raise AuthenticationError("Session expired due to inactivity")
         response = await self._create_session(
             user,
             ip_address,
             user_agent,
-            (session.device or "Unknown device") if session else "Unknown device",
+            session.device or "Unknown device",
             family_id=token.family_id,
         )
         replacement = await self.session.scalar(
@@ -292,8 +344,7 @@ class AuthService:
         )
         if replacement:
             token.replaced_by_id = replacement.id
-        if session:
-            await self.session.delete(session)
+        await self.session.delete(session)
         await self._audit(user.organization_id, user.id, "auth.refresh", "session", {})
         return response
 

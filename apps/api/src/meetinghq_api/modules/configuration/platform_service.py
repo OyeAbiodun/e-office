@@ -164,8 +164,8 @@ DEFAULT_MENUS = (
     ("platform", "Platform Management", "/platform", "settings", "admin.manage", None, "admin"),
     (
         "organization-settings",
-        "Organization Settings",
-        "/organization/settings",
+        "Organization",
+        "/organization",
         "building",
         "admin.manage",
         None,
@@ -174,7 +174,7 @@ DEFAULT_MENUS = (
     (
         "departments",
         "Departments",
-        "/organization?section=departments",
+        "/organization?section=structure",
         "building",
         "admin.manage",
         None,

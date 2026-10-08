@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   workingWeek: vi.fn(),
   usageReport: vi.fn(),
   statusReport: vi.fn(),
+  policy: vi.fn(),
+  eligibility: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -62,6 +64,11 @@ vi.mock('@/features/leave/api', () => ({
     downloadAttachment: vi.fn(),
     deleteAttachment: vi.fn(),
     uploadAttachment: vi.fn(),
+    removeAttachment: vi.fn(),
+    updateRequest: vi.fn(),
+    policy: mocks.policy,
+    updatePolicy: vi.fn(),
+    eligibility: mocks.eligibility,
     managerSummary: mocks.managerSummary,
     availability: mocks.availability,
     balances: mocks.balances,
@@ -90,6 +97,7 @@ vi.mock('@/features/users/api', () => ({
 vi.mock('@/features/organizations/api', () => ({
   organizationApi: {
     departments: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+    members: vi.fn().mockResolvedValue([]),
   },
 }))
 vi.mock('@/features/calendar/api', () => ({
@@ -175,6 +183,14 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.userId = 'employee-1'
   mocks.permissions = ['leave.view_own', 'leave.request']
+  mocks.policy.mockResolvedValue({
+    periods_required: true,
+    entitlements_required: true,
+    auto_open_annual_period: false,
+    relief_person_mode: 'disabled',
+    approval_workflow: 'manager',
+  })
+  mocks.eligibility.mockResolvedValue({ eligible: true, message: null })
   mocks.types.mockResolvedValue([type])
   mocks.mySummary.mockResolvedValue({
     balances: [balance],
@@ -271,16 +287,16 @@ test('My Leave explains balances and uses backend working-day preview', async ()
   expect(screen.getByText('days available')).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: /request leave/i }))
   fireEvent.change(screen.getByLabelText('Start date'), {
-    target: { value: '2026-10-05' },
+    target: { value: '2026-10-12' },
   })
   fireEvent.change(screen.getByLabelText('End date'), {
-    target: { value: '2026-10-07' },
+    target: { value: '2026-10-14' },
   })
 
   expect(await screen.findByText('2 days')).toBeVisible()
   expect(mocks.preview).toHaveBeenCalledWith({
-    start_date: '2026-10-05',
-    end_date: '2026-10-07',
+    start_date: '2026-10-12',
+    end_date: '2026-10-14',
     half_day: false,
   })
 })
@@ -290,10 +306,10 @@ test('submits a valid leave request after preview', async () => {
   await screen.findByRole('heading', { name: 'My Leave' })
   fireEvent.click(screen.getByRole('button', { name: /request leave/i }))
   fireEvent.change(screen.getByLabelText('Start date'), {
-    target: { value: '2026-10-05' },
+    target: { value: '2026-10-12' },
   })
   fireEvent.change(screen.getByLabelText('End date'), {
-    target: { value: '2026-10-07' },
+    target: { value: '2026-10-14' },
   })
   await screen.findByText('2 days')
   await act(async () => {
@@ -315,7 +331,7 @@ test('blocks requests that exceed the available balance with a clear explanation
   await screen.findByRole('heading', { name: 'My Leave' })
   fireEvent.click(screen.getByRole('button', { name: /request leave/i }))
   fireEvent.change(screen.getByLabelText('Start date'), {
-    target: { value: '2026-10-05' },
+    target: { value: '2026-10-12' },
   })
   fireEvent.change(screen.getByLabelText('End date'), {
     target: { value: '2026-10-29' },
@@ -333,10 +349,10 @@ test('enforces required supporting documents before submission', async () => {
   await screen.findByRole('heading', { name: 'My Leave' })
   fireEvent.click(screen.getByRole('button', { name: /request leave/i }))
   fireEvent.change(screen.getByLabelText('Start date'), {
-    target: { value: '2026-10-05' },
+    target: { value: '2026-10-12' },
   })
   fireEvent.change(screen.getByLabelText('End date'), {
-    target: { value: '2026-10-07' },
+    target: { value: '2026-10-14' },
   })
 
   expect(
