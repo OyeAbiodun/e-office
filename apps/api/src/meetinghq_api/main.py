@@ -23,7 +23,7 @@ from meetinghq_api.core.middleware import (
     SecurityHeadersMiddleware,
     install_error_handlers,
 )
-from meetinghq_api.infrastructure.database import engine, session_factory
+from meetinghq_api.infrastructure.database import engine, session_factory, transaction_scope
 from meetinghq_api.infrastructure.redis import redis_client
 from meetinghq_api.infrastructure.runtime_health import SharedRuntimeHealth
 from meetinghq_api.modules.integrations.service import IntegrationService
@@ -43,7 +43,7 @@ async def reminder_worker(stop: asyncio.Event) -> None:
     await runtime_health.started()
     while not stop.is_set():
         try:
-            async with session_factory() as session:
+            async with transaction_scope() as session:
                 service = NotificationService(session, settings)
                 counts = {
                     "meeting_invitations": await service.process_due_invitations(),
@@ -58,7 +58,6 @@ async def reminder_worker(stop: asyncio.Event) -> None:
                         session, service
                     ).process_scheduled_reports(),
                 }
-                await session.commit()
             delivered = sum(counts.values())
             if delivered:
                 await logger.ainfo("meeting_reminders_delivered", count=delivered)
@@ -78,13 +77,12 @@ async def reminder_worker(stop: asyncio.Event) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Manage process-level infrastructure resources."""
-    async with session_factory() as session:
+    async with transaction_scope() as session:
         initialized = await BootstrapInitializationService(session, get_settings()).initialize()
         await RbacInitializationService(session).synchronize()
         sealed_credentials = await IntegrationService(
             session, get_settings()
         ).seal_legacy_credentials()
-        await session.commit()
     if initialized:
         await logger.ainfo("installation_bootstrap_completed")
     if sealed_credentials:

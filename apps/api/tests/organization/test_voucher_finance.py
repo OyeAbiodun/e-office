@@ -1,5 +1,6 @@
 """Voucher workflow, Decimal statements, secure documents, and SoD regressions."""
 
+import asyncio
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -7,12 +8,19 @@ from time import perf_counter
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import event, select
+from sqlalchemy import delete, event, select, text
 
 from meetinghq_api.core.config import get_settings
 from meetinghq_api.modules.audit.models import AuditLog
 from meetinghq_api.modules.auth.infrastructure.tokens import AccessTokenService
-from meetinghq_api.modules.finance.models import FinanceTransaction, VoucherHistory
+from meetinghq_api.modules.finance.models import (
+    FinanceTransaction,
+    Voucher,
+    VoucherHistory,
+    VoucherLineItem,
+)
+from meetinghq_api.modules.finance.schemas import VoucherCreate
+from meetinghq_api.modules.finance.service import FinanceService
 from meetinghq_api.modules.notifications.email_templates import RenderedEmail
 from meetinghq_api.modules.notifications.models import Notification
 from meetinghq_api.modules.notifications.service import MeetingEmailSender
@@ -78,6 +86,127 @@ async def create(
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]  # type: ignore[no-any-return]
+
+
+async def _idle_transaction_count(client: AsyncClient) -> int:
+    factory = client._meetinghq_session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        value = await session.scalar(
+            text(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND usename = current_user "
+                "AND state = 'idle in transaction' AND pid <> pg_backend_pid()"
+            )
+        )
+    return int(value or 0)
+
+
+async def test_postgresql_voucher_line_replacement_commits_audit_and_releases_transaction(
+    organization_client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """The real replacement path commits its history/audit work and releases the connection."""
+    factory = organization_client._meetinghq_session_factory  # type: ignore[attr-defined]
+    if factory.kw["bind"].dialect.name != "postgresql":
+        pytest.skip("PostgreSQL transaction release gate")
+    voucher = await create(
+        organization_client,
+        admin_headers,
+        line_items=[
+            {"description": "Original one", "unit_price": "10.00"},
+            {"description": "Original two", "unit_price": "20.00"},
+            {"description": "Original three", "unit_price": "30.00"},
+        ],
+    )
+    response = await organization_client.patch(
+        f"/api/v1/vouchers/{voucher['id']}",
+        headers=admin_headers,
+        json={
+            "line_items": [
+                {"description": "Replacement one", "unit_price": "15.00"},
+                {"description": "Replacement two", "unit_price": "25.00"},
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+    reopened = await organization_client.get(
+        f"/api/v1/vouchers/{voucher['id']}", headers=admin_headers
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert [item["description"] for item in reopened.json()["data"]["line_items"]] == [
+        "Replacement one",
+        "Replacement two",
+    ]
+    async with factory() as session:
+        assert await session.scalar(
+            select(VoucherHistory.id).where(
+                VoucherHistory.voucher_id == uuid.UUID(str(voucher["id"])),
+                VoucherHistory.event_type == "edited",
+            )
+        )
+        assert await session.scalar(
+            select(AuditLog.id).where(
+                AuditLog.resource == "vouchers", AuditLog.action == "vouchers.update"
+            )
+        )
+    assert await _idle_transaction_count(organization_client) == 0
+
+
+@pytest.mark.parametrize("failure", ["error", "cancel"])
+async def test_postgresql_voucher_line_replacement_failure_rolls_back_and_reuses_connection(
+    organization_client: AsyncClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """Failure or cancellation after DELETE preserves lines and cannot strand a transaction."""
+    factory = organization_client._meetinghq_session_factory  # type: ignore[attr-defined]
+    if factory.kw["bind"].dialect.name != "postgresql":
+        pytest.skip("PostgreSQL transaction release gate")
+    voucher = await create(
+        organization_client,
+        admin_headers,
+        line_items=[
+            {"description": "Keep one", "unit_price": "10.00"},
+            {"description": "Keep two", "unit_price": "20.00"},
+        ],
+    )
+    original_replace = FinanceService._replace_lines
+
+    async def fail_after_delete(
+        service: FinanceService, actor: User, persisted: Voucher, body: VoucherCreate
+    ) -> None:
+        del body
+        await service.session.execute(
+            delete(VoucherLineItem).where(
+                VoucherLineItem.voucher_id == persisted.id,
+                VoucherLineItem.organization_id == actor.organization_id,
+            )
+        )
+        if failure == "cancel":
+            raise asyncio.CancelledError
+        raise RuntimeError("injected failure after voucher line deletion")
+
+    monkeypatch.setattr(FinanceService, "_replace_lines", fail_after_delete)
+    expected_message = "No response returned" if failure == "cancel" else "injected failure"
+    with pytest.raises(RuntimeError, match=expected_message):
+        await organization_client.patch(
+            f"/api/v1/vouchers/{voucher['id']}",
+            headers=admin_headers,
+            json={"line_items": [{"description": "Must roll back", "unit_price": "99.00"}]},
+        )
+    monkeypatch.setattr(FinanceService, "_replace_lines", original_replace)
+
+    reopened = await organization_client.get(
+        f"/api/v1/vouchers/{voucher['id']}", headers=admin_headers
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert [item["description"] for item in reopened.json()["data"]["line_items"]] == [
+        "Keep one",
+        "Keep two",
+    ]
+    assert await _idle_transaction_count(organization_client) == 0
+    unrelated = await organization_client.get("/api/v1/finance/categories", headers=admin_headers)
+    assert unrelated.status_code == 200, unrelated.text
 
 
 async def test_postgresql_voucher_save_has_bounded_query_count_and_duration(

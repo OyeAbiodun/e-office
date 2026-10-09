@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from meetinghq_api.infrastructure.database import Base, get_database_session
+from meetinghq_api.infrastructure.database import Base, get_database_session, transaction_scope
 from meetinghq_api.main import app
 
 
@@ -25,13 +25,8 @@ async def organization_client() -> AsyncIterator[AsyncClient]:
         await connection.run_sync(Base.metadata.create_all)
 
     async def database_override() -> AsyncIterator[AsyncSession]:
-        async with factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+        async with transaction_scope(factory) as session:
+            yield session
 
     previous_audit_factory = getattr(app.state, "audit_session_factory", None)
     app.state.audit_session_factory = factory if database_url.startswith("postgresql") else None

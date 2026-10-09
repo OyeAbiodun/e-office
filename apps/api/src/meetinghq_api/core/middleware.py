@@ -1,5 +1,6 @@
 """HTTP exception translation and security middleware."""
 
+import asyncio
 import json
 import time
 import uuid
@@ -76,24 +77,26 @@ class MutationAuditMiddleware(BaseHTTPMiddleware):
             audit_factory = getattr(request.app.state, "audit_session_factory", None)
             if audit_factory is None:
                 return response
-            async with audit_factory() as session:
-                session.add(
-                    AuditLog(
-                        organization_id=organization_id,
-                        user_id=user_id,
-                        action=f"{resource}.{action}",
-                        resource=resource,
-                        request_id=request.headers.get("x-request-id"),
-                        ip_address=request.client.host if request.client else None,
-                        audit_metadata={
-                            "path": request.url.path,
-                            "method": request.method,
-                            "browser": user_agent,
-                            "device": request.headers.get("sec-ch-ua-platform"),
-                        },
+            from meetinghq_api.infrastructure.database import transaction_scope
+
+            async with asyncio.timeout(5):
+                async with transaction_scope(audit_factory) as session:
+                    session.add(
+                        AuditLog(
+                            organization_id=organization_id,
+                            user_id=user_id,
+                            action=f"{resource}.{action}",
+                            resource=resource,
+                            request_id=request.headers.get("x-request-id"),
+                            ip_address=request.client.host if request.client else None,
+                            audit_metadata={
+                                "path": request.url.path,
+                                "method": request.method,
+                                "browser": user_agent,
+                                "device": request.headers.get("sec-ch-ua-platform"),
+                            },
+                        )
                     )
-                )
-                await session.commit()
         except Exception:
             await logger.aexception(
                 "mutation_audit_capture_failed",

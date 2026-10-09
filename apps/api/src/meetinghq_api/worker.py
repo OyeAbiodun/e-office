@@ -6,7 +6,7 @@ import structlog
 
 from meetinghq_api.core.config import get_settings
 from meetinghq_api.core.logging import configure_logging
-from meetinghq_api.infrastructure.database import engine, session_factory
+from meetinghq_api.infrastructure.database import engine, transaction_scope
 from meetinghq_api.infrastructure.redis import redis_client
 from meetinghq_api.infrastructure.runtime_health import SharedRuntimeHealth
 from meetinghq_api.modules.leave.service import LeaveService
@@ -26,7 +26,7 @@ async def run_once() -> int:
     try:
         await health.started()
         counts: dict[str, int] = {}
-        async with session_factory() as session:
+        async with transaction_scope() as session:
             service = NotificationService(session, settings)
             counts["meeting_invitations"] = await service.process_due_invitations()
             counts["meeting_reminders"] = await service.process_due_reminders()
@@ -39,7 +39,6 @@ async def run_once() -> int:
             counts["scheduled_reports"] = await ReportingService(
                 session, service
             ).process_scheduled_reports()
-            await session.commit()
         delivered = sum(counts.values())
         await health.succeeded(counts)
         await logger.ainfo("scheduled_worker_completed", delivered=delivered)
